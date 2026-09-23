@@ -1,7 +1,7 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
-use xmem_core::{Finding, ProcessInfo, Result, XmemError};
+use xmem_core::{Finding, Result, XmemError};
 use xmem_forensics::{DumpAnalysis, MinidumpSource};
 use xmem_windows::{free_space_bytes, open_for_dump, process_info, write_minidump_file};
 
@@ -171,7 +171,7 @@ pub(crate) fn dump_json_payload(analysis: &DumpAnalysis, findings: &[Finding]) -
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xmem_core::{Confidence, Evidence, ProcessArch, Severity};
+    use xmem_core::{Confidence, Evidence, ProcessArch, ProcessInfo, Severity};
 
     fn sample_analysis() -> DumpAnalysis {
         DumpAnalysis {
