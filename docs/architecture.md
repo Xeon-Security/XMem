@@ -50,7 +50,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-core` | 데이터 모델, 에러, Evidence/Finding, Guard, MemorySource trait, 버전 상수 | M1 |
 | `xmem-windows` | Win32 FFI, RAII Handle, Win32→XmemError 매핑 | M1 |
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
-| `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), Pattern 엔진, chunked scanner | M3 |
+| `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), Pattern 엔진, chunked scanner | M3 (생성됨) |
 | `xmem-pe` | goblin 기반 PE 파싱, 메모리 PE artifact 탐지 | M6 |
 | `xmem-forensics` | Snapshot 포맷/직렬화, Diff, Report(JSON/Markdown), MemoryImage 소스 | M7 |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 |
@@ -100,7 +100,7 @@ pub struct MemoryRegion {
     pub state: MemoryState,                    // Commit | Reserve | Free
     pub protection: Protection,                // 사람이 읽는 형태 + 플래그
     pub allocation_protection: Option<Protection>,
-    pub region_type: MemoryType,               // Image | Mapped | Private
+    pub region_type: Option<MemoryType>,       // Image | Mapped | Private; Free/Reserve는 None
     pub readable: bool, pub writable: bool, pub executable: bool,
     pub classification: RegionClass,           // Image | Mapped | Private | Free | Reserved | Unknown
     pub heuristics: Vec<Heuristic>,
@@ -213,7 +213,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M | API | 비고 |
 |---|---|---|
 | M2 | `CreateToolhelp32Snapshot`, `Process32FirstW/NextW`, `OpenProcess`, `QueryFullProcessImageNameW`, `GetProcessTimes`, `IsWow64Process2`, `ProcessIdToSessionId`, `GetProcessMemoryInfo`, `OpenProcessToken`+`GetTokenInformation(TokenUser)`+`LookupAccountSidW`, `NtQueryInformationProcess`+PEB read (CommandLine) | 서명은 구현 시 windows-rs 문서로 검증. PEB는 WOW64/보호 프로세스에서 실패 가능 → `None` degrade |
-| M3 | `VirtualQueryEx` (주소 전진 루프, `ERROR_INVALID_PARAMETER`로 종료), `GetNativeSystemInfo`, `GetMappedFileNameW` | region 상태 변화/레이스는 정상 경로로 처리 |
+| M3 | `VirtualQueryEx` (주소 전진 루프, `ERROR_INVALID_PARAMETER`로 종료), `GetNativeSystemInfo`, `GetMappedFileNameW` | 구현됨(`xmem-windows` feature `Win32_System_Memory`). region 상태 변화/레이스는 정상 경로로 처리 |
 | M4 | `ReadProcessMemory` chunked(기본 1 MiB) | `ERROR_PARTIAL_COPY(299)`, `ERROR_ACCESS_DENIED(5)`, `ERROR_NOACCESS(998)` 매핑 |
 | M5 | `TH32CS_SNAPMODULE(_32)`, `Module32FirstW/NextW`, `EnumProcessModulesEx`(fallback), `Thread32First/Next`, `OpenThread`, `GetThreadTimes`, `GetThreadPriority`, `NtQueryInformationThread(ThreadQuerySetWin32StartAddress)` | StartAddress는 반문서화 → 실패 시 skip |
 | M6 | 신규 없음 | goblin + 메모리 헤더 read |
@@ -256,7 +256,8 @@ xmem experiment list | run <NAME>
 |---|---|
 | M1 기반 구조(workspace/core/windows/cli) | Done |
 | M2 Process(`process list`/`process info`) | Done |
-| M3~M12 | Planned |
+| M3 Virtual Memory(`memory map`, `LiveProcess` MemorySource) | Done |
+| M4~M12 | Planned |
 
 ## 15. Non-Goals
 

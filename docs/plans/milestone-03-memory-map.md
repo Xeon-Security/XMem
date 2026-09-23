@@ -65,7 +65,7 @@
   - `impl fmt::Display for MemoryState / MemoryType / RegionClass / Heuristic`
   - `MemoryRegion.region_type` 타입이 `Option<MemoryType>`로 변경
 
-- [ ] **Step 1: classify.rs 테스트 먼저 작성 (red)**
+- [x] **Step 1: classify.rs 테스트 먼저 작성 (red)**
 
 `crates/xmem-core/src/classify.rs`:
 
@@ -165,12 +165,12 @@ pub mod classify;
 pub use classify::{classify, heuristics};
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-core --tests`
 Expected: FAIL — `cannot find function classify` (E0425), `cannot find function heuristics` (E0425).
 
-- [ ] **Step 3: classify.rs 구현**
+- [x] **Step 3: classify.rs 구현**
 
 테스트 모듈 위에 추가:
 
@@ -208,7 +208,7 @@ pub fn heuristics(
 }
 ```
 
-- [ ] **Step 4: memory.rs 모델 변경 + Display + 테스트**
+- [x] **Step 4: memory.rs 모델 변경 + Display + 테스트**
 
 `region_type: MemoryType` → `region_type: Option<MemoryType>` (line 78). 그리고 `impl fmt::Display for Protection` 아래에 Display 4종 추가:
 
@@ -294,7 +294,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: green + workspace 영향 확인**
+- [x] **Step 5: green + workspace 영향 확인**
 
 Run: `cargo test -p xmem-core`
 Expected: PASS — 기존 16 + 신규 7 = 23 tests.
@@ -302,7 +302,7 @@ Expected: PASS — 기존 16 + 신규 7 = 23 tests.
 Run: `cargo check --workspace --tests`
 Expected: PASS (region_type 리터럴 사용처가 memory.rs 외에 없음을 확인).
 
-- [ ] **Step 6: fmt + clippy + 커밋**
+- [x] **Step 6: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -335,7 +335,7 @@ git commit -m "feat(core): 메모리 영역 분류 로직과 region_type Option�
   - `pub fn native_max_user_address() -> u64`
   - `pub fn region_from_raw(raw: &RawRegion, mapped_file: Option<String>) -> Option<MemoryRegion>`
 
-- [ ] **Step 1: 테스트 먼저 작성 (red)**
+- [x] **Step 1: 테스트 먼저 작성 (red)**
 
 `crates/xmem-windows/src/memory.rs`:
 
@@ -485,12 +485,12 @@ mod tests {
 pub mod memory;
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — E0433/E0425 (RawRegion, walk_regions, MAX_REGIONS 등 없음).
 
-- [ ] **Step 3: memory.rs 구현**
+- [x] **Step 3: memory.rs 구현**
 
 테스트 모듈 위에 추가:
 
@@ -663,12 +663,12 @@ pub fn region_from_raw(raw: &RawRegion, mapped_file: Option<String>) -> Option<M
 }
 ```
 
-- [ ] **Step 4: green 확인**
+- [x] **Step 4: green 확인**
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 기존 27 + 신규 10 = 37 tests.
 
-- [ ] **Step 5: fmt + clippy + 커밋**
+- [x] **Step 5: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -696,7 +696,7 @@ git commit -m "feat(windows): VirtualQueryEx 메모리 영역 walk와 매핑 파
   - `LiveProcess::region_map(&self) -> Result<RegionMap>`
   - `impl MemorySource for LiveProcess`
 
-- [ ] **Step 1: workspace 등록 + crate 골격 + 테스트 (red)**
+- [x] **Step 1: workspace 등록 + crate 골격 + 테스트 (red)**
 
 `Cargo.toml`(루트): members에 `"crates/xmem-memory"` 추가, `[workspace.dependencies]`에 추가:
 
@@ -881,17 +881,17 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-memory --tests`
 Expected: FAIL — crate 미등록/모듈 없음 오류(E0433 등).
 
-- [ ] **Step 3: green 확인**
+- [x] **Step 3: green 확인**
 
 Run: `cargo test -p xmem-memory`
 Expected: PASS — 4 tests. (LiveProcess::open이 self 프로세스에 대해 동작)
 
-- [ ] **Step 4: fmt + clippy + 커밋**
+- [x] **Step 4: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -917,7 +917,7 @@ git commit -m "feat(memory): LiveProcess MemorySource와 region map 수집"
   - `render::{truncate, truncate_tail, human_size, heur_short}`
   - `memory::run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()>` (Map 구현, Scan은 unimplemented 유지)
 
-- [ ] **Step 1: render.rs 작성 (truncate 이동) + 테스트**
+- [x] **Step 1: render.rs 작성 (truncate 이동) + 테스트**
 
 `crates/xmem-cli/src/commands/render.rs`:
 
@@ -1006,7 +1006,7 @@ mod tests {
 
 `process.rs`: `fn truncate` 정의와 truncate 관련 테스트를 삭제하고 `use super::render::truncate;`로 교체(다른 헬퍼는 그대로).
 
-- [ ] **Step 2: memory.rs 구현 + 테스트**
+- [x] **Step 2: memory.rs 구현 + 테스트**
 
 `crates/xmem-cli/src/commands/memory.rs` 전체 교체:
 
@@ -1277,7 +1277,7 @@ mod tests {
 
 `crates/xmem-cli/Cargo.toml`에 `xmem-memory.workspace = true` 추가.
 
-- [ ] **Step 3: red → green 확인**
+- [x] **Step 3: red → green 확인**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — xmem_memory 미의존/미구현 상태에서 오류 확인 후, 위 코드 작성으로 해소.
@@ -1285,7 +1285,7 @@ Expected: FAIL — xmem_memory 미의존/미구현 상태에서 오류 확인 �
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 기존 15 + 신규 10 = 25 tests.
 
-- [ ] **Step 4: fmt + clippy + 커밋**
+- [x] **Step 4: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -1303,21 +1303,21 @@ git commit -m "feat(cli): memory map 표시와 JSON payload"
 - Modify: `docs/architecture.md`
 - Modify: `docs/plans/milestone-03-memory-map.md` (체크박스)
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 표에 `memory map` 행을 **Implemented**로 추가(M3): "VirtualQueryEx 기반 영역 열거, MEM_* state/type, PAGE_* 보호 속성, R/W/X, region class, heuristic tag, mapped file 경로(디바이스 경로), `--json`".
 - Quick Start에 `xmem memory map --pid <PID>` 예시 추가.
 - Limitations 갱신: `memory scan`은 M4 예정, `executable_anonymous`/`private_executable_pe_like` heuristic은 M5/M6 예정, mapped file 경로는 `\Device\...` 형식이며 드라이브 문자 변환은 미구현, region 목록은 `MAX_REGIONS` 상한으로 truncated 가능.
 - Roadmap 표의 M3를 완료로 표시.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - Status 표: M1 Done / M2 Done / **M3 Done** / M4~M12 Planned.
 - crate 표에 `xmem-memory`를 M3 생성으로 추가(의존: xmem-core, xmem-windows).
 - windows feature 목록에 `Win32_System_Memory`(M3) 추가.
 - 모델 표의 `MemoryRegion.region_type`을 `Option<MemoryType>`로 갱신(Free/Reserve는 type 없음).
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```bash
 cargo fmt --all -- --check
@@ -1328,7 +1328,7 @@ cargo test --workspace
 
 Expected: fmt/check/clippy exit 0; tests — core 23 + windows 37 + memory 4 + cli 25 = 89 green.
 
-- [ ] **Step 4: Windows 실검증 (오류 경로 포함)**
+- [x] **Step 4: Windows 실검증 (오류 경로 포함)**
 
 ```powershell
 cargo run -q -p xmem-cli -- memory map --pid $PID          # 표 출력, rows > 0
@@ -1340,7 +1340,7 @@ cargo run -q -p xmem-cli -- memory map --pid $PID          # 3회 반복 모두 
 
 확인 항목: Free 행의 TYPE `-`, 이미지 행 MAPPED FILE에 `\Device\...`, PROTECTION 열이 `R-X (0x20)` 형식, `--json`의 `truncated: false`.
 
-- [ ] **Step 5: 체크박스 갱신 + 커밋**
+- [x] **Step 5: 체크박스 갱신 + 커밋**
 
 이 계획서의 모든 `- [ ]`를 `- [x]`로 바꾸고:
 

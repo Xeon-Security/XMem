@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **Milestone 2 (Process)** 완료. 프로세스 열거와 메타데이터 분석을 지원한다.
+현재 **Milestone 3 (Virtual Memory)** 완료. 프로세스 열거·메타데이터 분석과 가상 메모리 영역 맵 분석을 지원한다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -30,7 +30,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | Windows 추상화 (Win32 오류 매핑, RAII `OwnedHandle`, 프로세스 primitive) | Implemented |
 | CLI 골격 (전체 명령 트리, `--json`, 로깅 분리, exit code 계약) | Implemented |
 | `process list` / `process info` (경로, arch, session, 생성시각, 사용자, 명령줄, 메모리, 스레드/모듈 수) | Implemented |
-| `memory map` (VirtualQueryEx) | Planned (M3) |
+| `memory map` (VirtualQueryEx, MEM_* state/type, PAGE_* 보호 속성, R/W/X, class, heuristic, mapped file, `--json`) | Implemented |
 | `memory scan` (패턴/문자열, chunked read) | Planned (M4) |
 | `modules` / `threads` | Planned (M5) |
 | PE 분석 | Planned (M6) |
@@ -64,7 +64,9 @@ xmem --version
 xmem --help
 xmem process list                 # 프로세스 목록 (접근 불가 필드는 '-'로 표시)
 xmem process info --pid <PID>     # 상세 메타데이터
+xmem memory map --pid <PID>       # 가상 메모리 영역 맵 (분류/heuristic/mapped file)
 xmem --json process list          # JSON envelope (schema_version 포함)
+xmem --json memory map --pid <PID>  # 영역 상세 JSON
 ```
 
 ## CLI Usage (계약)
@@ -117,7 +119,10 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Limitations
 
 - **User-mode 전용**: Kernel driver, 물리 메모리 접근, 커널 패칭은 범위 밖(Non-Goal).
-- M2 기준 `process list` / `process info`만 구현되어 있다. 나머지 분석 명령은 스텁(오류 반환)이며 마일스톤에 따라 추가된다.
+- M3 기준 `process list` / `process info` / `memory map`만 구현되어 있다. 나머지 분석 명령은 스텁(오류 반환)이며 마일스톤에 따라 추가된다.
+- `memory map`의 mapped file 경로는 NT 디바이스 경로(`\Device\...`)로 표시된다(드라이브 문자 변환 미구현).
+- `memory scan`은 M4, `executable_anonymous` / `private_executable_pe_like` heuristic은 M5/M6 예정이다.
+- region 목록은 `MAX_REGIONS`(1,048,576) 상한을 가지며, 초과 시 `truncated: true`로 보고된다.
 - 비관리자 권한으로 실행 가능하지만, 일부 시스템 프로세스는 접근이 제한된다(설계상 정상 동작).
 - 실험 기능은 XMem이 직접 spawn한 전용 Test Target에만 수행한다(호스트 보호).
 
@@ -127,7 +132,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 |---|---|---|
 | M1 | Workspace, CLI 골격, Core Data Model, Error Model, Logging, Windows 추상화 | 완료 |
 | M2 | Process (`process list` / `process info`) | 완료 |
-| M3 | Virtual Memory (`memory map`) | 예정 |
+| M3 | Virtual Memory (`memory map`) | 완료 |
 | M4 | Memory Scanner (패턴 엔진, chunked read, 필터) | 예정 |
 | M5 | Module / Thread + 주소 상관관계 | 예정 |
 | M6 | PE 분석 | 예정 |
