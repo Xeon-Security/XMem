@@ -8,15 +8,13 @@
 
 ## 1. 오작동 (실측 확인)
 
-### 1.1 XMEM-003 오탐 폭발 — 최우선
+### 1.1 XMEM-003 오탐 폭발 — 수정됨 (v0.1.1)
 
-- **증상**: 정상 프로세스(pwsh.exe)에서 findings 86건 중 **84건이 XMEM-003**. `detect`/`snapshot`/`dump analyze`/`report`의 findings가 노이즈에 묻힌다.
-- **원인**: XMEM-003은 "executable 영역이 로드된 모듈의 `[base, base+size)` 범위 밖이면 unbacked"로 판정한다. 그런데 다음이 모두 걸린다.
-  - 실측 84건 구성: ① 49건 = `MEM_IMAGE` + `mapped_file` 있음(`srpapi.dll` 등)이며 그 파일은 **이미 모듈 목록에도 존재**(같은 파일의 두 번째 매핑, 모듈 범위 밖) ② 35건 = `MEM_MAPPED` + 파일명 없음(이름 붙일 수 있는 백킹 없음 — 실제 신호) ③ 1건 = private RWX(XMEM-001과 중복)
-- **수정 방향**:
-  - 모듈 범위 대신 **파일 기준 매칭** 추가: `mapped_file` basename이 모듈 목록에 있으면 "백킹 있음"으로 판정해 제외
-  - file-backed(`mapped_file` 있음)는 별도 tier로 하향(Info/Low) 또는 제외, `MEM_MAPPED`+파일명 없음은 유지(신뢰도 Low 표기)
-- **검증**: pwsh 기준 findings 84 → 약 35 이하로 감소, `lab/targets/xmem-target`의 XMEM-001/002/004 양성은 불변(Ground Truth 회귀 테스트 유지)
+- **증상(v0.1.0)**: 정상 프로세스(pwsh.exe)에서 findings 86건 중 **84건이 XMEM-003**. `detect`/`snapshot`/`dump analyze`/`report`의 findings가 노이즈에 묻힌다.
+- **원인**: XMEM-003이 "executable 영역이 로드된 모듈의 `[base, base+size)` 범위 밖이면 unbacked"로만 판정했다.
+  - 실측 84건 구성: ① 49건 = `MEM_IMAGE` + `mapped_file` 있음(`srpapi.dll` 등)이며 그 파일은 **이미 모듈 목록에도 존재**(같은 파일의 두 번째 매핑) ② 35건 = `MEM_MAPPED` + 파일명 없음 ③ 1건 = private RWX(XMEM-001과 중복)
+- **수정(v0.1.1, 커밋 135288c)**: 백킹 판정 추가 — `mapped_file` basename이 로드된 모듈명과 일치하거나 `MEM_IMAGE`면 제외, private executable은 XMEM-001/002가 담당하므로 제외, 남은 `MEM_MAPPED`(파일명 없음)는 Medium/Low, file-mapped는 Low/Low로 보고.
+- **검증(실측, 동일 pwsh.exe)**: findings 83 → **54**(XMEM-003 81 → 52, 남은 52건 전부 Low confidence · backing=`mapped-no-file` · `MEM_MAPPED`/R-X). lab target 회귀: `experiment run remote-alloc` baseline findings **8 → 0** → post 2(detections +2, XMEM-001 observed 유지). `cargo test --workspace` 269 green.
 
 ### 1.2 XMEM-001 정상 케이스 포함
 
@@ -104,7 +102,7 @@
 
 | 순위 | 항목 | 예상 비용 | 이유 |
 |---|---|---|---|
-| P0 | 1.1 XMEM-003 오탐 + 1.3 경로 변환 | 1.5~2일 | 모든 findings 소비 기능(detect/snapshot/dump/report)의 체감 품질을 좌우 |
+| P0 | 1.3 mapped_file 경로 변환(`\Device\...` → `C:\...`) | 0.5일 | 표시 가독성 + 모듈 경로 매칭 정확도 |
 | P0 | 1.2 XMEM-001 노이즈 완화 | 0.5일 | 정상 프로세스 기본 노이즈 제거 |
 | P1 | Q2 벤치마크 + 수치 공개 | 0.5일 | 성능 주장의 근거 확보 |
 | P1 | Q4 soak/누수 테스트 | 1일 | 장시간 사용 신뢰 |

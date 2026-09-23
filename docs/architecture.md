@@ -209,13 +209,13 @@ pub struct AcquisitionMeta {
 |---|---|---|---|---|
 | XMEM-001 Executable Private Memory | committed + MEM_PRIVATE + executable(X/RWX/WCX) | Medium | High | 사실 기반 |
 | XMEM-002 PE Header in Private Executable Region | XMEM-001 영역에서 `MZ` + (범위 내) `PE\0\0` | High | Medium | JIT/데이터 오탐 가능 |
-| XMEM-003 Executable Memory Without Backing Module | executable 영역이 로드된 모듈 [base, base+size) 밖 | Medium | Medium | JIT 정상 사례 존재 |
+| XMEM-003 Executable Memory Without Backing Module | executable + 모듈 범위 밖 + 백킹 없음(`mapped_file` basename이 모듈명과 일치하거나 `MEM_IMAGE`면 제외, private은 001/002 담당) | Medium(`MEM_MAPPED` 무파일) / Low(file-mapped) | Low | v0.1.1 백킹 판정 |
 | XMEM-004 Suspicious Thread Start Address | start address가 private executable 영역 또는 모듈 밖 | High | Medium | 스레드 종료/조회 실패 시 skip |
 | XMEM-005 Memory Protection Anomaly | RWX/EXECUTE_WRITECOPY (private=Medium→High, image=Low) | Medium | High | 사실 기반 |
 
 Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 
-구현 노트(M8): `xmem-detection`은 `xmem-core`에만 의존하고(외부 dependency 추가 없음), `DetectionContext`로 수집된 관찰 데이터만 받아 평가한다. XMEM-001/002/005는 heuristic/보호 속성만으로 동작하고, XMEM-003/004는 모듈 목록이 비어 있으면 침묵한다(불완전 데이터로 오판하지 않음). findings는 (rule_id, region_base, address)로 정렬해 결정적으로 출력한다. Snapshot `collect`는 findings를 저장하고, `xmem-forensics`가 `xmem-detection`에 의존한다.
+구현 노트(M8): `xmem-detection`은 `xmem-core`에만 의존하고(외부 dependency 추가 없음), `DetectionContext`로 수집된 관찰 데이터만 받아 평가한다. XMEM-001/002/005는 heuristic/보호 속성만으로 동작하고, XMEM-003/004는 모듈 목록이 비어 있으면 침묵한다(불완전 데이터로 오판하지 않음). XMEM-003은 v0.1.1부터 백킹 판정(`mapped_file` basename ↔ 모듈명, `MEM_IMAGE`, private 제외)을 적용하고 남은 `MEM_MAPPED` 무파일 영역만 Low confidence로 보고한다. findings는 (rule_id, region_base, address)로 정렬해 결정적으로 출력한다. Snapshot `collect`는 findings를 저장하고, `xmem-forensics`가 `xmem-detection`에 의존한다.
 
 ## 10. Experiment Framework (M11 구현됨)
 

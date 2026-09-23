@@ -25,13 +25,14 @@ Observed Fact  →  Evidence  →  Heuristic  →  Confidence  →  Interpretati
 |---|---|---|---|
 | XMEM-001 Executable Private Memory | committed + `MEM_PRIVATE` + executable (heuristic `executable_private`) | Medium | High |
 | XMEM-002 PE Header in Private Executable Region | private executable 영역 첫 4 KiB가 PE-like/깨진 헤더 | High | Medium |
-| XMEM-003 Executable Memory Without Backing Module | executable이지만 모듈 범위에 없음(모듈 목록이 비면 침묵) | Medium | Medium |
+| XMEM-003 Executable Memory Without Backing Module | executable이지만 모듈 범위 밖 + 파일 백킹 없음(모듈명과 일치하는 매핑·`MEM_IMAGE`·private은 제외; 모듈 목록이 비면 침묵) | Medium(`MEM_MAPPED` 무파일) / Low(file-mapped) | Low |
 | XMEM-004 Suspicious Thread Start Address | start address가 private executable 또는 모듈 밖(주소 미상이면 침묵) | High | Medium |
 | XMEM-005 Memory Protection Anomaly | RWX/WRITE_COPY-EXECUTE 계열; private/mapped=High, image=Low | Medium | High |
 
 - 규칙은 `xmem-detection` crate에만 존재하며 CLI에 하드코딩하지 않는다.
 - 결과는 `(rule_id, region_base, address)`로 정렬해 결정적으로 출력한다.
 - modules 조회에 실패하면 XMEM-003/004는 침묵한다(불완전 데이터로 오탐하지 않기 위해).
+- XMEM-003은 백킹 판정을 한다: `mapped_file` basename이 로드된 모듈명과 일치하거나 `MEM_IMAGE`면 "백킹 있음"으로 보아 제외하고, private executable은 XMEM-001/002가 담당하므로 제외한다. 남은 `MEM_MAPPED`(파일명 없음)는 Medium/Low, 파일 백킹은 있지만 모듈 범위 밖인 영역(file-mapped)은 Low/Low로 보고한다.
 - XMEM-002는 4 KiB 프리픽스 프로브 기반이라 전체 헤더 검증보다 약하다.
 
 ## 오탐 요인 (알려진 한계)
@@ -39,7 +40,7 @@ Observed Fact  →  Evidence  →  Heuristic  →  Confidence  →  Interpretati
 - JIT 컴파일러(.NET, V8), .NET ReadyToRun, 패커, DRM은 private executable 메모리를
   정상적으로 만든다 → XMEM-001/002/005는 정상 소프트웨어에서도 자주 발생한다.
 - suspended 스레드는 start address가 실행 파일의 스텁을 가리키지 않아 XMEM-004에 걸릴 수 있다.
-- `MEM_MAPPED` 이미지(예: 메모리 매핑된 DLL)는 모듈 목록에 없어 XMEM-003에 걸릴 수 있다.
+- `MEM_MAPPED`(파일명 없음) executable 영역은 XMEM-003에 Low confidence로 보고된다(.NET 내부 등 정상 소프트웨어에서도 발생).
 - 시그니처 문자열(`MZ`)은 우연히 나타날 수 있다.
 
 ## 해석 원칙

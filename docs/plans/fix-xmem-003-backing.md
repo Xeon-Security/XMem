@@ -1,6 +1,6 @@
 # XMEM-003 백킹 판정 수정 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** XMEM-003이 파일/이미지 백킹이 관찰된 executable 영역을 오탐하지 않도록 백킹 판정을 추가하고, 남은 매핑 영역은 Low confidence로 하향한다.
 
@@ -39,7 +39,7 @@
 - Consumes: `xmem_core::{MemoryRegion, MemoryType, ModuleInfo, RegionClass}` (기존 정의)
 - Produces: `ExecutableWithoutBackingModule`(rule id `XMEM-003`)의 동작 변경만. 시그니처·공개 타입 변경 없음.
 
-- [ ] **Step 1: 실패 테스트 작성**
+- [x] **Step 1: 실패 테스트 작성**
 
 `rules.rs`의 테스트 모듈에서 기존 `xmem003_fires_outside_modules_and_skips_when_modules_unknown`를 삭제하고 아래로 교체한다. 또한 헬퍼 `typed_region`을 `region` 헬퍼 아래에 추가한다.
 
@@ -189,12 +189,12 @@
     }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo test -p xmem-detection 2>&1 | Select-Object -Last 25`
 Expected: 컴파일 성공 후 `xmem003_*` 다수 FAIL(예: `xmem003_skips_module_name_matched_mapping`는 finding 1건, `xmem003_reports_mapped_without_file_backing`는 severity Medium≠Low) — 기존 로직이 백킹을 보지 않기 때문.
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `rules.rs` 상단 import에 `MemoryType` 추가:
 
@@ -312,12 +312,12 @@ fn backing_of(region: &MemoryRegion, modules: &[ModuleInfo]) -> Backing {
     }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo test -p xmem-detection 2>&1 | Select-Object -Last 25`
 Expected: `14 passed`(기존 8 − 대체 1 + 신규 7 = 14), 0 failed.
 
-- [ ] **Step 5: 게이트 + 커밋**
+- [x] **Step 5: 게이트 + 커밋**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -342,7 +342,7 @@ Expected: clippy exit 0, workspace 테스트 269 green(263 − 0 + 6), 로그에
 - Consumes: Task 1의 XMEM-003 동작.
 - Produces: 문서와 실측 수치(수정 후 findings 수).
 
-- [ ] **Step 1: 문서 갱신**
+- [x] **Step 1: 문서 갱신**
 
 `docs/detection.md` 표의 XMEM-003 행:
 
@@ -366,7 +366,7 @@ README Limitations의 XMEM-003 문구를 교체:
 
 `docs/future-work.md` §1.1 제목/본문: `수정됨(v0.1.1)`로 바꾸고 수정 후 실측 수치(Step 3 결과)와 변경 요약(모듈명 매칭·이미지 제외·private 제외·Low 하향)을 기재. 우선순위 표 P0 행에서 XMEM-003 부분 제거(경로 변환 1.3만 잔류).
 
-- [ ] **Step 2: release 빌드 + 사전/사후 카운트 비교**
+- [x] **Step 2: release 빌드 + 사전/사후 카운트 비교**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -380,11 +380,11 @@ Select-String -Path "$env:TEMP\opencode\detect-after.txt" -Pattern 'findings$'
 
 Expected: findings 총계가 기존 86 대비 대폭 감소(약 35±10), XMEM-001/005 유지. JSON에서 XMEM-003 confidence가 전부 `low`이고 `backing` observed가 `mapped-no-file`/`file-mapped`만 존재.
 
-- [ ] **Step 3: 실측 수치를 문서에 반영**
+- [x] **Step 3: 실측 수치를 문서에 반영**
 
 Step 2 출력에서 뽑은 수치(총 findings, 규칙별 건수, confidence 분포)를 `docs/future-work.md` §1.1과 위 README 문구에 기입.
 
-- [ ] **Step 4: lab target 양성 회귀 확인**
+- [x] **Step 4: lab target 양성 회귀 확인**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -394,7 +394,7 @@ cargo test -p xmem-target 2>&1 | Select-Object -Last 8
 
 Expected: xmem-target 7 passed(ground_truth·experiment_e2e 포함), `experiment run remote-alloc` → `expected XMEM-001: baseline absent / post observed`.
 
-- [ ] **Step 5: 최종 게이트 + 커밋·push**
+- [x] **Step 5: 최종 게이트 + 커밋·push**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
