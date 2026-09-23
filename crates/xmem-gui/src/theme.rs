@@ -68,6 +68,7 @@ pub fn apply(ctx: &Context, mode: ThemeMode) {
     visuals.panel_fill = p.panel;
     visuals.window_fill = p.panel;
     visuals.extreme_bg_color = p.bg;
+    visuals.faint_bg_color = p.card;
     visuals.override_text_color = Some(p.text);
     visuals.widgets.noninteractive.bg_stroke = egui::Stroke::new(1.0, p.border);
     visuals.selection.bg_fill = p.accent.gamma_multiply(0.35);

@@ -223,6 +223,41 @@ impl XMemApp {
             BackgroundTask::spawn("프로세스 목록", |_| xmem_windows::list_processes());
     }
 
+    /// 실행 중인 태스크 라벨(상단 바 표시용).
+    pub fn running_labels(&self) -> Vec<&str> {
+        let tasks = [
+            (self.list_task.label(), self.list_task.is_running()),
+            (self.overview_task.label(), self.overview_task.is_running()),
+            (self.map_task.label(), self.map_task.is_running()),
+            (self.modules_task.label(), self.modules_task.is_running()),
+            (self.threads_task.label(), self.threads_task.is_running()),
+            (self.scan_task.label(), self.scan_task.is_running()),
+            (self.detect_task.label(), self.detect_task.is_running()),
+            (
+                self.snapshot_create_task.label(),
+                self.snapshot_create_task.is_running(),
+            ),
+            (
+                self.snapshot_diff_task.label(),
+                self.snapshot_diff_task.is_running(),
+            ),
+            (
+                self.dump_create_task.label(),
+                self.dump_create_task.is_running(),
+            ),
+            (
+                self.dump_analyze_task.label(),
+                self.dump_analyze_task.is_running(),
+            ),
+            (self.report_task.label(), self.report_task.is_running()),
+        ];
+        tasks
+            .into_iter()
+            .filter(|(_, running)| *running)
+            .map(|(label, _)| label)
+            .collect()
+    }
+
     pub fn select_process(&mut self, pid: u32) {
         self.selected_pid = Some(pid);
         self.start_overview(pid);
@@ -324,6 +359,9 @@ impl XMemApp {
             return;
         }
         self.snapshot_output = output.to_string_lossy().into_owned();
+        if let Some(dir) = output.parent() {
+            self.config.last_output_dir = Some(dir.to_path_buf());
+        }
         self.snapshot_created = None;
         self.snapshot_create_task = BackgroundTask::spawn("스냅샷 생성", move |cancel| {
             let bytes = crate::views::snapshot::create_snapshot_file(pid, &output, cancel)?;
@@ -369,6 +407,9 @@ impl XMemApp {
             return;
         }
         self.dump_output = output.to_string_lossy().into_owned();
+        if let Some(dir) = output.parent() {
+            self.config.last_output_dir = Some(dir.to_path_buf());
+        }
         self.dump_created = None;
         let full = self.dump_full;
         self.dump_create_task = BackgroundTask::spawn("덤프 생성", move |_| {
@@ -413,6 +454,9 @@ impl XMemApp {
             return;
         }
         self.report_output = output.to_string_lossy().into_owned();
+        if let Some(dir) = output.parent() {
+            self.config.last_output_dir = Some(dir.to_path_buf());
+        }
         self.report_saved = None;
         self.report_task = BackgroundTask::spawn("리포트 저장", move |_| {
             let data = crate::views::report::build_report_data(pid)?;
@@ -512,6 +556,15 @@ impl eframe::App for XMemApp {
         {
             self.report_saved = Some(saved);
         }
+        if self.tab == Tab::Guide && !self.config.guide_seen {
+            self.config.guide_seen = true;
+        }
+        if ctx.input(|i| i.viewport().close_requested()) {
+            let size = ctx.input(|i| i.viewport_rect().size());
+            self.config.window_width = size.x;
+            self.config.window_height = size.y;
+            let _ = crate::config::save(&self.config);
+        }
         let palette = theme::palette(self.theme);
 
         egui::Panel::top(egui::Id::new("top")).show(ui, |ui| {
@@ -545,12 +598,17 @@ impl eframe::App for XMemApp {
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(format!("v{}", xmem_core::VERSION)).weak());
+                    let running = self.running_labels();
+                    if !running.is_empty() {
+                        ui.label(egui::RichText::new(running.join(", ")).weak());
+                        ui.spinner();
+                    }
                 });
             });
         });
 
         egui::Panel::bottom(egui::Id::new("log")).show(ui, |ui| {
-            crate::views::log::ui(ui, &self.log);
+            crate::views::log::ui(ui, &mut self.log);
         });
 
         let narrow = ui.ctx().input(|i| i.viewport_rect().width()) < 900.0;

@@ -1,6 +1,4 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
-// ponytail: Task 3~7에서 테마/태스크/설정 항목이 전부 사용된다 — Task 8 게이트에서 이 allow 제거
-#![allow(dead_code)]
 //! XMem GUI 진입점.
 
 mod app;

@@ -99,7 +99,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     "dmp",
                     chrono::Local::now(),
                 ))
-                .set_directory(crate::config::default_output_dir())
+                .set_directory(
+                    app.config
+                        .last_output_dir
+                        .clone()
+                        .unwrap_or_else(crate::config::default_output_dir),
+                )
                 .add_filter("Minidump", &["dmp"])
                 .save_file()
         {

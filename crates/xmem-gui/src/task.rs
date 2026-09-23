@@ -114,12 +114,6 @@ impl<T: Send + 'static> BackgroundTask<T> {
             None
         }
     }
-
-    /// Failed/Cancelled를 Idle로 되돌린다(사용자가 확인했을 때).
-    pub fn reset(&mut self) {
-        self.state = TaskState::Idle;
-        self.rx = None;
-    }
 }
 
 #[cfg(test)]

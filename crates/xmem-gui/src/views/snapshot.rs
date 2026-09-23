@@ -163,7 +163,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         if ui.button("찾아보기").clicked() {
             let name =
                 crate::config::output_file_name("snapshot", pid, "xmem", chrono::Local::now());
-            let dir = crate::config::default_output_dir();
+            let dir = app
+                .config
+                .last_output_dir
+                .clone()
+                .unwrap_or_else(crate::config::default_output_dir);
             let mut dialog = rfd::FileDialog::new()
                 .add_filter("XMem snapshot", &["xmem"])
                 .set_file_name(&name)

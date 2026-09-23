@@ -2,10 +2,13 @@
 
 use crate::log::{LogBuffer, LogLevel};
 
-pub fn ui(ui: &mut egui::Ui, log: &LogBuffer) {
+pub fn ui(ui: &mut egui::Ui, log: &mut LogBuffer) {
     egui::CollapsingHeader::new(format!("로그 ({})", log.len()))
         .default_open(true)
         .show(ui, |ui| {
+            if !log.is_empty() && ui.small_button("지우기").clicked() {
+                log.clear();
+            }
             egui::ScrollArea::vertical()
                 .max_height(140.0)
                 .show(ui, |ui| {
