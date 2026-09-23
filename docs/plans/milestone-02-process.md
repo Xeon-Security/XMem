@@ -487,7 +487,7 @@ pub fn process_user(handle: &OwnedHandle) -> Result<String> {
     // SAFETY: user.User.Sid는 위 호출이 채운 유효한 SID다. 길이 질의 호출이다.
     let _ = unsafe {
         LookupAccountSidW(
-            None::<PCWSTR>,
+            None::<&PCWSTR>,
             user.User.Sid,
             None,
             &mut name_len,
@@ -504,7 +504,7 @@ pub fn process_user(handle: &OwnedHandle) -> Result<String> {
     // SAFETY: 두 버퍼는 질의한 길이만큼 확보되어 있다.
     unsafe {
         LookupAccountSidW(
-            None::<PCWSTR>,
+            None::<&PCWSTR>,
             user.User.Sid,
             Some(windows::core::PWSTR(name.as_mut_ptr())),
             &mut name_len,
@@ -555,7 +555,7 @@ use windows::Win32::Foundation::{
 use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX};
 use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows::Win32::System::SystemInformation::{
-    IMAGE_FILE_MACHINE, IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_ARM64, IMAGE_FILE_MACHINE_I386,
+    IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_ARM64, IMAGE_FILE_MACHINE_I386,
     IMAGE_FILE_MACHINE_UNKNOWN,
 };
 use windows::Win32::System::Threading::{
@@ -749,7 +749,7 @@ fn read_unicode_string(us: &UNICODE_STRING, base: usize, byte_len: usize) -> Opt
     if len == 0 {
         return Some(String::new());
     }
-    if len % 2 != 0 || start < base {
+    if !len.is_multiple_of(2) || start < base {
         return None;
     }
     let offset = start - base;
