@@ -134,8 +134,18 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         _ => {}
     }
-    let Some(map) = app.map.as_ref() else {
+    if app.map.is_none() {
         ui.label(egui::RichText::new("맵을 불러오는 중...").weak());
+        return;
+    }
+    if app.map_selected.is_some() {
+        egui::Panel::bottom(egui::Id::new("region_detail"))
+            .resizable(true)
+            .default_size(320.0)
+            .size_range(140.0..=900.0)
+            .show(ui, |ui| crate::views::region::panel(ui, app));
+    }
+    let Some(map) = app.map.as_ref() else {
         return;
     };
     if map.truncated {
@@ -147,9 +157,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let selected = select_and_sort(&map.regions, &app.map_filters, app.map_sort);
     ui.label(egui::RichText::new(format!("{}개 영역 표시", selected.len())).weak());
     let colors = palette(app.theme);
+    let selected_base = app.map_selected;
+    let mut clicked_region: Option<MemoryRegion> = None;
     egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
+        .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(140.0))
         .column(egui_extras::Column::exact(80.0))
         .column(egui_extras::Column::exact(90.0))
@@ -174,7 +187,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         })
         .body(|body| {
             body.rows(20.0, selected.len(), |mut row| {
-                let region = &map.regions[selected[row.index()]];
+                let index = row.index();
+                let region = &map.regions[selected[index]];
+                row.set_selected(selected_base == Some(region.base));
                 row.col(|ui| {
                     ui.label(opt_hex(Some(region.base)));
                 });
@@ -221,8 +236,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     };
                     ui.label(egui::RichText::new(text).color(color));
                 });
+                if row.response().clicked() {
+                    clicked_region = Some(region.clone());
+                }
             });
         });
+    if let Some(region) = clicked_region {
+        app.select_region(pid, region);
+    }
 }
 
 #[cfg(test)]

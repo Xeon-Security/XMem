@@ -4,6 +4,7 @@
 
 mod app;
 mod config;
+mod error;
 mod log;
 mod task;
 mod theme;

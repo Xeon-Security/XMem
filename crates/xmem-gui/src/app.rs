@@ -8,6 +8,7 @@ use crate::task::BackgroundTask;
 use crate::theme::{self, ThemeMode};
 use crate::views::map::MapSort;
 use crate::views::modules::ModuleBundle;
+use crate::views::region::RegionDetail;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -112,6 +113,9 @@ pub struct XMemApp {
     pub map: Option<xmem_memory::RegionMap>,
     pub map_filters: xmem_memory::RegionFilters,
     pub map_sort: MapSort,
+    pub map_selected: Option<u64>,
+    pub region_detail: Option<RegionDetail>,
+    pub region_detail_task: BackgroundTask<(u64, RegionDetail)>,
     pub modules_task: BackgroundTask<(u32, ModuleBundle)>,
     pub modules_bundle: Option<ModuleBundle>,
     pub modules_pe: bool,
@@ -180,6 +184,9 @@ impl XMemApp {
             map: None,
             map_filters: xmem_memory::RegionFilters::default(),
             map_sort: MapSort::AddressAsc,
+            map_selected: None,
+            region_detail: None,
+            region_detail_task: BackgroundTask::idle(),
             modules_task: BackgroundTask::idle(),
             modules_bundle: None,
             modules_pe: false,
@@ -262,6 +269,8 @@ impl XMemApp {
         self.selected_pid = Some(pid);
         self.start_overview(pid);
         self.map = None;
+        self.map_selected = None;
+        self.region_detail = None;
         self.modules_bundle = None;
         self.threads = None;
         self.scan_report = None;
@@ -285,8 +294,20 @@ impl XMemApp {
 
     pub fn start_map(&mut self, pid: u32) {
         self.map = None;
+        self.map_selected = None;
+        self.region_detail = None;
         self.map_task = BackgroundTask::spawn("메모리맵", move |_| {
             Ok((pid, xmem_memory::LiveProcess::open(pid)?.region_map()?))
+        });
+    }
+
+    pub fn select_region(&mut self, pid: u32, region: xmem_core::MemoryRegion) {
+        let base = region.base;
+        self.map_selected = Some(base);
+        self.region_detail = None;
+        self.region_detail_task = BackgroundTask::spawn("영역 상세", move |_| {
+            let detail = crate::views::region::collect_region_detail(pid, region)?;
+            Ok((base, detail))
         });
     }
 
@@ -503,6 +524,12 @@ impl eframe::App for XMemApp {
             && Some(task_pid) == self.selected_pid
         {
             self.map = Some(map);
+        }
+        if self.region_detail_task.poll()
+            && let Some((base, detail)) = self.region_detail_task.take_done()
+            && Some(base) == self.map_selected
+        {
+            self.region_detail = Some(detail);
         }
         if self.modules_task.poll()
             && let Some((task_pid, bundle)) = self.modules_task.take_done()

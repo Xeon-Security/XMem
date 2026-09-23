@@ -33,7 +33,7 @@ pub fn collect_pe(live: &LiveProcess, modules: &[ModuleInfo]) -> Vec<Option<PeIn
         .collect()
 }
 
-fn pe_arch(pe: &PeInfo) -> &'static str {
+pub(crate) fn pe_arch(pe: &PeInfo) -> &'static str {
     match pe.arch {
         ProcessArch::X64 => "x64",
         ProcessArch::X86 => "x86",

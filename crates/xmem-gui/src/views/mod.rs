@@ -7,6 +7,7 @@ pub mod map;
 pub mod modules;
 pub mod overview;
 pub mod process;
+pub mod region;
 pub mod report;
 pub mod scan;
 pub mod snapshot;
