@@ -117,6 +117,9 @@ pub struct XMemApp {
     pub modules_pe: bool,
     pub threads_task: BackgroundTask<(u32, Vec<xmem_core::ThreadInfo>)>,
     pub threads: Option<Vec<xmem_core::ThreadInfo>>,
+    pub scan_state: crate::views::scan::ScanUiState,
+    pub scan_task: BackgroundTask<(u32, xmem_memory::ScanReport)>,
+    pub scan_report: Option<xmem_memory::ScanReport>,
 }
 
 impl XMemApp {
@@ -152,6 +155,9 @@ impl XMemApp {
             modules_pe: false,
             threads_task: BackgroundTask::idle(),
             threads: None,
+            scan_state: crate::views::scan::ScanUiState::default(),
+            scan_task: BackgroundTask::idle(),
+            scan_report: None,
         };
         app.refresh_processes();
         if let Some(pid) = initial_pid {
@@ -171,6 +177,9 @@ impl XMemApp {
         self.map = None;
         self.modules_bundle = None;
         self.threads = None;
+        self.scan_report = None;
+        self.scan_state.selected_match = None;
+        self.scan_state.preview = None;
     }
 
     pub fn start_overview(&mut self, pid: u32) {
@@ -206,6 +215,24 @@ impl XMemApp {
         self.threads = None;
         self.threads_task = BackgroundTask::spawn("스레드", move |_| {
             Ok((pid, xmem_memory::LiveProcess::open(pid)?.threads()?))
+        });
+    }
+
+    pub fn start_scan(&mut self, pid: u32) {
+        let pattern = match crate::views::scan::build_pattern(&self.scan_state) {
+            Ok(pattern) => pattern,
+            Err(err) => {
+                self.log.push(LogLevel::Warn, err.to_string());
+                return;
+            }
+        };
+        let options = crate::views::scan::build_options(&self.scan_state);
+        self.scan_report = None;
+        self.scan_state.selected_match = None;
+        self.scan_state.preview = None;
+        self.scan_task = BackgroundTask::spawn("검색", move |cancel| {
+            let live = xmem_memory::LiveProcess::open(pid)?;
+            Ok((pid, xmem_memory::scan(&live, &pattern, &options, cancel)?))
         });
     }
 
@@ -259,6 +286,12 @@ impl eframe::App for XMemApp {
             && Some(task_pid) == self.selected_pid
         {
             self.threads = Some(threads);
+        }
+        if self.scan_task.poll()
+            && let Some((task_pid, report)) = self.scan_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.scan_report = Some(report);
         }
         let palette = theme::palette(self.theme);
 
@@ -345,6 +378,7 @@ impl eframe::App for XMemApp {
                 Tab::Map => crate::views::map::ui(ui, self),
                 Tab::Modules => crate::views::modules::ui(ui, self),
                 Tab::Threads => crate::views::threads::ui(ui, self),
+                Tab::Scan => crate::views::scan::ui(ui, self),
                 _ => {
                     ui.label(egui::RichText::new("이 탭은 다음 Task에서 채워집니다").weak());
                 }

@@ -1883,11 +1883,14 @@ pub fn hex_dump(bytes: &[u8], base: u64) -> String {
     out
 }
 
+/// 미리보기 범위: 주소 ±64바이트(총 128), 영역 경계로 클램프.
+/// 창이 영역을 벗어나면 크기를 줄이지 않고 안쪽으로 밀어 넣는다.
 pub fn preview_range(address: u64, region_base: u64, region_size: u64) -> (u64, usize) {
     let region_end = region_base.saturating_add(region_size);
-    let start = address.saturating_sub(64).max(region_base);
-    let end = address.saturating_add(64).min(region_end);
-    (start, (end.saturating_sub(start)) as usize)
+    let size = region_size.min(128);
+    let last_start = region_end.saturating_sub(size).max(region_base);
+    let start = address.saturating_sub(64).clamp(region_base, last_start);
+    (start, size as usize)
 }
 ```
 
