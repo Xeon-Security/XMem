@@ -2,6 +2,7 @@
 #![allow(unsafe_code)] // SAFETY: Win32 FFI 경계는 이 crate로 격리한다.
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
+pub mod disk;
 pub mod error;
 pub mod handle;
 pub mod memory;
@@ -12,6 +13,7 @@ pub mod token;
 pub mod toolhelp;
 pub mod util;
 
+pub use disk::free_space_bytes;
 pub use error::{error_from_win32, last_win32_error, map_win32, win32_code_from_hresult};
 pub use handle::OwnedHandle;
 pub use process::{
