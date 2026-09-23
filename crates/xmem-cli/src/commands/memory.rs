@@ -9,7 +9,7 @@ use xmem_memory::{
 
 use crate::cli::{GlobalArgs, MemoryCmd, ScanArgs};
 use crate::commands::render::{heur_short, human_size, truncate, truncate_tail};
-use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
+use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
@@ -28,7 +28,7 @@ pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
                     Ok(())
                 }
                 OutputMode::Human => {
-                    print!("{}", render_map(&map));
+                    emit(&render_map(&map));
                     Ok(())
                 }
             }
@@ -203,7 +203,7 @@ fn run_scan(args: &ScanArgs, global: &GlobalArgs) -> Result<()> {
                     })?;
             emit_json(&success_envelope(value));
         }
-        OutputMode::Human => print!("{}", render_scan(&live.info, &pattern, &options, &report)),
+        OutputMode::Human => emit(&render_scan(&live.info, &pattern, &options, &report)),
     }
     if report.cancelled {
         tracing::warn!("scan cancelled by user");

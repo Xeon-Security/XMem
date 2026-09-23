@@ -5,7 +5,7 @@ use xmem_pe::{PE_HEADER_PREFIX, PeInfo, parse_pe};
 
 use crate::cli::{GlobalArgs, ModulesArgs};
 use crate::commands::render::{human_size, truncate, truncate_tail};
-use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
+use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 pub fn run(args: &ModulesArgs, global: &GlobalArgs) -> Result<()> {
     let live = LiveProcess::open(args.pid.pid)?;
@@ -21,7 +21,7 @@ pub fn run(args: &ModulesArgs, global: &GlobalArgs) -> Result<()> {
             &modules,
             pe.as_deref(),
         ))),
-        OutputMode::Human => print!("{}", render_modules(&live.info, &modules, pe.as_deref())),
+        OutputMode::Human => emit(&render_modules(&live.info, &modules, pe.as_deref())),
     }
     Ok(())
 }

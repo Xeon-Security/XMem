@@ -5,7 +5,7 @@ use xmem_memory::LiveProcess;
 
 use crate::cli::{GlobalArgs, PidArg};
 use crate::commands::render::opt_hex;
-use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
+use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 pub fn run(args: &PidArg, global: &GlobalArgs) -> Result<()> {
     let live = LiveProcess::open(args.pid)?;
@@ -18,7 +18,7 @@ pub fn run(args: &PidArg, global: &GlobalArgs) -> Result<()> {
             Ok(())
         }
         OutputMode::Human => {
-            print!("{}", render_findings(&live.info, &findings));
+            emit(&render_findings(&live.info, &findings));
             Ok(())
         }
     }

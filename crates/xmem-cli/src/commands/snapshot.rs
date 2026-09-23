@@ -11,7 +11,7 @@ use xmem_windows::free_space_bytes;
 use crate::cli::{GlobalArgs, SnapshotCmd};
 use crate::commands::memory::cancel_flag;
 use crate::commands::render::human_size;
-use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
+use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 const DISK_MARGIN_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -55,20 +55,20 @@ fn run_create(pid: u32, output: &str, global: &GlobalArgs) -> Result<()> {
             Ok(())
         }
         OutputMode::Human => {
-            println!(
-                "snapshot written: {} ({})",
+            emit(&format!(
+                "snapshot written: {} ({})\n",
                 summary.output,
                 human_size(summary.file_bytes)
-            );
-            println!(
-                "  regions {} / modules {} / threads {} / hashed {} regions ({}) in {} ms",
+            ));
+            emit(&format!(
+                "  regions {} / modules {} / threads {} / hashed {} regions ({}) in {} ms\n",
                 summary.region_count,
                 summary.module_count,
                 summary.thread_count,
                 summary.hashed_regions,
                 human_size(summary.hashed_bytes),
                 summary.elapsed_ms,
-            );
+            ));
             Ok(())
         }
     }
@@ -126,7 +126,7 @@ fn run_diff(before: &str, after: &str, global: &GlobalArgs) -> Result<()> {
             Ok(())
         }
         OutputMode::Human => {
-            print!("{}", render_diff(&result));
+            emit(&render_diff(&result));
             Ok(())
         }
     }

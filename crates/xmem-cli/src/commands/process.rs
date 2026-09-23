@@ -1,6 +1,6 @@
 use crate::cli::{GlobalArgs, ProcessCmd};
 use crate::commands::render::{opt_num, truncate};
-use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
+use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 use xmem_core::{ProcessArch, ProcessInfo, Result, XmemError};
 
 pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
@@ -14,7 +14,7 @@ pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
         }
         (ProcessCmd::List, OutputMode::Human) => {
             let infos = xmem_windows::list_processes()?;
-            println!("{}", render_list(&infos));
+            emit(&render_list(&infos));
         }
         (ProcessCmd::Info(args), OutputMode::Json) => {
             let info = xmem_windows::process_info(args.pid)?;
@@ -25,7 +25,7 @@ pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
         }
         (ProcessCmd::Info(args), OutputMode::Human) => {
             let info = xmem_windows::process_info(args.pid)?;
-            println!("{}", render_info(&info));
+            emit(&render_info(&info));
         }
     }
     Ok(())

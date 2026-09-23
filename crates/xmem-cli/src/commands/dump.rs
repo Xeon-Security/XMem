@@ -10,7 +10,7 @@ use crate::commands::detect::render_findings;
 use crate::commands::memory::cancel_flag;
 use crate::commands::process::arch_str;
 use crate::commands::render::human_size;
-use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
+use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 const DISK_MARGIN_BYTES: u64 = 16 * 1024 * 1024;
 
@@ -49,16 +49,16 @@ fn run_create(pid: u32, output: &str, full: bool, global: &GlobalArgs) -> Result
             Ok(())
         }
         OutputMode::Human => {
-            println!(
-                "dump written: {} ({}){}",
+            emit(&format!(
+                "dump written: {} ({}){}\n",
                 summary.output,
                 human_size(summary.file_bytes),
                 if summary.full { " [full]" } else { "" }
-            );
-            println!(
-                "  process {} ({}) in {} ms",
+            ));
+            emit(&format!(
+                "  process {} ({}) in {} ms\n",
                 summary.name, summary.pid, summary.elapsed_ms
-            );
+            ));
             Ok(())
         }
     }
@@ -114,7 +114,7 @@ fn run_analyze(file: &str, global: &GlobalArgs) -> Result<()> {
             Ok(())
         }
         OutputMode::Human => {
-            print!("{}", render_dump(&analysis, &findings));
+            emit(&render_dump(&analysis, &findings));
             Ok(())
         }
     }

@@ -34,12 +34,20 @@ pub fn success_envelope(data: serde_json::Value) -> serde_json::Value {
     })
 }
 
+/// stdout에 쓴다. 소비자가 파이프를 먼저 닫아도 panic하지 않는다(EPIPE 무시).
+pub fn emit(text: &str) {
+    use std::io::Write;
+    let stdout = std::io::stdout();
+    let mut lock = stdout.lock();
+    let _ = lock.write_all(text.as_bytes());
+}
+
 pub fn emit_json(value: &serde_json::Value) {
     match serde_json::to_string_pretty(value) {
-        Ok(text) => println!("{text}"),
-        Err(e) => {
-            println!("{{\"ok\":false,\"error\":{{\"kind\":\"json_error\",\"message\":\"{e}\"}}}}")
-        }
+        Ok(text) => emit(&format!("{text}\n")),
+        Err(e) => emit(&format!(
+            "{{\"ok\":false,\"error\":{{\"kind\":\"json_error\",\"message\":\"{e}\"}}}}\n"
+        )),
     }
 }
 

@@ -10,7 +10,7 @@ use tracing_subscriber::EnvFilter;
 use xmem_core::XmemError;
 
 use cli::Cli;
-use output::{OutputMode, error_envelope, resolve_mode};
+use output::{OutputMode, emit, error_envelope, resolve_mode};
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
@@ -50,7 +50,7 @@ fn init_tracing(cli: &Cli) {
 fn report_error(err: &XmemError, mode: OutputMode) {
     match mode {
         OutputMode::Json => {
-            println!("{}", error_envelope(err));
+            emit(&format!("{}\n", error_envelope(err)));
         }
         OutputMode::Human => {
             eprintln!("error: {err}");
