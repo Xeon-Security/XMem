@@ -24,7 +24,10 @@ pub enum PolicyDecision {
 /// 이름은 확장자 유무/대소문자를 정규화해 비교한다.
 pub fn normalize_name(name: &str) -> String {
     let lower = name.trim().to_ascii_lowercase();
-    lower.strip_suffix(".exe").map(str::to_string).unwrap_or(lower)
+    lower
+        .strip_suffix(".exe")
+        .map(str::to_string)
+        .unwrap_or(lower)
 }
 
 pub fn is_protected_name(name: &str) -> bool {
@@ -116,8 +119,10 @@ mod tests {
 
     #[test]
     fn denies_masqueraded_name_with_user_path_and_records_facts() {
-        let decision =
-            check_state_change(&ident(Some("lsass.exe"), Some("C:\\Users\\kalpha\\lsass.exe")));
+        let decision = check_state_change(&ident(
+            Some("lsass.exe"),
+            Some("C:\\Users\\kalpha\\lsass.exe"),
+        ));
         match decision {
             PolicyDecision::Deny { reason, matched } => {
                 assert_eq!(matched, "lsass");
@@ -129,6 +134,9 @@ mod tests {
 
     #[test]
     fn allow_when_name_missing() {
-        assert_eq!(check_state_change(&ident(None, None)), PolicyDecision::Allow);
+        assert_eq!(
+            check_state_change(&ident(None, None)),
+            PolicyDecision::Allow
+        );
     }
 }
