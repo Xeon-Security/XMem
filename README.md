@@ -44,7 +44,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | `dump analyze <FILE>` (minidump 파싱: os/cpu/arch/pid/modules/threads/regions/findings, 오프라인 Detection, `--json`) | Implemented |
 | Test Target (`lab/targets/xmem-target`) (deterministic 시나리오 normal/pattern/private/private-exec/pe-like/threads/protection/all, Ground Truth JSON report, 회귀 테스트) | Implemented |
 | Experiment 자동화 (`experiment list` / `experiment run <NAME>`) (4개 정의 실험: remote-alloc/protection-flip/pe-staging/remote-thread, spawn한 xmem-target 한정, guard/신원 검증, cleanup, `--json`) | Implemented |
-| GUI (`xmem-gui`) (egui 단일 exe: 프로세스 목록/개요·메모리맵·검색+hex 미리보기·모듈·스레드·탐지·스냅샷·덤프·리포트, 관리자 재시작(runas), 가이드, 로그 패널, 다크/라이트) | Implemented |
+| GUI (`xmem-gui`) (egui 단일 exe: 프로세스 목록/개요·메모리맵·검색+hex 미리보기·모듈·스레드·탐지·스냅샷·덤프·리포트, 아이콘·무콘솔, 시작 시 관리자 권한 자동 요청(runas), 가이드, 로그 패널, 다크/라이트) | Implemented |
 
 세부 설계는 [`docs/architecture.md`](docs/architecture.md), 마일스톤 실행 계획은 [`docs/plans/`](docs/plans/) 참고.
 
@@ -192,7 +192,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 실험 기능은 XMem이 직접 spawn한 전용 Test Target에만 수행한다(호스트 보호).
 - Test Target은 자기 프로세스의 메모리만 변경하며(x64 Windows 전용), `threads` 시나리오의 스레드는 suspended 상태로 생성되어 실제로 실행되지 않는다. 아티팩트 주소는 실행마다 달라지므로 테스트/스모크는 `--report`의 주소를 사용해야 한다.
 - Experiment는 v1에서 XMem이 spawn한 `xmem-target` 전용이다(임의 PID 불가). `remote-thread`의 원격 스레드는 suspended 상태로 생성되어 실행되지 않으며, 변경 Win32 API 호출은 `xmem-experiments` 경로에서만 일어난다. 테스트에서는 `RunOptions::target_binary`로 바이너리를 지정하며, CLI는 실행 파일 기준 또는 `XMEM_TARGET` 환경 변수로 타깃을 찾는다.
-- GUI는 분석 기능만 제공한다(실험은 CLI 전용). 덤프 생성은 진행 중 취소를 지원하지 않으며, PPL 보호 프로세스는 관리자 권한으로도 열 수 없다. 검색은 진행률을 표시하지 않는다(취소는 가능). GUI는 `asInvoker`로 시작하고 상단 배지의 "관리자로 재시작"(`ShellExecuteW runas`, `--pid` 유지)으로 권한을 올린다.
+- GUI는 분석 기능만 제공한다(실험은 CLI 전용). 덤프 생성은 진행 중 취소를 지원하지 않으며, PPL 보호 프로세스는 관리자 권한으로도 열 수 없다. 검색은 진행률을 표시하지 않는다(취소는 가능). GUI는 시작할 때 `ShellExecuteW runas`로 자신을 관리자 권한으로 다시 띄우고(`--pid` 유지), UAC를 취소하면 표준 권한으로 계속 실행된다(상단 배지의 "관리자로 재시작"으로 다시 시도 가능). 콘솔 창은 뜨지 않는다.
 
 ## Documentation
 

@@ -616,7 +616,7 @@ impl eframe::App for XMemApp {
             egui::Panel::left(egui::Id::new("processes"))
                 .resizable(true)
                 .default_size(300.0)
-                .size_range(220.0..=360.0)
+                .size_range(240.0..=1200.0)
                 .show(ui, |ui| {
                     crate::views::process::ui(ui, self);
                 });

@@ -68,6 +68,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         egui_extras::TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
+            .sense(egui::Sense::click())
             .column(egui_extras::Column::exact(90.0))
             .column(egui_extras::Column::exact(100.0))
             .column(egui_extras::Column::remainder().clip(true))

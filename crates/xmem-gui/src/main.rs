@@ -1,4 +1,5 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
+#![windows_subsystem = "windows"]
 //! XMem GUI 진입점.
 
 mod app;
@@ -38,9 +39,33 @@ fn load_korean_font(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
+/// 관리자 권한이 없으면 runas로 자신을 다시 띄우고 종료한다. 재실행을 시작했으면 Some(종료 코드).
+fn ensure_elevated(args: &[String], pid: Option<u32>) -> Option<i32> {
+    let elevated = xmem_windows::is_elevated().unwrap_or(false);
+    if elevated || args.iter().any(|arg| arg == "--elevated") {
+        return None;
+    }
+    let Ok(exe) = std::env::current_exe() else {
+        return None;
+    };
+    let mut params = String::from("--elevated");
+    if let Some(pid) = pid {
+        params.push_str(&format!(" --pid {pid}"));
+    }
+    match xmem_windows::runas(&exe.to_string_lossy(), &params) {
+        // 자식이 관리자 권한으로 뜨는 중이므로 이 인스턴스는 종료한다.
+        Ok(()) => Some(0),
+        // UAC 취소 등: 권한 없이 그대로 진행한다(UI가 표준 권한으로 표시).
+        Err(_) => None,
+    }
+}
+
 fn main() -> eframe::Result {
     let args: Vec<String> = std::env::args().collect();
     let initial_pid = parse_pid_arg(&args);
+    if let Some(code) = ensure_elevated(&args, initial_pid) {
+        std::process::exit(code);
+    }
     let config = config::load();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
