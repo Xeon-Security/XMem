@@ -2,8 +2,8 @@
 
 use windows::Win32::Foundation::ERROR_NO_MORE_FILES;
 use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Module32FirstW, Module32NextW, Process32FirstW, Process32NextW,
-    CREATE_TOOLHELP_SNAPSHOT_FLAGS, MODULEENTRY32W, PROCESSENTRY32W, TH32CS_SNAPMODULE,
+    CREATE_TOOLHELP_SNAPSHOT_FLAGS, CreateToolhelp32Snapshot, MODULEENTRY32W, Module32FirstW,
+    Module32NextW, PROCESSENTRY32W, Process32FirstW, Process32NextW, TH32CS_SNAPMODULE,
     TH32CS_SNAPMODULE32, TH32CS_SNAPPROCESS,
 };
 use xmem_core::{Result, XmemError};
@@ -101,7 +101,10 @@ mod tests {
         let pid = current_pid();
         let procs = list_raw_processes().expect("snapshot must succeed");
         assert!(procs.len() > 1, "system must have multiple processes");
-        let me = procs.iter().find(|p| p.pid == pid).expect("self must appear");
+        let me = procs
+            .iter()
+            .find(|p| p.pid == pid)
+            .expect("self must appear");
         assert!(!me.name.is_empty());
         assert!(me.thread_count >= 1);
     }
