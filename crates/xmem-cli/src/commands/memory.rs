@@ -163,7 +163,7 @@ fn json_payload(info: &ProcessInfo, map: &RegionMap) -> serde_json::Value {
     })
 }
 
-fn cancel_flag() -> Arc<AtomicBool> {
+pub(crate) fn cancel_flag() -> Arc<AtomicBool> {
     static CANCEL: std::sync::OnceLock<Arc<AtomicBool>> = std::sync::OnceLock::new();
     CANCEL
         .get_or_init(|| {
