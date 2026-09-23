@@ -9,6 +9,18 @@ pub enum ProcessArch {
     Unknown,
 }
 
+impl ProcessArch {
+    /// PE/COFF machine 값(IMAGE_FILE_MACHINE_*)을 ProcessArch로 변환한다.
+    pub fn from_machine(machine: u16) -> Self {
+        match machine {
+            0x8664 => ProcessArch::X64,
+            0x014c => ProcessArch::X86,
+            0xaa64 => ProcessArch::Arm64,
+            _ => ProcessArch::Unknown,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub struct MemoryStats {
     pub working_set: u64,
@@ -72,5 +84,14 @@ mod tests {
     #[test]
     fn zero_filetime_is_1601_epoch() {
         assert_eq!(filetime_to_unix_secs(0), -11_644_473_600);
+    }
+
+    #[test]
+    fn process_arch_from_machine_maps_known_values() {
+        assert_eq!(ProcessArch::from_machine(0x8664), ProcessArch::X64);
+        assert_eq!(ProcessArch::from_machine(0x014c), ProcessArch::X86);
+        assert_eq!(ProcessArch::from_machine(0xaa64), ProcessArch::Arm64);
+        assert_eq!(ProcessArch::from_machine(0x0000), ProcessArch::Unknown);
+        assert_eq!(ProcessArch::from_machine(0x1234), ProcessArch::Unknown);
     }
 }

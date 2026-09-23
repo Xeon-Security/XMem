@@ -10,10 +10,7 @@ use windows::Win32::Foundation::{
 };
 use windows::Win32::System::ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS_EX};
 use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
-use windows::Win32::System::SystemInformation::{
-    IMAGE_FILE_MACHINE_AMD64, IMAGE_FILE_MACHINE_ARM64, IMAGE_FILE_MACHINE_I386,
-    IMAGE_FILE_MACHINE_UNKNOWN,
-};
+use windows::Win32::System::SystemInformation::IMAGE_FILE_MACHINE_UNKNOWN;
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, GetExitCodeProcess, GetProcessTimes, IsWow64Process2, OpenProcess,
     PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION,
@@ -102,12 +99,7 @@ pub fn process_creation_time(handle: &OwnedHandle) -> Result<u64> {
 
 /// IMAGE_FILE_MACHINE 값을 XMem 아키텍처 분류로 매핑한다.
 pub fn map_image_file_machine(machine: u16) -> ProcessArch {
-    match machine {
-        m if m == IMAGE_FILE_MACHINE_AMD64.0 => ProcessArch::X64,
-        m if m == IMAGE_FILE_MACHINE_I386.0 => ProcessArch::X86,
-        m if m == IMAGE_FILE_MACHINE_ARM64.0 => ProcessArch::Arm64,
-        _ => ProcessArch::Unknown,
-    }
+    ProcessArch::from_machine(machine)
 }
 
 pub fn process_arch(handle: &OwnedHandle) -> Result<ProcessArch> {
