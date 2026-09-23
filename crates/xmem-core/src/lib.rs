@@ -13,4 +13,5 @@ pub use classify::{classify, heuristics};
 pub use error::{Result, XmemError};
 pub use evidence::{Confidence, Evidence, Finding, Severity};
 pub use model::*;
+pub use source::{MemorySource, ReadOutcome};
 pub use version::{JSON_SCHEMA_VERSION, SNAPSHOT_FORMAT_VERSION, VERSION};

@@ -1,6 +1,11 @@
 [workspace]
 resolver = "3"
-members = ["crates/xmem-core", "crates/xmem-windows", "crates/xmem-cli"]
+members = [
+    "crates/xmem-core",
+    "crates/xmem-windows",
+    "crates/xmem-memory",
+    "crates/xmem-cli",
+]
 
 [workspace.package]
 version = "0.1.0"
@@ -12,6 +17,7 @@ authors = ["kalpha <dev@kalpha.kr>"]
 [workspace.dependencies]
 xmem-core = { path = "crates/xmem-core" }
 xmem-windows = { path = "crates/xmem-windows" }
+xmem-memory = { path = "crates/xmem-memory" }
 anyhow = "1"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 clap = { version = "4", features = ["derive"] }

@@ -12,4 +12,6 @@ pub mod util;
 
 pub use error::{error_from_win32, last_win32_error, map_win32, win32_code_from_hresult};
 pub use handle::OwnedHandle;
-pub use process::{current_pid, is_alive, list_processes, open_process, process_info};
+pub use process::{
+    current_pid, is_alive, list_processes, open_for_query, open_process, process_info,
+};
