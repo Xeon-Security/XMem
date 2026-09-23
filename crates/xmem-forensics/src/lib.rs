@@ -6,6 +6,7 @@ pub mod diff;
 pub mod dump;
 pub mod envelope;
 pub mod format;
+pub mod report;
 pub mod source;
 
 pub use collect::{CollectOptions, DEFAULT_HASH_BUDGET_BYTES, collect};
@@ -16,4 +17,5 @@ pub use diff::{
 pub use dump::{DumpAnalysis, MinidumpSource, analyze_dump};
 pub use envelope::{AcquisitionMeta, RegionHash, SnapshotEnvelope};
 pub use format::{HEADER_LEN, MAGIC, decode, encode, read_file, write_file};
+pub use report::{ReportData, ReportSummary, is_markdown, write_report};
 pub use source::SnapshotSource;
