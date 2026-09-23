@@ -21,7 +21,7 @@ pub struct RawProcessEntry {
     pub thread_count: u32,
 }
 
-fn snapshot(flags: CREATE_TOOLHELP_SNAPSHOT_FLAGS, pid: u32) -> Result<OwnedHandle> {
+pub(crate) fn snapshot(flags: CREATE_TOOLHELP_SNAPSHOT_FLAGS, pid: u32) -> Result<OwnedHandle> {
     // SAFETY: flags/pid는 값 타입이고 반환 핸들의 수명은 OwnedHandle이 관리한다.
     let handle = unsafe { CreateToolhelp32Snapshot(flags, pid) };
     match handle {
@@ -30,7 +30,7 @@ fn snapshot(flags: CREATE_TOOLHELP_SNAPSHOT_FLAGS, pid: u32) -> Result<OwnedHand
     }
 }
 
-fn is_no_more_files(err: &windows::core::Error) -> bool {
+pub(crate) fn is_no_more_files(err: &windows::core::Error) -> bool {
     win32_code_from_hresult(err.code().0) == ERROR_NO_MORE_FILES.0
 }
 

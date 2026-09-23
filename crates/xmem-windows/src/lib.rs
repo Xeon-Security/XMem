@@ -7,6 +7,7 @@ pub mod handle;
 pub mod memory;
 pub mod process;
 pub mod read;
+pub mod threads;
 pub mod token;
 pub mod toolhelp;
 pub mod util;
@@ -16,5 +17,9 @@ pub use handle::OwnedHandle;
 pub use process::{
     current_pid, is_alive, list_processes, open_for_query, open_for_read, open_process,
     process_info,
+};
+pub use threads::{
+    RawThreadEntry, list_raw_threads, open_thread, open_thread_for_query, thread_priority,
+    thread_start_address,
 };
 pub use toolhelp::{RawModuleEntry, count_modules, list_raw_modules};
