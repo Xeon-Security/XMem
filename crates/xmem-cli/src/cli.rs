@@ -37,6 +37,15 @@ pub struct PidArg {
     pub pid: u32,
 }
 
+#[derive(Debug, Args)]
+pub struct ModulesArgs {
+    #[command(flatten)]
+    pub pid: PidArg,
+    /// 모듈 메모리 헤더에서 PE 정보(arch/entry/sections)를 파싱해 함께 표시한다
+    #[arg(long)]
+    pub pe: bool,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum Command {
     /// 프로세스 열거/조회
@@ -50,7 +59,7 @@ pub enum Command {
         cmd: MemoryCmd,
     },
     /// 로드된 모듈 분석
-    Modules(PidArg),
+    Modules(ModulesArgs),
     /// 스레드 분석
     Threads(PidArg),
     /// 메모리 스냅샷
@@ -278,5 +287,24 @@ mod tests {
             ])
             .is_err()
         );
+    }
+
+    #[test]
+    fn modules_pe_flag_parses() {
+        let cli = parse(&["xmem", "modules", "--pid", "42", "--pe"]).unwrap();
+        let Command::Modules(args) = cli.command else {
+            panic!("modules 명령이 아님");
+        };
+        assert_eq!(args.pid.pid, 42);
+        assert!(args.pe);
+    }
+
+    #[test]
+    fn modules_pe_defaults_to_false() {
+        let cli = parse(&["xmem", "modules", "--pid", "42"]).unwrap();
+        let Command::Modules(args) = cli.command else {
+            panic!("modules 명령이 아님");
+        };
+        assert!(!args.pe);
     }
 }

@@ -741,6 +741,7 @@ dependencies = [
  "tracing-subscriber",
  "xmem-core",
  "xmem-memory",
+ "xmem-pe",
  "xmem-windows",
 ]
 
