@@ -319,7 +319,7 @@ pub fn thread_start_address(handle: &OwnedHandle) -> Option<u64> {
             ThreadQuerySetWin32StartAddress,
             (&mut address as *mut u64).cast::<c_void>(),
             size_of::<u64>() as u32,
-            None,
+            std::ptr::null_mut(),
         )
     };
     (status.0 >= 0).then_some(address)

@@ -1,7 +1,10 @@
 use xmem_core::{
     MemoryRegion, MemorySource, ModuleInfo, ProcessInfo, ReadOutcome, Result, ThreadInfo, XmemError,
 };
-use xmem_windows::{OwnedHandle, memory, open_for_query, open_for_read, process_info};
+use xmem_windows::{
+    OwnedHandle, list_raw_modules, list_raw_threads, memory, open_for_query, open_for_read,
+    open_thread_for_query, process_info, thread_priority, thread_start_address,
+};
 
 #[derive(Debug, Clone)]
 pub struct RegionMap {
@@ -59,6 +62,63 @@ impl LiveProcess {
             truncated: walk.truncated,
         })
     }
+
+    /// 로드된 모듈 목록. arch는 프로세스 arch를 상속한다(모듈별 arch는 PE 분석에서).
+    pub fn modules(&self) -> Result<Vec<ModuleInfo>> {
+        Ok(list_raw_modules(self.pid)?
+            .into_iter()
+            .map(|raw| ModuleInfo {
+                name: raw.name,
+                base: raw.base,
+                size: raw.size,
+                path: raw.path,
+                arch: Some(self.info.arch),
+            })
+            .collect())
+    }
+
+    /// 스레드 목록 + 시작 주소의 영역/모듈 상관관계. 개별 조회 실패는 None degrade.
+    pub fn threads(&self) -> Result<Vec<ThreadInfo>> {
+        let raw_threads = list_raw_threads(self.pid)?;
+        let regions = self.region_map()?.regions;
+        let modules = self.modules()?;
+        let mut threads = Vec::with_capacity(raw_threads.len());
+        for raw in raw_threads {
+            let (priority, start_address) = match open_thread_for_query(raw.tid) {
+                Ok(handle) => (thread_priority(&handle), thread_start_address(&handle)),
+                Err(_) => (None, None),
+            };
+            let start_region_base = start_address.and_then(|address| {
+                regions
+                    .iter()
+                    .find(|region| contains(region, address))
+                    .map(|region| region.base)
+            });
+            let start_module = start_address.and_then(|address| {
+                modules
+                    .iter()
+                    .find(|module| contains_module(module, address))
+                    .map(|module| module.name.clone())
+            });
+            threads.push(ThreadInfo {
+                tid: raw.tid,
+                pid: raw.pid,
+                priority,
+                start_address,
+                start_region_base,
+                start_module,
+            });
+        }
+        Ok(threads)
+    }
+}
+
+fn contains(region: &MemoryRegion, address: u64) -> bool {
+    address >= region.base && address < region.base.saturating_add(region.size)
+}
+
+fn contains_module(module: &ModuleInfo, address: u64) -> bool {
+    address >= module.base && address < module.base.saturating_add(module.size)
 }
 
 impl MemorySource for LiveProcess {
@@ -85,15 +145,11 @@ impl MemorySource for LiveProcess {
     }
 
     fn modules(&self) -> Result<Vec<ModuleInfo>> {
-        Err(XmemError::Unimplemented {
-            feature: "module enumeration",
-        })
+        self.modules()
     }
 
     fn threads(&self) -> Result<Vec<ThreadInfo>> {
-        Err(XmemError::Unimplemented {
-            feature: "thread enumeration",
-        })
+        self.threads()
     }
 }
 
@@ -154,15 +210,33 @@ mod tests {
     }
 
     #[test]
-    fn unimplemented_methods_are_explicit() {
+    fn modules_of_self_are_populated() {
         let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
-        assert!(matches!(
-            live.modules().unwrap_err(),
-            XmemError::Unimplemented { .. }
-        ));
-        assert!(matches!(
-            live.threads().unwrap_err(),
-            XmemError::Unimplemented { .. }
-        ));
+        let modules = live.modules().unwrap();
+        assert!(!modules.is_empty());
+        assert!(
+            modules
+                .iter()
+                .all(|m| !m.name.is_empty() && m.base > 0 && m.size > 0)
+        );
+        assert!(modules.iter().any(|m| m.path.is_some()));
+    }
+
+    #[test]
+    fn threads_of_self_have_address_correlation() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        let threads = live.threads().unwrap();
+        assert!(!threads.is_empty());
+        assert!(threads.iter().all(|t| t.pid == xmem_windows::current_pid()));
+        assert!(threads.iter().any(|t| t.start_address.is_some()));
+        assert!(threads.iter().any(|t| t.start_region_base.is_some()));
+        assert!(threads.iter().any(|t| t.start_module.is_some()));
+    }
+
+    #[test]
+    fn memory_source_modules_and_threads_match() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        assert!(!live.modules().unwrap().is_empty());
+        assert!(!live.threads().unwrap().is_empty());
     }
 }
