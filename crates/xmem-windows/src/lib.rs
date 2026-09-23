@@ -4,6 +4,7 @@
 
 pub mod error;
 pub mod handle;
+pub mod memory;
 pub mod process;
 pub mod token;
 pub mod toolhelp;
