@@ -48,6 +48,9 @@ pub enum XmemError {
         message: String,
     },
 
+    #[error("json serialization failed: {reason}")]
+    JsonError { reason: String },
+
     #[error(transparent)]
     Io(#[from] io::Error),
 }
@@ -95,5 +98,13 @@ mod tests {
     fn io_error_converts() {
         let err: XmemError = std::io::Error::new(std::io::ErrorKind::NotFound, "no file").into();
         assert!(matches!(err, XmemError::Io(_)));
+    }
+
+    #[test]
+    fn json_error_display_contains_reason() {
+        let err = XmemError::JsonError {
+            reason: "unexpected token".to_string(),
+        };
+        assert!(err.to_string().contains("unexpected token"));
     }
 }
