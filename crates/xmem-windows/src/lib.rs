@@ -5,6 +5,8 @@
 pub mod error;
 pub mod handle;
 pub mod process;
+pub mod toolhelp;
+pub mod util;
 
 pub use error::{error_from_win32, last_win32_error, map_win32, win32_code_from_hresult};
 pub use handle::OwnedHandle;

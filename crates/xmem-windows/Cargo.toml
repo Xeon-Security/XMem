@@ -10,4 +10,14 @@ workspace = true
 
 [dependencies]
 xmem-core.workspace = true
-windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_Threading"] }
+windows = { version = "0.62", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_System_Diagnostics_ToolHelp",
+    "Win32_System_ProcessStatus",
+    "Win32_System_RemoteDesktop",
+    "Win32_System_SystemInformation",
+    "Win32_System_Threading",
+    "Wdk_System_SystemServices",
+    "Wdk_System_Threading",
+] }
