@@ -98,7 +98,9 @@ pub fn write_file(path: &Path, bytes: &[u8]) -> Result<()> {
 
 /// 파일 → envelope.
 pub fn read_file(path: &Path) -> Result<SnapshotEnvelope> {
-    let bytes = std::fs::read(path).map_err(XmemError::Io)?;
+    let bytes = std::fs::read(path).map_err(|error| XmemError::SnapshotError {
+        reason: format!("snapshot 파일 읽기 실패: {} ({error})", path.display()),
+    })?;
     decode(&bytes)
 }
 
@@ -115,6 +117,13 @@ fn temp_path(path: &Path) -> PathBuf {
 mod tests {
     use super::*;
     use crate::envelope::tests::sample_envelope;
+
+    #[test]
+    fn read_file_missing_includes_path_context() {
+        let path = std::env::temp_dir().join("xmem-definitely-missing.xmem");
+        let err = read_file(&path).unwrap_err();
+        assert!(err.to_string().contains("xmem-definitely-missing.xmem"));
+    }
 
     #[test]
     fn encode_decode_roundtrip() {
