@@ -1,6 +1,6 @@
 use xmem_core::{
-    Confidence, Evidence, Finding, Heuristic, MemoryRegion, MemoryState, ModuleInfo, RegionClass,
-    Severity, ThreadInfo,
+    Confidence, Evidence, Finding, Heuristic, MemoryRegion, MemoryState, MemoryType, ModuleInfo,
+    RegionClass, Severity, ThreadInfo,
 };
 
 /// Detection 컨텍스트: 수집된 관찰 데이터만 사용한다(소스 접근 없음).
@@ -59,6 +59,41 @@ fn overlaps(module: &ModuleInfo, region: &MemoryRegion) -> bool {
     let module_end = module.base.saturating_add(module.size);
     let region_end = region.base.saturating_add(region.size);
     module.base < region_end && region.base < module_end
+}
+
+/// executable 영역의 백킹(파일/이미지) 판정 결과.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum Backing {
+    /// 로드된 모듈 이름과 일치하는 파일이 백킹한다.
+    ModuleFile,
+    /// `MEM_IMAGE`(이미지 섹션).
+    Image,
+    /// 파일이 백킹하지만 로드된 모듈 이름과 일치하지 않는다.
+    OtherFile,
+    /// 파일 백킹이 관찰되지 않았다.
+    None,
+}
+
+fn file_name(path: &str) -> &str {
+    path.rsplit(['\\', '/']).next().unwrap_or(path)
+}
+
+fn backing_of(region: &MemoryRegion, modules: &[ModuleInfo]) -> Backing {
+    if region.region_type == Some(MemoryType::Image) {
+        return Backing::Image;
+    }
+    let Some(path) = region.mapped_file.as_deref() else {
+        return Backing::None;
+    };
+    let base = file_name(path);
+    if modules
+        .iter()
+        .any(|module| module.name.eq_ignore_ascii_case(base))
+    {
+        Backing::ModuleFile
+    } else {
+        Backing::OtherFile
+    }
 }
 
 /// XMEM-001: committed + MEM_PRIVATE + executable.
@@ -145,18 +180,56 @@ impl Rule for ExecutableWithoutBackingModule {
             .iter()
             .filter(|region| region.state == MemoryState::Commit && region.executable)
             .filter(|region| !context.modules.iter().any(|module| overlaps(module, region)))
-            .map(|region| Finding {
-                rule_id: self.id().to_string(),
-                name: self.name().to_string(),
-                severity: Severity::Medium,
-                confidence: Confidence::Medium,
-                evidence: vec![
-                    region_evidence(region)
-                        .observe("classification", region.classification.to_string())
-                        .observe("module_overlap", "none"),
-                ],
-                heuristic: "executable region outside any loaded module range".to_string(),
-                interpretation: "Potentially unbacked executable memory; JIT engines and mapped images can also appear outside module ranges".to_string(),
+            .filter_map(|region| {
+                // private 실행 영역은 XMEM-001/002가 더 나은 근거로 보고한다(중복 방지).
+                if region.classification == RegionClass::Private {
+                    return None;
+                }
+                let (backing, severity, confidence, heuristic, interpretation) =
+                    match backing_of(region, context.modules) {
+                        Backing::ModuleFile | Backing::Image => return None,
+                        Backing::OtherFile => (
+                            "file-mapped",
+                            Severity::Low,
+                            Confidence::Low,
+                            "executable mapping outside any loaded module range",
+                            "Disk-backed executable mapping outside the module list; manually mapped images and unusual data mappings can appear here",
+                        ),
+                        Backing::None => (
+                            "mapped-no-file",
+                            Severity::Medium,
+                            Confidence::Low,
+                            "executable memory without file backing or module overlap",
+                            "Executable memory outside modules and without observed file backing; JIT engines and .NET runtimes can also produce this",
+                        ),
+                    };
+                Some(Finding {
+                    rule_id: self.id().to_string(),
+                    name: self.name().to_string(),
+                    severity,
+                    confidence,
+                    evidence: vec![
+                        region_evidence(region)
+                            .observe("classification", region.classification.to_string())
+                            .observe(
+                                "region_type",
+                                region
+                                    .region_type
+                                    .map_or_else(|| "unknown".to_string(), |value| value.to_string()),
+                            )
+                            .observe(
+                                "mapped_file",
+                                region
+                                    .mapped_file
+                                    .clone()
+                                    .unwrap_or_else(|| "none".to_string()),
+                            )
+                            .observe("module_overlap", "none")
+                            .observe("backing", backing),
+                    ],
+                    heuristic: heuristic.to_string(),
+                    interpretation: interpretation.to_string(),
+                })
             })
             .collect()
     }
@@ -292,6 +365,29 @@ mod tests {
         }
     }
 
+    fn typed_region(
+        base: u64,
+        classification: RegionClass,
+        region_type: Option<MemoryType>,
+        protection_raw: u32,
+        mapped_file: Option<&str>,
+    ) -> MemoryRegion {
+        MemoryRegion {
+            base,
+            size: 0x1000,
+            state: MemoryState::Commit,
+            protection: Protection::new(protection_raw, true, true, protection_raw & 0x10 != 0),
+            allocation_protection: None,
+            region_type,
+            readable: true,
+            writable: matches!(protection_raw & 0xf0, 0x04 | 0x08 | 0x40 | 0x80),
+            executable: matches!(protection_raw & 0xf0, 0x10 | 0x20 | 0x40 | 0x80),
+            classification,
+            heuristics: Vec::new(),
+            mapped_file: mapped_file.map(str::to_string),
+        }
+    }
+
     fn module(name: &str, base: u64, size: u64) -> ModuleInfo {
         ModuleInfo {
             name: name.to_string(),
@@ -381,20 +477,137 @@ mod tests {
         );
     }
 
+    fn backing_observed(finding: &Finding) -> &str {
+        finding.evidence[0]
+            .observed
+            .get("backing")
+            .expect("backing evidence")
+    }
+
     #[test]
-    fn xmem003_fires_outside_modules_and_skips_when_modules_unknown() {
-        let regions = vec![
-            region(0x1000, Vec::new(), RegionClass::Private, 0x20),
-            region(0x8000_0000, Vec::new(), RegionClass::Private, 0x20),
-        ];
+    fn xmem003_skips_module_name_matched_mapping() {
+        let regions = vec![typed_region(
+            0x8000_0000,
+            RegionClass::Mapped,
+            Some(MemoryType::Mapped),
+            0x20,
+            Some(r"\Device\HarddiskVolume3\Windows\System32\srpapi.dll"),
+        )];
+        let modules = vec![module("srpapi.dll", 0x1000, 0x2000)];
+        let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &modules, &[]);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn xmem003_skips_image_regions() {
+        let regions = vec![typed_region(
+            0x8000_0000,
+            RegionClass::Image,
+            Some(MemoryType::Image),
+            0x20,
+            None,
+        )];
+        let modules = vec![module("mod.dll", 0x1000, 0x2000)];
+        let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &modules, &[]);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn xmem003_skips_private_executable_regions() {
+        let regions = vec![region(0x8000_0000, Vec::new(), RegionClass::Private, 0x40)];
+        let modules = vec![module("mod.dll", 0x1000, 0x2000)];
+        let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &modules, &[]);
+        assert!(findings.is_empty());
+    }
+
+    #[test]
+    fn xmem003_downgrades_other_file_mapping() {
+        let regions = vec![typed_region(
+            0x8000_0000,
+            RegionClass::Mapped,
+            Some(MemoryType::Mapped),
+            0x20,
+            Some(r"\Device\HarddiskVolume3\tmp\unknown.bin"),
+        )];
         let modules = vec![module("mod.dll", 0x1000, 0x2000)];
         let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &modules, &[]);
         assert_eq!(findings.len(), 1);
-        assert_eq!(findings[0].evidence[0].region_base, Some(0x8000_0000));
+        assert_eq!(findings[0].severity, Severity::Low);
+        assert_eq!(findings[0].confidence, Confidence::Low);
+        assert_eq!(backing_observed(&findings[0]), "file-mapped");
+        assert_eq!(
+            findings[0].evidence[0]
+                .observed
+                .get("mapped_file")
+                .map(String::as_str),
+            Some(r"\Device\HarddiskVolume3\tmp\unknown.bin")
+        );
+    }
+
+    #[test]
+    fn xmem003_reports_mapped_without_file_backing() {
+        let regions = vec![typed_region(
+            0x8000_0000,
+            RegionClass::Mapped,
+            Some(MemoryType::Mapped),
+            0x20,
+            None,
+        )];
+        let modules = vec![module("mod.dll", 0x1000, 0x2000)];
+        let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &modules, &[]);
+        assert_eq!(findings.len(), 1);
         assert_eq!(findings[0].severity, Severity::Medium);
-        assert_eq!(findings[0].confidence, Confidence::Medium);
-        let skipped = evaluate(&ExecutableWithoutBackingModule, &regions, &[], &[]);
-        assert!(skipped.is_empty());
+        assert_eq!(findings[0].confidence, Confidence::Low);
+        assert_eq!(backing_observed(&findings[0]), "mapped-no-file");
+        assert_eq!(
+            findings[0].evidence[0]
+                .observed
+                .get("region_type")
+                .map(String::as_str),
+            Some("MEM_MAPPED")
+        );
+        assert_eq!(
+            findings[0].evidence[0]
+                .observed
+                .get("mapped_file")
+                .map(String::as_str),
+            Some("none")
+        );
+    }
+
+    #[test]
+    fn xmem003_unknown_region_type_is_treated_as_no_backing() {
+        let regions = vec![typed_region(
+            0x8000_0000,
+            RegionClass::Unknown,
+            None,
+            0x20,
+            None,
+        )];
+        let modules = vec![module("mod.dll", 0x1000, 0x2000)];
+        let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &modules, &[]);
+        assert_eq!(findings.len(), 1);
+        assert_eq!(backing_observed(&findings[0]), "mapped-no-file");
+        assert_eq!(
+            findings[0].evidence[0]
+                .observed
+                .get("region_type")
+                .map(String::as_str),
+            Some("unknown")
+        );
+    }
+
+    #[test]
+    fn xmem003_skips_when_modules_unknown() {
+        let regions = vec![typed_region(
+            0x8000_0000,
+            RegionClass::Mapped,
+            Some(MemoryType::Mapped),
+            0x20,
+            None,
+        )];
+        let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &[], &[]);
+        assert!(findings.is_empty());
     }
 
     #[test]
