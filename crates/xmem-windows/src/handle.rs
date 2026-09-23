@@ -33,6 +33,14 @@ impl Drop for OwnedHandle {
     }
 }
 
+// SAFETY: HANDLE은 커널 객체를 가리키는 불투명한 값이며, Win32 API는 임의의
+// 스레드에서 같은 핸들을 사용해도 안전하다(커널 객체가 동기화를 담당한다).
+// 이 래퍼에는 내부 가변 상태가 없고, CloseHandle은 Drop에서 한 번만 호출된다.
+// (Drop은 &mut self라 동시 접근과 배타적이며, scan처럼 핸들을 공유 참조로
+// 여러 스레드에 넘기는 사용을 허용하기 위해 Send/Sync가 필요하다.)
+unsafe impl Send for OwnedHandle {}
+unsafe impl Sync for OwnedHandle {}
+
 #[cfg(test)]
 mod tests {
     use super::*;

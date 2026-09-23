@@ -1,8 +1,14 @@
-use xmem_core::{MemoryRegion, ProcessInfo, RegionClass, Result, XmemError};
-use xmem_memory::{LiveProcess, RegionMap};
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
-use crate::cli::{GlobalArgs, MemoryCmd};
-use crate::commands::render::{heur_short, human_size, truncate_tail};
+use xmem_core::{MemoryRegion, ProcessInfo, RegionClass, Result, ScanPattern, XmemError};
+use xmem_memory::{
+    DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RESULTS, LiveProcess, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE,
+    RegionFilters, RegionMap, ScanOptions, ScanReport, scan,
+};
+
+use crate::cli::{GlobalArgs, MemoryCmd, ScanArgs};
+use crate::commands::render::{heur_short, human_size, truncate, truncate_tail};
 use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
 
 pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
@@ -27,7 +33,7 @@ pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
                 }
             }
         }
-        MemoryCmd::Scan(_) => super::unimplemented("memory scan"),
+        MemoryCmd::Scan(args) => run_scan(args, global),
     }
 }
 
@@ -157,6 +163,251 @@ fn json_payload(info: &ProcessInfo, map: &RegionMap) -> serde_json::Value {
     })
 }
 
+fn cancel_flag() -> Arc<AtomicBool> {
+    static CANCEL: std::sync::OnceLock<Arc<AtomicBool>> = std::sync::OnceLock::new();
+    CANCEL
+        .get_or_init(|| {
+            let flag = Arc::new(AtomicBool::new(false));
+            let handler_flag = Arc::clone(&flag);
+            if ctrlc::set_handler(move || handler_flag.store(true, Ordering::SeqCst)).is_err() {
+                tracing::warn!("Ctrl+C 핸들러 설치 실패");
+            }
+            flag
+        })
+        .clone()
+}
+
+pub(crate) fn execute_scan(
+    pid: u32,
+    pattern: &ScanPattern,
+    options: &ScanOptions,
+    cancelled: &AtomicBool,
+) -> Result<(LiveProcess, ScanReport)> {
+    let live = LiveProcess::open(pid)?;
+    let report = scan(&live, pattern, options, cancelled)?;
+    Ok((live, report))
+}
+
+fn run_scan(args: &ScanArgs, global: &GlobalArgs) -> Result<()> {
+    let pattern = build_pattern(args)?;
+    let options = build_options(args)?;
+    let cancelled = cancel_flag();
+    cancelled.store(false, Ordering::SeqCst);
+    let (live, report) = execute_scan(args.pid.pid, &pattern, &options, &cancelled)?;
+    match resolve_mode(global.json) {
+        OutputMode::Json => {
+            let value =
+                serde_json::to_value(scan_json_payload(&live.info, &pattern, &options, &report))
+                    .map_err(|e| XmemError::JsonError {
+                        reason: e.to_string(),
+                    })?;
+            emit_json(&success_envelope(value));
+        }
+        OutputMode::Human => print!("{}", render_scan(&live.info, &pattern, &options, &report)),
+    }
+    if report.cancelled {
+        tracing::warn!("scan cancelled by user");
+        return Err(XmemError::Cancelled {
+            reason: "user interrupt".to_string(),
+        });
+    }
+    Ok(())
+}
+
+fn build_pattern(args: &ScanArgs) -> Result<ScanPattern> {
+    if let Some(p) = &args.pattern {
+        ScanPattern::hex(p)
+    } else if let Some(s) = &args.string {
+        ScanPattern::ascii(s)
+    } else if let Some(s) = &args.wide_string {
+        ScanPattern::wide(s)
+    } else {
+        Err(XmemError::InvalidInput {
+            reason: "--pattern/--string/--wide-string 중 하나가 필요함".to_string(),
+        })
+    }
+}
+
+fn parse_size(input: &str) -> Result<u64> {
+    let lower = input.trim().to_ascii_lowercase();
+    let lower = lower.strip_suffix('i').unwrap_or(&lower);
+    let (digits, mult) = match lower.chars().last() {
+        Some('k') => (&lower[..lower.len() - 1], 1024u64),
+        Some('m') => (&lower[..lower.len() - 1], 1024 * 1024),
+        Some('g') => (&lower[..lower.len() - 1], 1024 * 1024 * 1024),
+        _ => (lower, 1),
+    };
+    let value: u64 = digits.trim().parse().map_err(|_| XmemError::InvalidInput {
+        reason: format!("크기 파싱 실패: '{input}'"),
+    })?;
+    value
+        .checked_mul(mult)
+        .ok_or_else(|| XmemError::InvalidInput {
+            reason: format!("크기가 너무 큼: '{input}'"),
+        })
+}
+
+fn parse_addr(input: &str) -> Result<u64> {
+    let t = input.trim();
+    if let Some(hex) = t.strip_prefix("0x").or_else(|| t.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16)
+    } else {
+        t.parse::<u64>()
+    }
+    .map_err(|_| XmemError::InvalidInput {
+        reason: format!("주소 파싱 실패: '{input}'"),
+    })
+}
+
+fn parse_range(input: &str) -> Result<(u64, u64)> {
+    let (a, b) = input
+        .split_once(':')
+        .ok_or_else(|| XmemError::InvalidInput {
+            reason: format!("--range 형식은 START:END: '{input}'"),
+        })?;
+    let start = parse_addr(a)?;
+    let end = parse_addr(b)?;
+    if end <= start {
+        return Err(XmemError::InvalidInput {
+            reason: format!("--range의 END는 START보다 커야 함: '{input}'"),
+        });
+    }
+    Ok((start, end))
+}
+
+fn default_threads() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| n.get().saturating_sub(1))
+        .unwrap_or(1)
+        .clamp(1, 4)
+}
+
+fn build_options(args: &ScanArgs) -> Result<ScanOptions> {
+    let chunk_size = match &args.chunk_size {
+        Some(s) => {
+            let v = parse_size(s)? as usize;
+            if !(MIN_CHUNK_SIZE..=MAX_CHUNK_SIZE).contains(&v) {
+                return Err(XmemError::InvalidInput {
+                    reason: format!("--chunk-size는 {MIN_CHUNK_SIZE}~{MAX_CHUNK_SIZE} 바이트"),
+                });
+            }
+            v
+        }
+        None => DEFAULT_CHUNK_SIZE,
+    };
+    let threads = match args.threads {
+        Some(0) => {
+            return Err(XmemError::InvalidInput {
+                reason: "--threads는 1 이상".to_string(),
+            });
+        }
+        Some(n) => n,
+        None => default_threads(),
+    };
+    let filters = RegionFilters {
+        executable_only: args.executable_only,
+        private_only: args.private_only,
+        writable_only: args.writable_only,
+        range: args.range.as_deref().map(parse_range).transpose()?,
+        max_region_size: args
+            .max_region_size
+            .as_deref()
+            .map(parse_size)
+            .transpose()?,
+        all: args.all,
+    };
+    Ok(ScanOptions {
+        filters,
+        chunk_size,
+        threads,
+        max_results: args.max_results.unwrap_or(DEFAULT_MAX_RESULTS),
+        offset: args.offset,
+    })
+}
+
+fn render_scan(
+    info: &ProcessInfo,
+    pattern: &ScanPattern,
+    options: &ScanOptions,
+    report: &ScanReport,
+) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "process {} ({}), pattern {} \"{}\" ({} bytes), chunk {}, threads {}\n",
+        info.pid,
+        info.name,
+        pattern.kind.as_str(),
+        truncate(&pattern.source, 48),
+        pattern.len(),
+        options.chunk_size,
+        report.stats.threads,
+    ));
+    if report.policy_restricted {
+        out.push_str("policy: committed > 4 GiB — executable/private 영역만 스캔 (--all로 해제)\n");
+    }
+    out.push_str(
+        "ADDRESS             OFFSET    CLASS      PROTECTION     REGION              MAPPED FILE\n",
+    );
+    for m in &report.matches {
+        let mapped = match &m.mapped_file {
+            Some(p) => truncate_tail(p, 40),
+            None => "-".to_string(),
+        };
+        out.push_str(&format!(
+            "0x{:016x} +0x{:<6x} {:10} {:14} 0x{:016x} {}\n",
+            m.address,
+            m.offset,
+            m.class.to_string(),
+            m.protection.to_string(),
+            m.region_base,
+            mapped,
+        ));
+    }
+    out.push_str(&format!(
+        "{} matches; regions {}/{} scanned ({} skipped); bytes {}; read_failures {}; partial {}; elapsed {} ms\n",
+        report.matches.len(),
+        report.stats.regions_scanned,
+        report.stats.regions_total,
+        report.stats.regions_skipped,
+        human_size(report.stats.bytes_scanned),
+        report.stats.read_failures,
+        report.stats.partial_reads,
+        report.stats.elapsed_ms,
+    ));
+    if report.truncated {
+        out.push_str("warning: result cap reached (use --max-results 0 for unlimited)\n");
+    }
+    if report.cancelled {
+        out.push_str("warning: scan cancelled by user\n");
+    } else if report.stats.bytes_scanned == 0 && report.stats.read_failures > 0 {
+        out.push_str("warning: all reads failed (process may have exited or be protected)\n");
+    }
+    out
+}
+
+fn scan_json_payload(
+    info: &ProcessInfo,
+    pattern: &ScanPattern,
+    options: &ScanOptions,
+    report: &ScanReport,
+) -> serde_json::Value {
+    serde_json::json!({
+        "process": { "pid": info.pid, "name": info.name },
+        "pattern": { "kind": pattern.kind.as_str(), "source": pattern.source, "length": pattern.len() },
+        "options": {
+            "chunk_size": options.chunk_size,
+            "threads": options.threads,
+            "max_results": options.max_results,
+            "offset": options.offset,
+        },
+        "policy_restricted": report.policy_restricted,
+        "cancelled": report.cancelled,
+        "truncated": report.truncated,
+        "stats": report.stats,
+        "matches": report.matches,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -264,5 +515,120 @@ mod tests {
             .unwrap();
         assert!(line.contains("MEM_FREE"));
         assert!(line.contains(" free "));
+    }
+
+    #[test]
+    fn parse_size_units() {
+        assert_eq!(parse_size("512").unwrap(), 512);
+        assert_eq!(parse_size("4k").unwrap(), 4096);
+        assert_eq!(parse_size("16Mi").unwrap(), 16 * 1024 * 1024);
+        assert!(parse_size("abc").is_err());
+    }
+
+    #[test]
+    fn parse_range_and_addr() {
+        assert_eq!(parse_range("0x1000:0x2000").unwrap(), (0x1000, 0x2000));
+        assert_eq!(parse_range("4096:8192").unwrap(), (4096, 8192));
+        assert!(parse_range("0x2000:0x1000").is_err());
+        assert!(parse_range("0x1000").is_err());
+    }
+
+    #[test]
+    fn cancelled_flag_yields_cancelled_report() {
+        let pattern = ScanPattern::ascii("xmem").unwrap();
+        let options = ScanOptions {
+            max_results: 1,
+            ..ScanOptions::default()
+        };
+        let cancelled = AtomicBool::new(true);
+        let (_live, report) =
+            execute_scan(xmem_windows::current_pid(), &pattern, &options, &cancelled).unwrap();
+        assert!(report.cancelled);
+        assert!(report.matches.is_empty());
+    }
+
+    fn sample_info() -> ProcessInfo {
+        ProcessInfo {
+            pid: 42,
+            ppid: None,
+            name: "demo.exe".to_string(),
+            image_path: None,
+            arch: xmem_core::ProcessArch::X64,
+            session_id: None,
+            creation_time: None,
+            command_line: None,
+            user: None,
+            memory_stats: None,
+            thread_count: None,
+            module_count: None,
+        }
+    }
+
+    fn sample_match() -> xmem_memory::ScanMatch {
+        xmem_memory::ScanMatch {
+            address: 0x1004,
+            region_base: 0x1000,
+            region_size: 0x1000,
+            offset: 4,
+            class: RegionClass::Private,
+            protection: Protection::new(0x40, true, true, true),
+            mapped_file: None,
+        }
+    }
+
+    fn sample_report() -> ScanReport {
+        let matches = vec![sample_match()];
+        ScanReport {
+            stats: xmem_memory::ScanStats {
+                regions_total: 4,
+                regions_scanned: 3,
+                regions_skipped: 1,
+                bytes_scanned: 0x3000,
+                read_failures: 0,
+                partial_reads: 0,
+                matches: matches.len(),
+                threads: 2,
+                elapsed_ms: 7,
+            },
+            matches,
+            cancelled: false,
+            truncated: false,
+            policy_restricted: false,
+        }
+    }
+
+    #[test]
+    fn render_scan_lists_matches_and_stats() {
+        let pattern = ScanPattern::hex("48 8B ?? ?? C0").unwrap();
+        let options = ScanOptions {
+            max_results: 5,
+            ..ScanOptions::default()
+        };
+        let mut report = sample_report();
+        report.truncated = true;
+        let out = render_scan(&sample_info(), &pattern, &options, &report);
+        assert!(out.contains("hex"));
+        assert!(out.contains("ADDRESS"));
+        assert!(out.contains("0x0000000000001000"));
+        assert!(out.contains("+0x4"));
+        assert!(out.contains("1 matches;"));
+        assert!(out.contains("result cap reached"));
+        assert!(!out.contains("cancelled"));
+    }
+
+    #[test]
+    fn scan_json_payload_shape() {
+        let value = scan_json_payload(
+            &sample_info(),
+            &ScanPattern::ascii("xmem").unwrap(),
+            &ScanOptions::default(),
+            &sample_report(),
+        );
+        assert_eq!(value["process"]["pid"], 42);
+        assert_eq!(value["pattern"]["kind"], "ascii");
+        assert_eq!(value["truncated"], false);
+        assert_eq!(value["stats"]["regions_scanned"], 3);
+        assert_eq!(value["matches"].as_array().unwrap().len(), 1);
+        assert_eq!(value["matches"][0]["offset"], 4);
     }
 }

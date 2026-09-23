@@ -1,5 +1,5 @@
 //! CLI 트리. 전 명령의 인터페이스 계약을 여기서 확정한다.
-use clap::{Args, Parser, Subcommand};
+use clap::{ArgGroup, Args, Parser, Subcommand};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -92,8 +92,51 @@ pub enum ProcessCmd {
 pub enum MemoryCmd {
     /// Virtual Memory Map
     Map(PidArg),
-    /// 메모리 패턴/문자열 검색
-    Scan(PidArg),
+    /// 메모리에서 패턴/문자열을 검색한다.
+    Scan(ScanArgs),
+}
+
+#[derive(Debug, Args)]
+#[command(group(ArgGroup::new("needle").required(true).multiple(false).args(["pattern", "string", "wide_string"])))]
+pub struct ScanArgs {
+    #[command(flatten)]
+    pub pid: PidArg,
+    /// 16진 바이트 패턴 (예: "48 8B ?? ?? C0")
+    #[arg(long)]
+    pub pattern: Option<String>,
+    /// ASCII 문자열
+    #[arg(long)]
+    pub string: Option<String>,
+    /// UTF-16LE 문자열
+    #[arg(long = "wide-string")]
+    pub wide_string: Option<String>,
+    #[arg(long = "executable-only")]
+    pub executable_only: bool,
+    #[arg(long = "private-only")]
+    pub private_only: bool,
+    #[arg(long = "writable-only")]
+    pub writable_only: bool,
+    /// 검색할 주소 범위 (예: "0x1000:0x2000")
+    #[arg(long)]
+    pub range: Option<String>,
+    /// 이 크기를 초과하는 영역은 건너뛴다 (예: "8Mi")
+    #[arg(long = "max-region-size")]
+    pub max_region_size: Option<String>,
+    /// 영역 내 상대 오프셋이 정확히 N인 매치만 보고
+    #[arg(long)]
+    pub offset: Option<u64>,
+    /// 최대 결과 수 (0 = 무제한, 기본 1024)
+    #[arg(long = "max-results")]
+    pub max_results: Option<usize>,
+    /// 청크 크기 (기본 1Mi, 허용 4Ki~16Mi)
+    #[arg(long = "chunk-size")]
+    pub chunk_size: Option<String>,
+    /// worker 스레드 수 (기본 min(논리CPU-1, 4))
+    #[arg(long)]
+    pub threads: Option<usize>,
+    /// 대형 프로세스 정책을 해제하고 모든 committed 영역을 스캔
+    #[arg(long)]
+    pub all: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -189,5 +232,51 @@ mod tests {
     fn parses_verbose_count() {
         let cli = parse(&["xmem", "-vv", "process", "list"]).unwrap();
         assert_eq!(cli.global.verbose, 2);
+    }
+
+    #[test]
+    fn memory_scan_parses_pattern_and_filters() {
+        let cli = Cli::try_parse_from([
+            "xmem",
+            "memory",
+            "scan",
+            "--pid",
+            "42",
+            "--pattern",
+            "48 8B ??",
+            "--executable-only",
+            "--threads",
+            "2",
+        ])
+        .unwrap();
+        let Command::Memory { cmd } = cli.command else {
+            panic!("memory 명령이 아님");
+        };
+        let MemoryCmd::Scan(args) = cmd else {
+            panic!("scan 명령이 아님");
+        };
+        assert_eq!(args.pid.pid, 42);
+        assert_eq!(args.pattern.as_deref(), Some("48 8B ??"));
+        assert!(args.executable_only);
+        assert_eq!(args.threads, Some(2));
+    }
+
+    #[test]
+    fn memory_scan_requires_exactly_one_needle() {
+        assert!(Cli::try_parse_from(["xmem", "memory", "scan", "--pid", "42"]).is_err());
+        assert!(
+            Cli::try_parse_from([
+                "xmem",
+                "memory",
+                "scan",
+                "--pid",
+                "42",
+                "--pattern",
+                "90",
+                "--string",
+                "hi"
+            ])
+            .is_err()
+        );
     }
 }

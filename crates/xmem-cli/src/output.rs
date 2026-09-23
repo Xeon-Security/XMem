@@ -56,6 +56,8 @@ fn error_kind(err: &XmemError) -> &'static str {
         XmemError::SnapshotError { .. } => "snapshot_error",
         XmemError::PolicyDenied { .. } => "policy_denied",
         XmemError::Unimplemented { .. } => "unimplemented",
+        XmemError::InvalidInput { .. } => "invalid_input",
+        XmemError::Cancelled { .. } => "cancelled",
         XmemError::WindowsApi { .. } => "windows_api",
         XmemError::JsonError { .. } => "json_error",
         XmemError::Io(_) => "io",

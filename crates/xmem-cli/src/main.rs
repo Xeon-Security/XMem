@@ -19,7 +19,9 @@ fn main() -> ExitCode {
     match commands::dispatch(&cli) {
         Ok(()) => ExitCode::SUCCESS,
         Err(err) => {
-            report_error(&err, resolve_mode(cli.global.json));
+            if !matches!(err, XmemError::Cancelled { .. }) {
+                report_error(&err, resolve_mode(cli.global.json));
+            }
             exit_code_for(&err)
         }
     }
@@ -64,6 +66,7 @@ fn report_error(err: &XmemError, mode: OutputMode) {
 fn exit_code_for(err: &XmemError) -> ExitCode {
     match err {
         XmemError::PolicyDenied { .. } => ExitCode::from(3),
+        XmemError::Cancelled { .. } => ExitCode::from(130),
         _ => ExitCode::from(1),
     }
 }
