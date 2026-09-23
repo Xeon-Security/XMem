@@ -31,7 +31,7 @@ pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
     Ok(())
 }
 
-fn arch_str(arch: ProcessArch) -> &'static str {
+pub(crate) fn arch_str(arch: ProcessArch) -> &'static str {
     match arch {
         ProcessArch::X64 => "x64",
         ProcessArch::X86 => "x86",

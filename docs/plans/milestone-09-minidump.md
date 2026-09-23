@@ -985,7 +985,7 @@ fn run_create(pid: u32, output: &str, full: bool, global: &GlobalArgs) -> Result
     let mut summary = create_dump_file(pid, output, full)?;
     summary.elapsed_ms = started.elapsed().as_millis() as u64;
 
-    match resolve_mode(global) {
+    match resolve_mode(global.json) {
         OutputMode::Json => {
             emit_json(&success_envelope(json!({
                 "output": summary.output,
@@ -1056,7 +1056,7 @@ fn run_analyze(file: &str, global: &GlobalArgs) -> Result<()> {
     let findings = xmem_detection::detect_source(&source)?;
     let analysis = source.analysis();
 
-    match resolve_mode(global) {
+    match resolve_mode(global.json) {
         OutputMode::Json => {
             emit_json(&success_envelope(dump_json_payload(&analysis, &findings)));
             Ok(())

@@ -38,20 +38,20 @@ pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
 }
 
 #[derive(Debug, Default, PartialEq, Eq)]
-struct MapSummary {
-    total: usize,
-    committed: usize,
-    reserved: usize,
-    free: usize,
-    image: usize,
-    mapped: usize,
-    private: usize,
-    executable: usize,
-    heuristics: usize,
-    committed_bytes: u64,
+pub(crate) struct MapSummary {
+    pub(crate) total: usize,
+    pub(crate) committed: usize,
+    pub(crate) reserved: usize,
+    pub(crate) free: usize,
+    pub(crate) image: usize,
+    pub(crate) mapped: usize,
+    pub(crate) private: usize,
+    pub(crate) executable: usize,
+    pub(crate) heuristics: usize,
+    pub(crate) committed_bytes: u64,
 }
 
-fn summarize(regions: &[MemoryRegion]) -> MapSummary {
+pub(crate) fn summarize(regions: &[MemoryRegion]) -> MapSummary {
     let mut s = MapSummary::default();
     for r in regions {
         s.total += 1;

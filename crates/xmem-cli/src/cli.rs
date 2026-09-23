@@ -171,6 +171,9 @@ pub enum DumpCmd {
         /// 출력 파일 (.dmp)
         #[arg(long)]
         output: String,
+        /// 전체 메모리 포함 (크고 느림, 디스크 사전 검사)
+        #[arg(long)]
+        full: bool,
     },
     /// 미니덤프 분석
     Analyze { file: String },
@@ -306,5 +309,22 @@ mod tests {
             panic!("modules 명령이 아님");
         };
         assert!(!args.pe);
+    }
+
+    #[test]
+    fn parses_dump_create_with_full_flag() {
+        let cli = parse(&[
+            "xmem", "dump", "create", "--pid", "42", "--output", "t.dmp", "--full",
+        ])
+        .unwrap();
+        let Command::Dump { cmd } = cli.command else {
+            panic!("dump가 아님");
+        };
+        let DumpCmd::Create { pid, output, full } = cmd else {
+            panic!("create가 아님");
+        };
+        assert_eq!(pid.pid, 42);
+        assert_eq!(output, "t.dmp");
+        assert!(full);
     }
 }
