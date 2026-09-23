@@ -88,7 +88,7 @@ mod tests {
     #[test]
     fn render_threads_shows_correlation() {
         let threads = vec![
-            sample_thread(100, Some(0x14000_1234), Some("target.exe")),
+            sample_thread(100, Some(0x0001_4000_1234), Some("target.exe")),
             sample_thread(200, None, None),
         ];
         let text = render_threads(&sample_info(), &threads);
@@ -100,7 +100,11 @@ mod tests {
 
     #[test]
     fn threads_json_payload_shape() {
-        let threads = vec![sample_thread(100, Some(0x14000_1234), Some("target.exe"))];
+        let threads = vec![sample_thread(
+            100,
+            Some(0x0001_4000_1234),
+            Some("target.exe"),
+        )];
         let value = json_payload(&sample_info(), &threads);
         assert_eq!(value["process"]["pid"], 1234);
         assert_eq!(value["thread_count"], 1);

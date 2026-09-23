@@ -577,7 +577,7 @@ mod tests {
     #[test]
     fn render_modules_lists_rows_and_summary() {
         let modules = vec![
-            sample_module("target.exe", 0x14000_0000, Some(r"C:\lab\target.exe")),
+            sample_module("target.exe", 0x0001_4000_0000, Some(r"C:\lab\target.exe")),
             sample_module("kernel32.dll", 0x7ffb_0000, None),
         ];
         let text = render_modules(&sample_info(), &modules);
@@ -589,12 +589,12 @@ mod tests {
 
     #[test]
     fn modules_json_payload_shape() {
-        let modules = vec![sample_module("target.exe", 0x14000_0000, None)];
+        let modules = vec![sample_module("target.exe", 0x0001_4000_0000, None)];
         let value = json_payload(&sample_info(), &modules);
         assert_eq!(value["process"]["pid"], 1234);
         assert_eq!(value["module_count"], 1);
         assert_eq!(value["modules"][0]["name"], "target.exe");
-        assert_eq!(value["modules"][0]["base"], 0x14000_0000u64);
+        assert_eq!(value["modules"][0]["base"], 0x0001_4000_0000u64);
     }
 }
 ```
@@ -638,7 +638,7 @@ mod tests {
     #[test]
     fn render_threads_shows_correlation() {
         let threads = vec![
-            sample_thread(100, Some(0x14000_1234), Some("target.exe")),
+            sample_thread(100, Some(0x0001_4000_1234), Some("target.exe")),
             sample_thread(200, None, None),
         ];
         let text = render_threads(&sample_info(), &threads);
@@ -650,7 +650,7 @@ mod tests {
 
     #[test]
     fn threads_json_payload_shape() {
-        let threads = vec![sample_thread(100, Some(0x14000_1234), Some("target.exe"))];
+        let threads = vec![sample_thread(100, Some(0x0001_4000_1234), Some("target.exe"))];
         let value = json_payload(&sample_info(), &threads);
         assert_eq!(value["process"]["pid"], 1234);
         assert_eq!(value["thread_count"], 1);
