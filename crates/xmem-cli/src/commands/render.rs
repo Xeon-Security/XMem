@@ -46,6 +46,20 @@ pub(crate) fn heur_short(h: Heuristic) -> &'static str {
     }
 }
 
+/// 주소 옵션을 `0x…` 또는 `-`로 렌더한다.
+pub(crate) fn opt_hex(value: Option<u64>) -> String {
+    value
+        .map(|v| format!("0x{v:016x}"))
+        .unwrap_or_else(|| "-".to_string())
+}
+
+/// 숫자 옵션을 문자열 또는 `-`로 렌더한다.
+pub(crate) fn opt_num<T: std::fmt::Display>(value: Option<T>) -> String {
+    value
+        .map(|v| v.to_string())
+        .unwrap_or_else(|| "-".to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -74,5 +88,11 @@ mod tests {
     fn heur_short_tags() {
         assert_eq!(heur_short(Heuristic::ExecutablePrivate), "exec-private");
         assert_eq!(heur_short(Heuristic::WritableExecutable), "wx");
+    }
+
+    #[test]
+    fn opt_hex_formats_optional_addresses() {
+        assert_eq!(opt_hex(Some(0x7ffb_1234_5678)), "0x00007ffb12345678");
+        assert_eq!(opt_hex(None), "-");
     }
 }

@@ -1,5 +1,5 @@
 use crate::cli::{GlobalArgs, ProcessCmd};
-use crate::commands::render::truncate;
+use crate::commands::render::{opt_num, truncate};
 use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
 use xmem_core::{ProcessArch, ProcessInfo, Result, XmemError};
 
@@ -29,13 +29,6 @@ pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
         }
     }
     Ok(())
-}
-
-fn opt_num<T: std::fmt::Display>(v: Option<T>) -> String {
-    match v {
-        Some(x) => x.to_string(),
-        None => "-".to_string(),
-    }
 }
 
 fn arch_str(arch: ProcessArch) -> &'static str {

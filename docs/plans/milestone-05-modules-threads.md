@@ -605,6 +605,7 @@ mod tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use xmem_core::ProcessArch;
 
     fn sample_info() -> ProcessInfo {
         ProcessInfo {
@@ -703,7 +704,7 @@ pub fn run(args: &PidArg, global: &GlobalArgs) -> Result<()> {
         OutputMode::Json => {
             let value = serde_json::to_value(json_payload(&live.info, &modules))
                 .map_err(|e| XmemError::JsonError { reason: e.to_string() })?;
-            emit_json(&success_envelope(value))?;
+            emit_json(&success_envelope(value));
         }
         OutputMode::Human => print!("{}", render_modules(&live.info, &modules)),
     }
@@ -762,7 +763,7 @@ pub fn run(args: &PidArg, global: &GlobalArgs) -> Result<()> {
         OutputMode::Json => {
             let value = serde_json::to_value(json_payload(&live.info, &threads))
                 .map_err(|e| XmemError::JsonError { reason: e.to_string() })?;
-            emit_json(&success_envelope(value))?;
+            emit_json(&success_envelope(value));
         }
         OutputMode::Human => print!("{}", render_threads(&live.info, &threads)),
     }
