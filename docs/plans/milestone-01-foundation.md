@@ -1,6 +1,6 @@
 # XMem Milestone 1 — 기반 구조 Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** XMem의 Cargo workspace와 Core 계층(모델·에러·Evidence·Guard), Win32 추상화(RAII Handle), CLI 골격, 로깅을 구현하고 `fmt/check/test/clippy` 게이트를 통과한다.
 
@@ -42,7 +42,7 @@
 **Interfaces:**
 - Produces: workspace members `xmem-core`, `xmem-windows`, `xmem-cli`, bin 이름 `xmem`.
 
-- [ ] **Step 1: workspace 파일 작성**
+- [x] **Step 1: workspace 파일 작성**
 
 `Cargo.toml`:
 ```toml
@@ -94,7 +94,7 @@ targets = ["x86_64-pc-windows-msvc"]
 *.pdb
 ```
 
-- [ ] **Step 2: crate 골격 작성**
+- [x] **Step 2: crate 골격 작성**
 
 `crates/xmem-core/Cargo.toml`:
 ```toml
@@ -180,12 +180,12 @@ fn main() {
 ```
 > Task 2에서 `xmem_core::VERSION`을 추가하기 전까지는 `env!("CARGO_PKG_VERSION")`로 대체한다.
 
-- [ ] **Step 3: 빌드 확인**
+- [x] **Step 3: 빌드 확인**
 
 Run: `cargo check --workspace`
 Expected: `Finished` (windows crate 최초 컴파일로 수 분 소요 가능)
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add Cargo.toml rust-toolchain.toml .gitignore crates
@@ -203,7 +203,7 @@ git commit -m "chore: cargo workspace 골격 (core/windows/cli)"
 **Interfaces:**
 - Produces: `xmem_core::VERSION: &str`, `SNAPSHOT_FORMAT_VERSION: u16`, `JSON_SCHEMA_VERSION: u32`, `XmemError` enum, `xmem_core::Result<T>`, 재수출 `XmemError`, `Result`.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `crates/xmem-core/src/error.rs` 하단:
 ```rust
@@ -246,12 +246,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo test -p xmem-core error`
 Expected: 컴파일 실패(`error.rs` 없음)
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-core/src/version.rs`:
 ```rust
@@ -324,12 +324,12 @@ pub use error::{Result, XmemError};
 pub use version::{JSON_SCHEMA_VERSION, SNAPSHOT_FORMAT_VERSION, VERSION};
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `cargo test -p xmem-core`
 Expected: `test result: ok. 4 passed`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/xmem-core
@@ -347,7 +347,7 @@ git commit -m "feat(core): 버전 상수와 구조화 에러 모델"
 **Interfaces:**
 - Produces: `ProcessArch`, `MemoryStats`, `ProcessInfo`, `MemoryState`, `MemoryType`, `Protection`, `RegionClass`, `Heuristic`, `MemoryRegion`, `ModuleInfo`, `ThreadInfo`, `Severity`, `Confidence`, `Evidence`, `Finding` (모두 serde roundtrip 가능).
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `crates/xmem-core/src/evidence.rs` 하단:
 ```rust
@@ -384,12 +384,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo test -p xmem-core evidence`
 Expected: 컴파일 실패
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-core/src/evidence.rs`:
 ```rust
@@ -593,12 +593,12 @@ pub use evidence::{Confidence, Evidence, Finding, Severity};
 pub use model::*;
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `cargo test -p xmem-core`
 Expected: 모든 테스트 통과
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/xmem-core
@@ -617,7 +617,7 @@ git commit -m "feat(core): 프로세스/메모리/모듈/스레드 모델과 Evi
 - Produces: `ProcessIdentity<'a>`, `PolicyDecision`, `check_state_change(&ProcessIdentity) -> PolicyDecision`, `ReadOutcome`, `MemorySource`(object-safe).
 - Consumes: `ProcessInfo`, `MemoryRegion`, `ModuleInfo`, `ThreadInfo`, `XmemError`.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `guard.rs` 하단:
 ```rust
@@ -674,12 +674,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo test -p xmem-core guard`
 Expected: 컴파일 실패
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-core/src/guard.rs`:
 ```rust
@@ -767,12 +767,12 @@ pub trait MemorySource {
 
 `lib.rs`에 추가: `pub mod guard; pub mod source;`
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `cargo test -p xmem-core`
 Expected: 모든 테스트 통과
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/xmem-core
@@ -793,7 +793,7 @@ git commit -m "feat(core): 보호 프로세스 guard 정책과 MemorySource 추�
 
 > `cargo test -p xmem-windows`는 링크가 필요하므로 MSVC Build Tools 설치 완료 후 실행한다. 설치 전에는 `cargo check -p xmem-windows`까지만.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `error.rs` 하단:
 ```rust
@@ -901,12 +901,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-windows`
 Expected: 컴파일 실패
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `error.rs`:
 ```rust
@@ -1030,12 +1030,12 @@ pub use error::{last_win32_error, map_win32, win32_code_from_hresult};
 pub use handle::OwnedHandle;
 ```
 
-- [ ] **Step 4: 통과 확인 (MSVC 설치 후)**
+- [x] **Step 4: 통과 확인 (MSVC 설치 후)**
 
 Run: `cargo test -p xmem-windows`
 Expected: `test result: ok`
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add crates/xmem-windows
@@ -1054,7 +1054,7 @@ git commit -m "feat(windows): Win32 에러 매핑, RAII handle, 프로세스 pri
 - Produces: `Cli`, `GlobalArgs`, `Command`(clap), `OutputMode`, `commands::dispatch(&Cli) -> Result<()>`, `exit_code_for(&XmemError) -> ExitCode`.
 - Consumes: `xmem_core::{XmemError, VERSION, JSON_SCHEMA_VERSION}`.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `cli.rs` 하단:
 ```rust
@@ -1113,12 +1113,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-cli`
 Expected: 컴파일 실패
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `cli.rs`:
 ```rust
@@ -1424,18 +1424,18 @@ fn exit_code_for(err: &XmemError) -> ExitCode {
 ```
 > `init_tracing`의 `EnvFilter::try_from_default_env` 실패는 `unwrap_or_else`로 처리(런타임 unwrap 금지). `try_init` 실패는 무시(테스트에서 중복 init 방지).
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `cargo test -p xmem-cli`
 Expected: 파싱 테스트 6개 통과
 
-- [ ] **Step 5: 스모크 실행**
+- [x] **Step 5: 스모크 실행**
 
 Run: `cargo run -p xmem-cli -- --version` → `xmem 0.1.0`
 Run: `cargo run -p xmem-cli -- process list` → stderr `error: not implemented yet: process list`, exit code 1
 Run: `cargo run -p xmem-cli -- --json process list` → stdout JSON envelope(`"ok":false`), exit 1
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add crates/xmem-cli
@@ -1450,16 +1450,16 @@ git commit -m "feat(cli): 전체 명령 트리, 로깅 분리, JSON 오류 envel
 - Create: `README.md`, `CONTRIBUTING.md`
 - Modify: 없음
 
-- [ ] **Step 1: README 작성**
+- [x] **Step 1: README 작성**
 
 포함: Overview, Status 표(Implemented/Experimental/Planned), Requirements(Rust 1.98+, MSVC Build Tools, Windows 10/11 x64), Build, Quick Start, CLI Usage, Architecture 링크(`docs/architecture.md`), Testing, Limitations(비관리자 제약, user-mode 한정), Roadmap(M1~M12 요약).
 **구현되지 않은 기능을 구현된 것처럼 쓰지 않는다.** M1 시점 표기: workspace/core/windows/cli 골격 = Implemented, 나머지 = Planned.
 
-- [ ] **Step 2: CONTRIBUTING 작성**
+- [x] **Step 2: CONTRIBUTING 작성**
 
 포함: build/lint/test 명령, 커밋 규칙, unsafe 규칙(xmem-windows만), 에러 모델 규칙(XmemError, anyhow 제한), 문서 규칙(미검증 내용 금지), 성능/자원 규칙(bounded buffer, read-only 기본).
 
-- [ ] **Step 3: 전체 게이트 실행**
+- [x] **Step 3: 전체 게이트 실행**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -1470,14 +1470,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 ```
 Expected: 전부 성공, warning 0.
 
-- [ ] **Step 4: 반복 실행 검증 (누수/안정성)**
+- [x] **Step 4: 반복 실행 검증 (누수/안정성)**
 
 ```powershell
 1..3 | ForEach-Object { cargo run -q -p xmem-cli -- process list; "exit=$LASTEXITCODE" }
 ```
 Expected: 매회 동일한 결과(exit 1), panic 없음.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add README.md CONTRIBUTING.md
