@@ -1,4 +1,58 @@
 //! Structured error model. 모든 실패는 원인과 context를 포함한다.
+use std::io;
+use thiserror::Error;
+
+#[derive(Debug, Error)]
+pub enum XmemError {
+    #[error("access denied: {context}")]
+    AccessDenied { context: String },
+
+    #[error("process {pid} has exited")]
+    ProcessExited { pid: u32 },
+
+    #[error("invalid handle {handle:#x}")]
+    InvalidHandle { handle: u64 },
+
+    #[error("invalid address {address:#018x}")]
+    InvalidAddress { address: u64 },
+
+    #[error("partial read at {address:#018x}: requested {requested} bytes, read {read}")]
+    PartialRead {
+        address: u64,
+        requested: usize,
+        read: usize,
+    },
+
+    #[error("unsupported architecture: {detail}")]
+    UnsupportedArchitecture { detail: String },
+
+    #[error("invalid PE: {reason}")]
+    InvalidPe { reason: String },
+
+    #[error("dump error: {reason}")]
+    DumpError { reason: String },
+
+    #[error("snapshot error: {reason}")]
+    SnapshotError { reason: String },
+
+    #[error("policy denied: {reason}")]
+    PolicyDenied { reason: String },
+
+    #[error("not implemented yet: {feature}")]
+    Unimplemented { feature: &'static str },
+
+    #[error("windows api {api} failed (code {code}): {message}")]
+    WindowsApi {
+        api: &'static str,
+        code: u32,
+        message: String,
+    },
+
+    #[error(transparent)]
+    Io(#[from] io::Error),
+}
+
+pub type Result<T> = std::result::Result<T, XmemError>;
 
 #[cfg(test)]
 mod tests {
