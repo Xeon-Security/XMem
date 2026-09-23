@@ -6,6 +6,8 @@ use crate::config::GuiConfig;
 use crate::log::{LogBuffer, LogLevel};
 use crate::task::BackgroundTask;
 use crate::theme::{self, ThemeMode};
+use crate::views::map::MapSort;
+use crate::views::modules::ModuleBundle;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -104,8 +106,17 @@ pub struct XMemApp {
     pub list_task: BackgroundTask<Vec<xmem_core::ProcessInfo>>,
     pub process_filter: String,
     pub processes: Vec<xmem_core::ProcessInfo>,
-    pub overview_task: BackgroundTask<xmem_core::ProcessInfo>,
+    pub overview_task: BackgroundTask<(u32, xmem_core::ProcessInfo)>,
     pub overview_info: Option<xmem_core::ProcessInfo>,
+    pub map_task: BackgroundTask<(u32, xmem_memory::RegionMap)>,
+    pub map: Option<xmem_memory::RegionMap>,
+    pub map_filters: xmem_memory::RegionFilters,
+    pub map_sort: MapSort,
+    pub modules_task: BackgroundTask<(u32, ModuleBundle)>,
+    pub modules_bundle: Option<ModuleBundle>,
+    pub modules_pe: bool,
+    pub threads_task: BackgroundTask<(u32, Vec<xmem_core::ThreadInfo>)>,
+    pub threads: Option<Vec<xmem_core::ThreadInfo>>,
 }
 
 impl XMemApp {
@@ -132,6 +143,15 @@ impl XMemApp {
             processes: Vec::new(),
             overview_task: BackgroundTask::idle(),
             overview_info: None,
+            map_task: BackgroundTask::idle(),
+            map: None,
+            map_filters: xmem_memory::RegionFilters::default(),
+            map_sort: MapSort::AddressAsc,
+            modules_task: BackgroundTask::idle(),
+            modules_bundle: None,
+            modules_pe: false,
+            threads_task: BackgroundTask::idle(),
+            threads: None,
         };
         app.refresh_processes();
         if let Some(pid) = initial_pid {
@@ -148,12 +168,44 @@ impl XMemApp {
     pub fn select_process(&mut self, pid: u32) {
         self.selected_pid = Some(pid);
         self.start_overview(pid);
+        self.map = None;
+        self.modules_bundle = None;
+        self.threads = None;
     }
 
     pub fn start_overview(&mut self, pid: u32) {
         self.overview_info = None;
         self.overview_task = BackgroundTask::spawn("프로세스 정보", move |_| {
-            xmem_windows::process_info(pid)
+            Ok((pid, xmem_windows::process_info(pid)?))
+        });
+    }
+
+    pub fn start_map(&mut self, pid: u32) {
+        self.map = None;
+        self.map_task = BackgroundTask::spawn("메모리맵", move |_| {
+            Ok((pid, xmem_memory::LiveProcess::open(pid)?.region_map()?))
+        });
+    }
+
+    pub fn start_modules(&mut self, pid: u32) {
+        self.modules_bundle = None;
+        let with_pe = self.modules_pe;
+        self.modules_task = BackgroundTask::spawn("모듈", move |_| {
+            let live = xmem_memory::LiveProcess::open(pid)?;
+            let modules = live.modules()?;
+            let pe = if with_pe {
+                Some(crate::views::modules::collect_pe(&live, &modules))
+            } else {
+                None
+            };
+            Ok((pid, ModuleBundle { modules, pe }))
+        });
+    }
+
+    pub fn start_threads(&mut self, pid: u32) {
+        self.threads = None;
+        self.threads_task = BackgroundTask::spawn("스레드", move |_| {
+            Ok((pid, xmem_memory::LiveProcess::open(pid)?.threads()?))
         });
     }
 
@@ -185,9 +237,28 @@ impl eframe::App for XMemApp {
             self.processes = list;
         }
         if self.overview_task.poll()
-            && let Some(info) = self.overview_task.take_done()
+            && let Some((task_pid, info)) = self.overview_task.take_done()
+            && Some(task_pid) == self.selected_pid
         {
             self.overview_info = Some(info);
+        }
+        if self.map_task.poll()
+            && let Some((task_pid, map)) = self.map_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.map = Some(map);
+        }
+        if self.modules_task.poll()
+            && let Some((task_pid, bundle)) = self.modules_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.modules_bundle = Some(bundle);
+        }
+        if self.threads_task.poll()
+            && let Some((task_pid, threads)) = self.threads_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.threads = Some(threads);
         }
         let palette = theme::palette(self.theme);
 
@@ -253,8 +324,27 @@ impl eframe::App for XMemApp {
                 crate::views::process::dropdown(ui, self);
             }
             ui.separator();
+            if let Some(pid) = self.selected_pid {
+                match self.tab {
+                    Tab::Map if self.map.is_none() && !self.map_task.is_running() => {
+                        self.start_map(pid);
+                    }
+                    Tab::Modules
+                        if self.modules_bundle.is_none() && !self.modules_task.is_running() =>
+                    {
+                        self.start_modules(pid);
+                    }
+                    Tab::Threads if self.threads.is_none() && !self.threads_task.is_running() => {
+                        self.start_threads(pid);
+                    }
+                    _ => {}
+                }
+            }
             match self.tab {
                 Tab::Overview => crate::views::overview::ui(ui, self),
+                Tab::Map => crate::views::map::ui(ui, self),
+                Tab::Modules => crate::views::modules::ui(ui, self),
+                Tab::Threads => crate::views::threads::ui(ui, self),
                 _ => {
                     ui.label(egui::RichText::new("이 탭은 다음 Task에서 채워집니다").weak());
                 }

@@ -1,0 +1,182 @@
+//! 모듈 탭 (PE 요약 포함).
+
+use xmem_core::{MemorySource, ModuleInfo, ProcessArch};
+use xmem_memory::LiveProcess;
+use xmem_pe::{PE_HEADER_PREFIX, PeInfo, parse_pe};
+
+use crate::app::XMemApp;
+use crate::task::TaskState;
+use crate::views::map::{human_size, opt_hex};
+use crate::views::overview::failure_banner;
+
+pub struct ModuleBundle {
+    pub modules: Vec<ModuleInfo>,
+    pub pe: Option<Vec<Option<PeInfo>>>,
+}
+
+/// 모듈별 PE 헤더 prefix 파싱. 개별 실패는 None으로 degrade한다.
+pub fn collect_pe(live: &LiveProcess, modules: &[ModuleInfo]) -> Vec<Option<PeInfo>> {
+    let mut buf = vec![0u8; PE_HEADER_PREFIX];
+    modules
+        .iter()
+        .map(|module| {
+            let len = module.size.min(buf.len() as u64) as usize;
+            if len < 64 {
+                return None;
+            }
+            let outcome = live.read(module.base, &mut buf[..len]).ok()?;
+            if outcome.bytes_read < 64 {
+                return None;
+            }
+            parse_pe(&buf[..outcome.bytes_read]).ok()
+        })
+        .collect()
+}
+
+fn pe_arch(pe: &PeInfo) -> &'static str {
+    match pe.arch {
+        ProcessArch::X64 => "x64",
+        ProcessArch::X86 => "x86",
+        ProcessArch::Arm64 => "arm64",
+        ProcessArch::Unknown => "unknown",
+    }
+}
+
+pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
+    let Some(pid) = app.selected_pid else {
+        ui.label(egui::RichText::new("왼쪽에서 프로세스를 선택하세요").weak());
+        return;
+    };
+    ui.horizontal(|ui| {
+        if ui.button("모듈 새로고침").clicked() {
+            app.start_modules(pid);
+        }
+        if app.modules_task.is_running() {
+            ui.spinner();
+        }
+        let mut pe = app.modules_pe;
+        if ui.checkbox(&mut pe, "PE 요약").changed() {
+            app.modules_pe = pe;
+            app.start_modules(pid);
+        }
+    });
+    match app.modules_task.state() {
+        TaskState::Failed(err) => {
+            let failure = crate::app::classify_open_failure(err, app.is_elevated, pid);
+            failure_banner(ui, app, &failure);
+            return;
+        }
+        TaskState::Cancelled => {
+            ui.label(egui::RichText::new("취소되었습니다").weak());
+            return;
+        }
+        _ => {}
+    }
+    let Some(bundle) = app.modules_bundle.as_ref() else {
+        ui.label(egui::RichText::new("모듈을 불러오는 중...").weak());
+        return;
+    };
+    ui.label(egui::RichText::new(format!("{}개 모듈", bundle.modules.len())).weak());
+    let show_pe = bundle.pe.is_some();
+    let mut builder = egui_extras::TableBuilder::new(ui)
+        .striped(true)
+        .resizable(true)
+        .column(egui_extras::Column::exact(140.0))
+        .column(egui_extras::Column::exact(80.0));
+    if show_pe {
+        builder = builder
+            .column(egui_extras::Column::exact(70.0))
+            .column(egui_extras::Column::exact(130.0))
+            .column(egui_extras::Column::exact(70.0));
+    }
+    builder = builder
+        .column(egui_extras::Column::initial(160.0).clip(true))
+        .column(egui_extras::Column::remainder().clip(true));
+    builder
+        .header(18.0, |mut header| {
+            for title in ["BASE", "SIZE"] {
+                header.col(|ui| {
+                    ui.strong(title);
+                });
+            }
+            if show_pe {
+                for title in ["MACHINE", "ENTRY", "SECTIONS"] {
+                    header.col(|ui| {
+                        ui.strong(title);
+                    });
+                }
+            }
+            for title in ["NAME", "PATH"] {
+                header.col(|ui| {
+                    ui.strong(title);
+                });
+            }
+        })
+        .body(|body| {
+            body.rows(20.0, bundle.modules.len(), |mut row| {
+                let index = row.index();
+                let module = &bundle.modules[index];
+                row.col(|ui| {
+                    ui.label(opt_hex(Some(module.base)));
+                });
+                row.col(|ui| {
+                    ui.label(human_size(module.size));
+                });
+                if let Some(pe_list) = bundle.pe.as_ref() {
+                    match pe_list.get(index).and_then(Option::as_ref) {
+                        Some(pe) => {
+                            row.col(|ui| {
+                                ui.label(pe_arch(pe));
+                            });
+                            row.col(|ui| {
+                                ui.label(format!("{:#x}", pe.entry_point));
+                            });
+                            row.col(|ui| {
+                                ui.label(pe.sections.len().to_string());
+                            });
+                        }
+                        None => {
+                            for _ in 0..3 {
+                                row.col(|ui| {
+                                    ui.label("-");
+                                });
+                            }
+                        }
+                    }
+                }
+                row.col(|ui| {
+                    ui.label(&module.name);
+                });
+                row.col(|ui| {
+                    ui.label(egui::RichText::new(module.path.as_deref().unwrap_or("-")).weak());
+                });
+            });
+        });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pe_arch_labels_match_cli() {
+        let pe = xmem_pe::PeInfo {
+            is_64: true,
+            machine: 0x8664,
+            arch: ProcessArch::X64,
+            image_base: 0x0001_4000_0000,
+            entry_point: 0x0001_4000_1234,
+            size_of_image: 0x2000,
+            subsystem: 3,
+            characteristics: 0x22,
+            sections: Vec::new(),
+            import_count: 0,
+            import_library_count: 0,
+            libraries: Vec::new(),
+            export_count: 0,
+            relocation_count: 0,
+            tls_callback_count: 0,
+        };
+        assert_eq!(pe_arch(&pe), "x64");
+    }
+}

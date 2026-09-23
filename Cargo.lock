@@ -4906,6 +4906,7 @@ dependencies = [
  "xmem-detection",
  "xmem-forensics",
  "xmem-memory",
+ "xmem-pe",
  "xmem-windows",
 ]
 

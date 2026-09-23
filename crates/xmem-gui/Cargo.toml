@@ -15,6 +15,7 @@ workspace = true
 [dependencies]
 xmem-core.workspace = true
 xmem-memory.workspace = true
+xmem-pe.workspace = true
 xmem-detection.workspace = true
 xmem-forensics.workspace = true
 xmem-windows.workspace = true
