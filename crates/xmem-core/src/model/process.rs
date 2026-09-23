@@ -33,3 +33,44 @@ pub struct ProcessInfo {
     pub thread_count: Option<u32>,
     pub module_count: Option<u32>,
 }
+
+/// Windows FILETIME(1601-01-01 기준 100ns 단위)을 Unix epoch 초로 변환한다.
+///
+/// FILETIME은 unsigned지만 1601~1969 구간은 음수가 되므로 i64로 반환한다.
+pub fn filetime_to_unix_secs(ft: u64) -> i64 {
+    const UNIX_EPOCH_FILETIME: u64 = 116_444_736_000_000_000;
+    const HUNDRED_NS_PER_SEC: u64 = 10_000_000;
+    if ft < UNIX_EPOCH_FILETIME {
+        -(((UNIX_EPOCH_FILETIME - ft) / HUNDRED_NS_PER_SEC) as i64)
+    } else {
+        ((ft - UNIX_EPOCH_FILETIME) / HUNDRED_NS_PER_SEC) as i64
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const UNIX_EPOCH_FILETIME: u64 = 116_444_736_000_000_000;
+    const HUNDRED_NS: u64 = 10_000_000;
+
+    #[test]
+    fn unix_epoch_maps_to_zero() {
+        assert_eq!(filetime_to_unix_secs(UNIX_EPOCH_FILETIME), 0);
+    }
+
+    #[test]
+    fn one_second_after_epoch() {
+        assert_eq!(filetime_to_unix_secs(UNIX_EPOCH_FILETIME + HUNDRED_NS), 1);
+    }
+
+    #[test]
+    fn one_second_before_epoch_is_negative() {
+        assert_eq!(filetime_to_unix_secs(UNIX_EPOCH_FILETIME - HUNDRED_NS), -1);
+    }
+
+    #[test]
+    fn zero_filetime_is_1601_epoch() {
+        assert_eq!(filetime_to_unix_secs(0), -11_644_473_600);
+    }
+}
