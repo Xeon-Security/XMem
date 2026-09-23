@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **Milestone 10 (Research Lab)** 완료. Minidump 생성/분석에 이어 deterministic한 전용 Test Target(`lab/targets/xmem-target`)과 Ground Truth 회귀 테스트를 제공한다. 실험 자동화는 M11에서 추가된다.
+현재 **Milestone 11 (Experiment Automation)** 완료. `xmem experiment list` / `xmem experiment run <NAME>`로 XMem이 spawn한 lab target에 대해 Baseline → Action → Post → Diff → Detection → Report 파이프라인을 실행한다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -42,7 +42,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | `dump create --pid <PID> --output <FILE> [--full]` (MiniDumpWriteDump, metadata+FullMemoryInfo 기본, `--full`은 전체 메모리·디스크 사전 검사, temp→검증→rename, `--json`) | Implemented |
 | `dump analyze <FILE>` (minidump 파싱: os/cpu/arch/pid/modules/threads/regions/findings, 오프라인 Detection, `--json`) | Implemented |
 | Test Target (`lab/targets/xmem-target`) (deterministic 시나리오 normal/pattern/private/private-exec/pe-like/threads/protection/all, Ground Truth JSON report, 회귀 테스트) | Implemented |
-| Experiment 자동화 (`experiment list` / `experiment run`) | Planned (M11) |
+| Experiment 자동화 (`experiment list` / `experiment run <NAME>`) (4개 정의 실험: remote-alloc/protection-flip/pe-staging/remote-thread, spawn한 xmem-target 한정, guard/신원 검증, cleanup, `--json`) | Implemented |
 
 세부 설계는 [`docs/architecture.md`](docs/architecture.md), 마일스톤 실행 계획은 [`docs/plans/`](docs/plans/) 참고.
 
@@ -83,6 +83,9 @@ xmem dump analyze target.dmp                            # 오프라인 분석 (r
 cargo build -p xmem-target                              # Research Lab Test Target 빌드
 .\target\debug\xmem-target.exe run all --hold-secs 60 --report report.json  # 알려진 아티팩트 프로세스
 xmem detect --pid <TARGET-PID>                          # 타깃에서 XMEM-001/002/004 등 관찰
+xmem experiment list                                    # 정의된 실험 목록
+xmem experiment run remote-alloc                        # Baseline→Action→Post→Diff→Detection
+xmem --json experiment run protection-flip              # 실험 결과 JSON
 xmem --json process list          # JSON envelope (schema_version 포함)
 xmem --json memory map --pid <PID>  # 영역 상세 JSON
 xmem --json memory scan --pid <PID> --wide-string pwsh  # UTF-16LE 검색 JSON
@@ -142,6 +145,8 @@ xmem experiment run <NAME>
 
 Test Target(`lab/targets/xmem-target`)은 XMem이 알려진 상태를 분석하도록 deterministic한 아티팩트를 자기 프로세스에 구성한다: `normal`, `pattern`(ASCII/UTF-16/바이트 패턴), `private`, `private-exec`(RWX), `pe-like`(가짜 PE 헤더), `threads`(suspended 스레드), `protection`(RW→RWX), `all`. `--report <FILE>`로 각 아티팩트의 주소/크기/TID를 Ground Truth JSON으로 기록하며, 이 주소는 실행마다 달라진다. `cargo test --workspace`에 포함된 Ground Truth 회귀 테스트가 타깃을 spawn해 detect/scan 결과와 report를 대조한다.
 
+`experiment run <NAME>`은 XMem이 직접 spawn한 `xmem-target`에만 실험한다. 실험마다 Baseline Snapshot 수집 → 원격 메모리 Action(`VirtualAllocEx`/`VirtualProtectEx`/`WriteProcessMemory`/`CreateRemoteThread`) → Post Snapshot 수집 → Diff → Detection 판정 순서로 진행하고, 기대 Rule이 기대 영역에서 관찰되었는지(`expected_observed`)를 `--report` Ground Truth와 대조해 보고한다. 모든 Action은 spawn 직후의 신원(image path/생성 시각/PID)과 guard 정책을 통과해야 하며, 종료 시 target 프로세스와 임시 파일을 정리한다.
+
 Exit code: `0` 성공, `1` 실행 오류, `2` 사용법 오류, `3` 정책 거부(보호 프로세스 등), `130` 취소(Ctrl+C).
 
 ## Architecture
@@ -165,7 +170,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Limitations
 
 - **User-mode 전용**: Kernel driver, 물리 메모리 접근, 커널 패칭은 범위 밖(Non-Goal).
-- M10 기준 `process list` / `process info` / `memory map` / `memory scan` / `modules` / `threads` / `snapshot create` / `snapshot diff` / `detect` / `dump create` / `dump analyze`만 구현되어 있다. 나머지 분석 명령은 스텁(오류 반환)이며 마일스톤에 따라 추가된다.
+- M11 기준 `process list` / `process info` / `memory map` / `memory scan` / `modules` / `threads` / `snapshot create` / `snapshot diff` / `detect` / `dump create` / `dump analyze` / `experiment list` / `experiment run`이 구현되어 있다. `report` 명령은 스텁(오류 반환)이며 M12에서 추가된다.
 - `memory map`의 mapped file 경로는 NT 디바이스 경로(`\Device\...`)로 표시된다(드라이브 문자 변환 미구현).
 - `memory scan`은 guard(no-access) 및 non-readable 영역을 사전 스킵하며(카운트됨), 결과는 기본 1024개 상한(초과 시 `truncated: true` 보고, `--max-results 0`으로 해제).
 - committed > 4 GiB 대형 프로세스는 기본적으로 executable/private 영역만 스캔한다(`--all`로 해제, `policy_restricted`로 보고).
@@ -180,6 +185,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 비관리자 권한으로 실행 가능하지만, 일부 시스템 프로세스는 접근이 제한된다(설계상 정상 동작).
 - 실험 기능은 XMem이 직접 spawn한 전용 Test Target에만 수행한다(호스트 보호).
 - Test Target은 자기 프로세스의 메모리만 변경하며(x64 Windows 전용), `threads` 시나리오의 스레드는 suspended 상태로 생성되어 실제로 실행되지 않는다. 아티팩트 주소는 실행마다 달라지므로 테스트/스모크는 `--report`의 주소를 사용해야 한다.
+- Experiment는 v1에서 XMem이 spawn한 `xmem-target` 전용이다(임의 PID 불가). `remote-thread`의 원격 스레드는 suspended 상태로 생성되어 실행되지 않으며, 변경 Win32 API 호출은 `xmem-experiments` 경로에서만 일어난다. 테스트에서는 `RunOptions::target_binary`로 바이너리를 지정하며, CLI는 실행 파일 기준 또는 `XMEM_TARGET` 환경 변수로 타깃을 찾는다.
 
 ## Roadmap
 
@@ -195,7 +201,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | M8 | Detection Engine (XMEM-001~005, `detect`, Snapshot findings/diff) | 완료 |
 | M9 | Minidump 생성 / 분석 | 완료 |
 | M10 | Research Lab (Test Target + Ground Truth) | 완료 |
-| M11 | Experiment 자동화 | 예정 |
+| M11 | Experiment 자동화 (TargetGuard, 4개 실험, Baseline→Post 파이프라인) | 완료 |
 | M12 | 완성도 (JSON, Report, 문서, 성능, UX) | 예정 |
 
 ## License

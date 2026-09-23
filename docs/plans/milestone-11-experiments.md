@@ -1,6 +1,6 @@
 # M11 Experiment Automation 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem experiment list` / `xmem experiment run <NAME>`를 구현한다. XMem이 직접 spawn한 lab target에 대해 Baseline → Controlled Action → Post-state → Diff → Detection → Forensic Report 파이프라인을 자동 실행한다.
 
@@ -49,7 +49,7 @@
   - `flush_instruction_cache(handle: &OwnedHandle, address: u64, size: usize) -> Result<()>`
   - `create_remote_thread(process: &OwnedHandle, start_address: u64, suspended: bool) -> Result<OwnedHandle>`
 
-- [ ] **Step 1: 실패하는 테스트 작성 (remotemem.rs)**
+- [x] **Step 1: 실패하는 테스트 작성 (remotemem.rs)**
 
 ```rust
 //! 원격 프로세스 메모리 조작 primitive. lab target 전용(xmem-experiments).
@@ -137,12 +137,12 @@ mod tests {
 
 주의: `self_handle`의 placeholder 상수 정의는 불필요하므로 삭제하고 위 `open_process(...)` 호출만 남긴다. `thread_id`는 `selfmem::thread_id`가 `&OwnedHandle`을 받고 `u32`를 반환한다(`Result` 아님) — 실제 시그니처에 맞춰 `let tid = crate::selfmem::thread_id(&thread); assert!(tid > 0);`로 쓴다.
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `alloc_remote`/`write_remote`/`protect_remote`/`free_remote`/`flush_instruction_cache`/`create_remote_thread` 미정의
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 remotemem.rs 테스트 모듈 위에 추가:
 
@@ -237,14 +237,14 @@ pub fn create_remote_thread(
 
 import 추가: `CreateRemoteThread, LPTHREAD_START_ROUTINE, THREAD_CREATE_SUSPENDED`, `XmemError`, `error_from_win32`, `OwnedHandle`(이미 있으면 생략).
 
-- [ ] **Step 4: lib.rs 등록 + 테스트 통과 확인**
+- [x] **Step 4: lib.rs 등록 + 테스트 통과 확인**
 
 `pub mod remotemem;`(read 다음) + 재수출 `remotemem::{alloc_remote, flush_instruction_cache, free_remote, protect_remote, write_remote}`; threads 재수출에 `create_remote_thread` 추가.
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 기존 57 + 신규 4 = 61
 
-- [ ] **Step 5: fmt/clippy/커밋**
+- [x] **Step 5: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -276,13 +276,13 @@ git add crates/xmem-windows && git commit -m "feat(windows): 원격 메모리 �
   - `run_experiment(name: &str, options: &RunOptions, cancel: &AtomicBool) -> Result<ExperimentReport>`
   - `finding_matches(finding: &Finding, rule_id: &str, expectation: Expectation) -> bool`
 
-- [ ] **Step 1: Cargo 등록**
+- [x] **Step 1: Cargo 등록**
 
 루트 Cargo.toml: members에 `"crates/xmem-experiments"`(xmem-forensics 다음), workspace.deps에 `xmem-experiments = { path = "crates/xmem-experiments" }`.
 
 `crates/xmem-experiments/Cargo.toml`: package(workspace 상속) + `[lints] workspace = true` + deps xmem-core/xmem-windows/xmem-memory/xmem-forensics/xmem-detection/serde/serde_json/tracing(전부 workspace).
 
-- [ ] **Step 2: 실패하는 테스트 작성**
+- [x] **Step 2: 실패하는 테스트 작성**
 
 `src/experiments.rs` 테스트:
 
@@ -361,12 +361,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: 실패 확인**
+- [x] **Step 3: 실패 확인**
 
 Run: `cargo check -p xmem-experiments --tests`
 Expected: FAIL — 파일/타입 미정의
 
-- [ ] **Step 4: target.rs 구현**
+- [x] **Step 4: target.rs 구현**
 
 ```rust
 //! XMem이 spawn한 lab target의 수명/신원 관리.
@@ -563,7 +563,7 @@ fn wait_for_report(path: &Path, pid: u32) -> Result<Value> {
 
 주의: `XmemError`에 Timeout variant가 없다면 `XmemError::InvalidInput { reason: "target report 대기 시간 초과".to_string() }`로 쓴다(실제 enum 확인 후).
 
-- [ ] **Step 5: experiments.rs 구현**
+- [x] **Step 5: experiments.rs 구현**
 
 ```rust
 //! 알려진 실험 정의와 판정 로직.
@@ -733,7 +733,7 @@ pub fn fake_pe_bytes() -> Vec<u8> {
 
 주의(정확한 오프셋은 xmem-target의 `fake_pe_bytes()`와 일치해야 한다): xmem-target이 만드는 fake PE와 동일한 배치를 쓴다. 구현 시 `lab/targets/xmem-target/src/scenarios.rs`의 `fake_pe_bytes()`를 읽고 그 오프셋을 그대로 옮긴다(추측 금지).
 
-- [ ] **Step 6: runner.rs 구현**
+- [x] **Step 6: runner.rs 구현**
 
 ```rust
 //! Baseline → Action → Post → Diff → 판정 파이프라인.
@@ -841,14 +841,14 @@ fn check_cancel(cancel: &AtomicBool) -> Result<()> {
 
 주의: DiffSummary 필드명(detections_added/removed)은 실제 코드와 일치한다(M8). `LiveProcess::open`이 실패하면 guard drop으로 target이 정리된다.
 
-- [ ] **Step 7: lib.rs + 테스트 통과 확인**
+- [x] **Step 7: lib.rs + 테스트 통과 확인**
 
 `src/lib.rs`: `pub mod experiments; pub mod runner; pub mod target;` + 재수출(EXPERIMENTS, ExperimentMeta, Expectation, finding_matches, run_experiment, ExperimentReport, RunOptions, TargetGuard).
 
 Run: `cargo test -p xmem-experiments`
 Expected: PASS — 신규 3 (registry 1 + matches 1 + unknown name 1)
 
-- [ ] **Step 8: fmt/clippy/커밋**
+- [x] **Step 8: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -871,7 +871,7 @@ git commit -m "feat(experiments): TargetGuard와 경험 자동화 파이프라�
 - Consumes: `RunOptions{target_binary: Some(...)}`, `run_experiment`, `EXPERIMENTS`.
 - Produces: 없음(테스트).
 
-- [ ] **Step 1: 테스트 작성**
+- [x] **Step 1: 테스트 작성**
 
 ```rust
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
@@ -934,12 +934,12 @@ fn experiment_target_is_terminated_after_run() {
 
 주의: 통합 테스트에서 xmem-windows 사용을 위해 dev-deps에 xmem-windows 추가 필요.
 
-- [ ] **Step 2: red → green 확인**
+- [x] **Step 2: red → green 확인**
 
 Run: `cargo check -p xmem-target --tests` → FAIL(모듈 없음) → 구현/의존 추가 후 `cargo test -p xmem-target`
 Expected: PASS — target 5 + 신규 2 = 7 (runner 실동작 포함, ~10초)
 
-- [ ] **Step 3: fmt/clippy/커밋**
+- [x] **Step 3: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -960,7 +960,7 @@ git add lab/targets/xmem-target && git commit -m "test(lab): 실험 자동화 e2
 - Consumes: `xmem_experiments::{EXPERIMENTS, ExperimentReport, RunOptions, run_experiment}`, `commands::memory::cancel_flag`, `output::{emit, emit_json, resolve_mode, success_envelope}`.
 - Produces: `pub(crate) fn render_experiment_list() -> String`, `pub(crate) fn render_experiment_report(&ExperimentReport) -> String`.
 
-- [ ] **Step 1: 실패하는 테스트 작성 (experiment.rs)**
+- [x] **Step 1: 실패하는 테스트 작성 (experiment.rs)**
 
 ```rust
 #[cfg(test)]
@@ -1006,12 +1006,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — xmem_experiments 미해결/함수 미정의
 
-- [ ] **Step 3: 구현 (experiment.rs)**
+- [x] **Step 3: 구현 (experiment.rs)**
 
 ```rust
 use serde_json::json;
@@ -1104,7 +1104,7 @@ pub(crate) fn render_experiment_report(report: &ExperimentReport) -> String {
 
 주의: `truncate`가 불필요하면 import와 `let _ = truncate;` 줄을 제거한다(파일 상단 사용 목록 정리는 구현 시).
 
-- [ ] **Step 4: 테스트 통과 확인 + 게이트**
+- [x] **Step 4: 테스트 통과 확인 + 게이트**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 55 + 2 = 57
@@ -1118,7 +1118,7 @@ cargo test --workspace 2>&1 | Out-File -Encoding utf8 "$env:TEMP\opencode\xmem-m
 
 Expected: 전부 0. 테스트 합계 = cli 57 + core 34 + detection 8 + experiments 3 + forensics 24 + memory 21 + pe 9 + windows 61(또는 62) + xmem-target(unit 4 + ground_truth 1 + e2e 2) + 기타 = **약 228** (계획 산술 오차 가능, 로그에서 확인).
 
-- [ ] **Step 5: Windows 스모크**
+- [x] **Step 5: Windows 스모크**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -1137,7 +1137,7 @@ Get-ChildItem $env:TEMP -Directory -Filter "xmem-exp-*" | Select-Object -ExpandP
 
 기록: 4개 실험의 baseline→post finding 수, expected rule observed 여부, artifact region, target 종료(프로세스 없음), temp 디렉터리 없음, 반복 3회 0, bogus exit 1.
 
-- [ ] **Step 6: 문서 갱신**
+- [x] **Step 6: 문서 갱신**
 
 README:
 - Status 문구: "현재 **Milestone 11 (Experiment Automation)** 완료. ... `xmem experiment list` / `xmem experiment run <NAME>`로 XMem이 spawn한 lab target에 대해 Baseline → Action → Post → Diff → Detection → Report 파이프라인을 실행한다."
@@ -1153,9 +1153,9 @@ architecture.md:
 - §11 M11 행 → "구현됨(xmem-windows::remotemem + threads::create_remote_thread, 호출은 xmem-experiments만)".
 - §14 Status: M11 Done + M12 Planned.
 
-- [ ] **Step 7: 체크박스 + 커밋**
+- [x] **Step 7: 체크박스 + 커밋**
 
-계획서 `- [ ]` → `- [x]` replaceAll 후:
+계획서 `- [x]` → `- [x]` replaceAll 후:
 
 ```powershell
 git add README.md docs/architecture.md docs/plans/milestone-11-experiments.md

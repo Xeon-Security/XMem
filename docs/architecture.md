@@ -54,7 +54,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-pe` | PE 파싱(bounds-checked 헤더 파서 + 전체 파일 goblin 보강), 메모리 PE artifact 분류 | M6 (생성됨) |
 | `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Minidump 분석(MinidumpSource), Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Minidump M9, Report/MemoryImage는 후속) |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
-| `xmem-experiments` | 실험 프레임워크, lab target 오케스트레이션, Guard 강제 | M11 |
+| `xmem-experiments` | Experiment Framework(TargetGuard + 4개 실험 + 파이프라인). 변경 Win32 API 호출은 여기서만, lab target 한정 | M11 (생성됨) |
 | `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member): 자기 프로세스 한정 메모리 아티팩트, Ground Truth JSON report. `xmem-windows`만 의존 | M10 (생성됨) |
 
 ## 4. Dependency 정책
@@ -214,13 +214,15 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 
 구현 노트(M8): `xmem-detection`은 `xmem-core`에만 의존하고(외부 dependency 추가 없음), `DetectionContext`로 수집된 관찰 데이터만 받아 평가한다. XMEM-001/002/005는 heuristic/보호 속성만으로 동작하고, XMEM-003/004는 모듈 목록이 비어 있으면 침묵한다(불완전 데이터로 오판하지 않음). findings는 (rule_id, region_base, address)로 정렬해 결정적으로 출력한다. Snapshot `collect`는 findings를 저장하고, `xmem-forensics`가 `xmem-detection`에 의존한다.
 
-## 10. Experiment Framework (M11 구현 예정)
+## 10. Experiment Framework (M11 구현됨)
 
 - `xmem experiment run <NAME>`은 **XMem이 직접 spawn한 `xmem-target`에만** 실험한다. 임의 PID 실험은 v1에서 지원하지 않는다.
 - Target 검증: spawn 직후 image path + 생성 시각 + PID를 기록하고 실험 내내 신원을 재검증한다(PID 재사용 방지).
 - Guard: `System, Registry, smss, csrss, wininit, services, lsass, svchost, winlogon, dwm, explorer` 는 이름 단독이 아니라 (이름 + 경로 + 세션 + PID) 조합으로 평가하고, 변경 작업을 거부한다. read-only 분석은 허용한다.
 - Cleanup: Ctrl+C/패닉 시에도 XMem이 만든 child만 종료한다. 임시 리소스 제거.
 - 실험 정의: Name, Description, Target Requirements, Baseline, Action, Expected Artifacts, Cleanup.
+
+구현 노트(M11): `TargetGuard`가 `xmem-target run <scenario> --hold-secs N --report <FILE>`를 spawn하고 report의 pid가 child pid와 일치할 때까지 폴링한다. spawn 직후 image path가 `xmem-target.exe`인지 확인하고 `xmem_core::guard::check_state_change`로 보호 정책을 재검증하며, 실패 시 child를 종료하고 임시 파일을 제거한다. 파이프라인은 `xmem-forensics::collect`/`diff`와 `xmem-detection`을 그대로 재사용하고, 판정은 `expected_observed`(post findings 중 기대 rule + 기대 영역)로 한다. 테스트는 `RunOptions::target_binary`로 바이너리를 지정한다(환경 변수 조작 회피).
 
 ## 11. Windows API 계획
 
@@ -234,7 +236,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M7 | `GetDiskFreeSpaceExW` (feature `Win32_Storage_FileSystem`) | 구현됨. snapshot 생성 전 예상 크기 + 16 MiB 여유 검사 |
 | M9 | `MiniDumpWriteDump`(dbghelp), `CreateFileW` (feature `Win32_System_Kernel` 추가) | 구현됨. 기본 `MiniDumpNormal \| MiniDumpWithFullMemoryInfo`, `--full`은 `MiniDumpWithFullMemory \| FullMemoryInfo` + commit 바이트·16 MiB 디스크 사전 검사. temp → `MDMP` 검증 → atomic rename |
 | M10 | `VirtualAlloc`, `VirtualProtect`, `VirtualFree`, `CreateThread`, `GetThreadId` | 구현됨(`xmem-windows::selfmem`). lab target 전용, 자기 프로세스 한정. 외부 프로세스 조작(`VirtualAllocEx` 등)은 M11 `xmem-experiments` |
-| M11 | `VirtualAllocEx`, `VirtualProtectEx`, `WriteProcessMemory`, `CreateRemoteThread`, `FlushInstructionCache` | **xmem-experiments 전용, lab target 한정** |
+| M11 | `VirtualAllocEx`, `VirtualProtectEx`, `WriteProcessMemory`, `CreateRemoteThread`, `FlushInstructionCache` | 구현됨(`xmem-windows::remotemem` + `threads::create_remote_thread`). 호출은 `xmem-experiments`만, lab target 한정 |
 
 ## 12. CLI 계약
 
@@ -279,7 +281,8 @@ xmem experiment list | run <NAME>
 | M8 Detection(`xmem-detection` Rule 엔진, XMEM-001~005, `detect`, Snapshot findings/detection diff) | Done |
 | M9 Minidump(`dump create`/`dump analyze`, `MinidumpSource` MemorySource, 오프라인 Detection) | Done |
 | M10 Research Lab(`lab/targets/xmem-target` deterministic 시나리오, Ground Truth 회귀 테스트, `xmem-windows::selfmem`) | Done |
-| M11~M12 | Planned |
+| M11 Experiment Automation(`xmem-experiments` TargetGuard/4개 실험/파이프라인, `experiment list`/`experiment run`, e2e 검증) | Done |
+| M12 | Planned |
 
 ## 15. Non-Goals
 
