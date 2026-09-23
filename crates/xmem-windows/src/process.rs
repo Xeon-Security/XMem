@@ -17,7 +17,7 @@ use windows::Win32::System::SystemInformation::{
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, GetExitCodeProcess, GetProcessTimes, IsWow64Process2, OpenProcess,
     PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION,
-    PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ, QueryFullProcessImageNameW,
 };
 use windows::core::PWSTR;
 use xmem_core::{MemoryStats, ProcessArch, ProcessInfo, Result, XmemError};
@@ -58,6 +58,11 @@ pub fn open_for_query(pid: u32) -> Result<OwnedHandle> {
         Err(XmemError::AccessDenied { .. }) => open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION),
         Err(e) => Err(e),
     }
+}
+
+/// 메모리 읽기용 핸들(PROCESS_VM_READ 포함). VM_READ가 거부되면 AccessDenied.
+pub fn open_for_read(pid: u32) -> Result<OwnedHandle> {
+    open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ)
 }
 
 pub fn process_image_path(handle: &OwnedHandle) -> Result<String> {

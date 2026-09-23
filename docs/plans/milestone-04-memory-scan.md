@@ -430,8 +430,9 @@ git commit -m "feat(core): 패턴 파서/매처와 InvalidInput·Cancelled 에�
 - Modify: `crates/xmem-windows/src/lib.rs`
 
 **Interfaces:**
-- Consumes: `crate::error::win32_code_from_hresult`, `crate::handle::OwnedHandle`, `crate::memory::{walk_regions, native_max_user_address, MAX_REGIONS}`, `crate::process::{current_pid, open_for_query}` (테스트).
+- Consumes: `crate::error::win32_code_from_hresult`, `crate::handle::OwnedHandle`, `crate::memory::{walk_regions, native_max_user_address, MAX_REGIONS}`, `crate::process::{current_pid, open_for_read}` (테스트).
 - Produces: `pub fn read_process_memory(handle: &OwnedHandle, address: u64, buf: &mut [u8]) -> Result<usize>` — 성공 시 읽은 바이트 수, 299는 `XmemError::PartialRead { read }`.
+- Note: `ReadProcessMemory`는 `PROCESS_VM_READ`가 필요하다. 이 Task에서 `process.rs`에 `open_for_read(pid)`(= `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ`)를 추가하고 lib.rs에서 재수출한다. 테스트는 `open_for_read`를 사용한다.
 
 - [ ] **Step 1: Cargo feature + 테스트 먼저 (red)**
 
@@ -457,12 +458,12 @@ use crate::handle::OwnedHandle;
 mod tests {
     use super::*;
     use crate::memory::{MAX_REGIONS, native_max_user_address, walk_regions};
-    use crate::process::{current_pid, open_for_query};
+    use crate::process::{current_pid, open_for_read};
 
     #[test]
     fn read_own_stack_value() {
         let value: u64 = 0x1122_3344_5566_7788;
-        let handle = open_for_query(current_pid()).unwrap();
+        let handle = open_for_read(current_pid()).unwrap();
         let mut buf = [0u8; 8];
         let n = read_process_memory(&handle, (&value as *const u64) as u64, &mut buf).unwrap();
         assert_eq!(n, 8);
@@ -471,13 +472,13 @@ mod tests {
 
     #[test]
     fn empty_buffer_returns_zero() {
-        let handle = open_for_query(current_pid()).unwrap();
+        let handle = open_for_read(current_pid()).unwrap();
         assert_eq!(read_process_memory(&handle, 0, &mut []).unwrap(), 0);
     }
 
     #[test]
     fn null_address_fails_structured() {
-        let handle = open_for_query(current_pid()).unwrap();
+        let handle = open_for_read(current_pid()).unwrap();
         let mut buf = [0u8; 8];
         let err = read_process_memory(&handle, 0, &mut buf).unwrap_err();
         assert!(
@@ -488,7 +489,7 @@ mod tests {
 
     #[test]
     fn crossing_into_free_region_is_partial_or_error() {
-        let handle = open_for_query(current_pid()).unwrap();
+        let handle = open_for_read(current_pid()).unwrap();
         let walk = walk_regions(&handle, native_max_user_address(), MAX_REGIONS).unwrap();
         let boundary = walk.regions.windows(2).find_map(|w| {
             (w[0].state == MEM_COMMIT.0 && w[1].state == MEM_FREE.0)
@@ -618,6 +619,22 @@ ctrlc = "3"
 rayon.workspace = true
 serde.workspace = true
 ```
+
+`crates/xmem-memory/src/live.rs`의 `open`을 VM_READ 핸들 우선으로 교체 (import 목록에 `open_for_read` 추가):
+
+```rust
+    pub fn open(pid: u32) -> Result<Self> {
+        let info = process_info(pid)?;
+        let handle = match open_for_read(pid) {
+            Ok(h) => h,
+            Err(XmemError::AccessDenied { .. }) => open_for_query(pid)?,
+            Err(e) => return Err(e),
+        };
+        Ok(Self { pid, handle, info })
+    }
+```
+
+주의: `scan`에는 `PROCESS_VM_READ`가 필요하다. `open_for_read`가 거부되면 `open_for_query`로 fallback하여 `memory map`(QUERY 전용)은 계속 동작하고, `read`는 AccessDenied를 반환한다.
 
 `crates/xmem-memory/src/live.rs`의 `read` 구현 교체:
 
