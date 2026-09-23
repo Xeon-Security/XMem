@@ -1,10 +1,13 @@
 //! 탭별 화면.
 pub mod detect;
+pub mod dump;
+pub mod guide;
 pub mod log;
 pub mod map;
 pub mod modules;
 pub mod overview;
 pub mod process;
+pub mod report;
 pub mod scan;
 pub mod snapshot;
 pub mod threads;

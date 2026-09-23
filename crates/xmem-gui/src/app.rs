@@ -130,6 +130,26 @@ pub struct XMemApp {
     pub snapshot_created: Option<(String, u64)>,
     pub snapshot_diff_task: BackgroundTask<xmem_forensics::SnapshotDiff>,
     pub snapshot_diff: Option<xmem_forensics::SnapshotDiff>,
+    pub dump_output: String,
+    pub dump_full: bool,
+    pub dump_full_warning: Option<String>,
+    pub dump_create_task: BackgroundTask<(u32, (String, u64))>,
+    pub dump_created: Option<(String, u64)>,
+    pub dump_analyze_input: String,
+    pub dump_analyze_task: BackgroundTask<(
+        String,
+        xmem_forensics::DumpAnalysis,
+        Vec<xmem_core::Finding>,
+    )>,
+    pub dump_analysis: Option<(
+        String,
+        xmem_forensics::DumpAnalysis,
+        Vec<xmem_core::Finding>,
+    )>,
+    pub report_markdown: bool,
+    pub report_output: String,
+    pub report_task: BackgroundTask<(u32, (String, u64))>,
+    pub report_saved: Option<(String, u64)>,
 }
 
 impl XMemApp {
@@ -178,6 +198,18 @@ impl XMemApp {
             snapshot_created: None,
             snapshot_diff_task: BackgroundTask::idle(),
             snapshot_diff: None,
+            dump_output: String::new(),
+            dump_full: false,
+            dump_full_warning: None,
+            dump_create_task: BackgroundTask::idle(),
+            dump_created: None,
+            dump_analyze_input: String::new(),
+            dump_analyze_task: BackgroundTask::idle(),
+            dump_analysis: None,
+            report_markdown: false,
+            report_output: String::new(),
+            report_task: BackgroundTask::idle(),
+            report_saved: None,
         };
         app.refresh_processes();
         if let Some(pid) = initial_pid {
@@ -204,6 +236,9 @@ impl XMemApp {
         self.detect_selected = None;
         self.snapshot_created = None;
         self.snapshot_diff = None;
+        self.dump_created = None;
+        self.dump_analysis = None;
+        self.report_saved = None;
     }
 
     pub fn start_overview(&mut self, pid: u32) {
@@ -314,6 +349,78 @@ impl XMemApp {
         });
     }
 
+    pub fn start_dump_create(&mut self, pid: u32) {
+        let trimmed = self.dump_output.trim();
+        let output = if trimmed.is_empty() {
+            crate::config::default_output_dir().join(crate::config::output_file_name(
+                "dump",
+                pid,
+                "dmp",
+                chrono::Local::now(),
+            ))
+        } else {
+            std::path::PathBuf::from(trimmed)
+        };
+        if let Some(dir) = output.parent().filter(|p| !p.as_os_str().is_empty())
+            && let Err(err) = std::fs::create_dir_all(dir)
+        {
+            self.log
+                .push(LogLevel::Warn, format!("출력 디렉터리 생성 실패: {err}"));
+            return;
+        }
+        self.dump_output = output.to_string_lossy().into_owned();
+        self.dump_created = None;
+        let full = self.dump_full;
+        self.dump_create_task = BackgroundTask::spawn("덤프 생성", move |_| {
+            let bytes = crate::views::dump::create_dump_file(pid, &output, full)?;
+            Ok((pid, (output.to_string_lossy().into_owned(), bytes)))
+        });
+    }
+
+    pub fn start_dump_analyze(&mut self) {
+        let trimmed = self.dump_analyze_input.trim();
+        if trimmed.is_empty() {
+            self.log
+                .push(LogLevel::Warn, "분석할 덤프 파일을 지정하세요");
+            return;
+        }
+        let path = std::path::PathBuf::from(trimmed);
+        self.dump_analysis = None;
+        self.dump_analyze_task = BackgroundTask::spawn("덤프 분석", move |_| {
+            let (analysis, findings) = crate::views::dump::analyze_dump_file(&path)?;
+            Ok((path.to_string_lossy().into_owned(), analysis, findings))
+        });
+    }
+
+    pub fn start_report_save(&mut self, pid: u32) {
+        let ext = if self.report_markdown { "md" } else { "json" };
+        let trimmed = self.report_output.trim();
+        let output = if trimmed.is_empty() {
+            crate::config::default_output_dir().join(crate::config::output_file_name(
+                "report",
+                pid,
+                ext,
+                chrono::Local::now(),
+            ))
+        } else {
+            std::path::PathBuf::from(trimmed)
+        };
+        if let Some(dir) = output.parent().filter(|p| !p.as_os_str().is_empty())
+            && let Err(err) = std::fs::create_dir_all(dir)
+        {
+            self.log
+                .push(LogLevel::Warn, format!("출력 디렉터리 생성 실패: {err}"));
+            return;
+        }
+        self.report_output = output.to_string_lossy().into_owned();
+        self.report_saved = None;
+        self.report_task = BackgroundTask::spawn("리포트 저장", move |_| {
+            let data = crate::views::report::build_report_data(pid)?;
+            let bytes = xmem_forensics::write_report(&data, &output)?;
+            Ok((pid, (output.to_string_lossy().into_owned(), bytes)))
+        });
+    }
+
     pub fn restart_elevated(&mut self) {
         let exe = std::env::current_exe()
             .map(|p| p.to_string_lossy().into_owned())
@@ -387,6 +494,23 @@ impl eframe::App for XMemApp {
             && let Some(diff) = self.snapshot_diff_task.take_done()
         {
             self.snapshot_diff = Some(diff);
+        }
+        if self.dump_create_task.poll()
+            && let Some((task_pid, created)) = self.dump_create_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.dump_created = Some(created);
+        }
+        if self.dump_analyze_task.poll()
+            && let Some(analysis) = self.dump_analyze_task.take_done()
+        {
+            self.dump_analysis = Some(analysis);
+        }
+        if self.report_task.poll()
+            && let Some((task_pid, saved)) = self.report_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.report_saved = Some(saved);
         }
         let palette = theme::palette(self.theme);
 
@@ -476,9 +600,9 @@ impl eframe::App for XMemApp {
                 Tab::Scan => crate::views::scan::ui(ui, self),
                 Tab::Detect => crate::views::detect::ui(ui, self),
                 Tab::Snapshot => crate::views::snapshot::ui(ui, self),
-                _ => {
-                    ui.label(egui::RichText::new("이 탭은 다음 Task에서 채워집니다").weak());
-                }
+                Tab::Dump => crate::views::dump::ui(ui, self),
+                Tab::Report => crate::views::report::ui(ui, self),
+                Tab::Guide => crate::views::guide::ui(ui, self),
             }
         });
     }
