@@ -1,6 +1,6 @@
 # M7 — Snapshot create / diff Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem snapshot create --pid <PID> --output <FILE>`로 프로세스 상태(메타데이터/region/module/thread/선택 영역 blake3 해시)를 버전드 바이너리 포맷 v1로 저장하고, `xmem snapshot diff <A> <B>`로 region/module/thread/보호 속성/내용 변화를 사람/JSON으로 보고한다.
 
@@ -45,7 +45,7 @@
 - Consumes: `crate::error::error_from_win32`.
 - Produces: `xmem_windows::free_space_bytes(path: &str) -> Result<u64>` — 경로가 속한 볼륨의 가용 바이트. 실패는 `WindowsApi`/`AccessDenied` 구조화 오류.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/xmem-windows/src/disk.rs` 생성(테스트만):
 
@@ -72,12 +72,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — E0425 `cannot find function free_space_bytes`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `crates/xmem-windows/Cargo.toml`의 windows features에 `"Win32_Storage_FileSystem"` 추가(Win32_Security 다음, 알파벳 순).
 
@@ -102,12 +102,12 @@ pub fn free_space_bytes(path: &str) -> Result<u64> {
 
 `crates/xmem-windows/src/lib.rs`: `pub mod disk;` 추가 + 재수출 `pub use disk::free_space_bytes;`.
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 50 (48 + 2).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -137,7 +137,7 @@ git commit -m "feat(windows): 디스크 여유 공간 조회"
   - `format::{MAGIC, HEADER_LEN, encode(&SnapshotEnvelope) -> Result<Vec<u8>>, decode(&[u8]) -> Result<SnapshotEnvelope>, write_file(&Path, &[u8]) -> Result<()>, read_file(&Path) -> Result<SnapshotEnvelope>}`
   - `SnapshotSource { envelope }` + `impl MemorySource`(read는 `Unimplemented`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-forensics/src/envelope.rs` 생성(테스트 모듈 + 합성 envelope 빌더):
 
@@ -322,12 +322,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-forensics --tests`
 Expected: FAIL — crate 미등록으로 매니페스트 오류, 등록 후 E0425/E0433 다수.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 루트 `Cargo.toml`: members에 `"crates/xmem-forensics"` 추가, `[workspace.dependencies]`에 추가하고 chrono features 확장:
 
@@ -591,12 +591,12 @@ impl MemorySource for SnapshotSource {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-forensics`
 Expected: PASS — 7 (envelope 1 + format 5 + source 1).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -623,7 +623,7 @@ git commit -m "feat(forensics): Snapshot 포맷 v1과 SnapshotSource"
   - `SnapshotDiff { before, after, regions_added, regions_removed, regions_changed, content_changed, modules_added, modules_removed, modules_changed, threads_added, threads_removed, threads_changed, summary }`
   - `RegionChange/ModuleChange/ThreadChange { before, after, changes: Vec<String> }`, `ContentChange { base, before_hash, after_hash }`, `SnapshotRef { pid, name, timestamp }`, `DiffSummary { counts }`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-forensics/src/collect.rs` 생성(테스트만):
 
@@ -899,12 +899,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-forensics --tests`
 Expected: FAIL — E0433/E0425 `collect`, `CollectOptions`, `diff`, `RegionHash` 등.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `crates/xmem-forensics/src/collect.rs` 구현(테스트 모듈 위):
 
@@ -1429,12 +1429,12 @@ pub use diff::{
 };
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-forensics`
 Expected: PASS — 16 (format 5 + envelope 1 + source 1 + collect 4 + diff 5).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -1459,7 +1459,7 @@ git commit -m "feat(forensics): Snapshot 수집(해싱)과 diff"
   - `render_diff(&SnapshotDiff) -> String`, `diff_json_payload(&SnapshotDiff) -> serde_json::Value`
   - 사람 출력 요약 + `--json` envelope
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-cli/src/commands/snapshot.rs`에 테스트 모듈 추가(구현은 Step 3):
 
@@ -1589,12 +1589,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — E0425 `create_snapshot_file`, `ensure_disk_space`, `render_diff`, `diff_json_payload`, `xmem_forensics` 등.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `crates/xmem-cli/Cargo.toml` deps에 추가:
 
@@ -1832,12 +1832,12 @@ pub(crate) fn diff_json_payload(diff: &SnapshotDiff) -> Value {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 41 + 4 = 45.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -1859,7 +1859,7 @@ git commit -m "feat(cli): snapshot create/diff 명령"
 - Consumes: Task 1~4 결과.
 - Produces: 문서 상태 갱신 + 검증 기록. 코드 변경 없음.
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 문구 "Milestone 7 (Snapshot) 완료".
 - Status 표: `snapshot create`(포맷 v1, 메타데이터+선택 영역 blake3, 디스크 사전 검사, atomic rename, `--json`), `snapshot diff`(region/module/thread/protection/content 변화, `--json`) Implemented; Snapshot 행 Planned → Implemented; `memory map`/`memory scan`/`modules`/`threads` 유지.
@@ -1868,7 +1868,7 @@ git commit -m "feat(cli): snapshot create/diff 명령"
 - Limitations: 해시는 64 MiB 예산(초과 시 `partial: true`), 해시 없는 영역은 content diff 불가, SnapshotSource read는 M9(MemoryImage) 예정, region/module/thread 매칭 키(base/name/tid) 명시.
 - Roadmap M7 완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - dependency 표: `blake3` M7 도입됨; `chrono` features(std, serde, clock) 명기; `uuid` 행을 "미도입(스냅샷 식별은 파일명+타임스탬프로 충분, 필요 시 도입)"로 수정; `memmap2`는 M9+ 유지.
 - §8 Snapshot 포맷에서 "M7 구현 예정" → "M7 구현됨" + 실제 필드(`content_hashes: Vec<RegionHash{base,size,bytes_hashed,hash,partial}>`, `acquisition: AcquisitionMeta{...}`) 반영 + 해싱 정책(committed+readable, executable/private 우선, 64 MiB 예산, 8192 영역 상한) 명기.
@@ -1876,7 +1876,7 @@ git commit -m "feat(cli): snapshot create/diff 명령"
 - Windows API 표 M7 행: `GetDiskFreeSpaceExW`(feature `Win32_Storage_FileSystem`) 구현됨.
 - Status 표 M7 Done, M8~M12 Planned.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```bash
 cargo fmt --all -- --check
@@ -1887,7 +1887,7 @@ cargo test --workspace
 
 Expected: 전부 exit 0. 테스트 합계 = core 33 + windows 50 + pe 9 + memory 21 + forensics 16 + cli 45 = **174** (실측으로 확정).
 
-- [ ] **Step 4: Windows 실검증 (스모크)**
+- [x] **Step 4: Windows 실검증 (스모크)**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -1913,9 +1913,9 @@ Remove-Item -Recurse -Force $tmp
 5. 없는 파일 diff → SnapshotError/Io 오류 메시지 + exit 1.
 6. create/diff 반복 3회 모두 exit 0, panic 없음.
 
-- [ ] **Step 5: 체크박스 갱신 + 커밋**
+- [x] **Step 5: 체크박스 갱신 + 커밋**
 
-`docs/plans/milestone-07-snapshot.md`의 `- [ ]`를 전부 `- [x]`로 바꾸고:
+`docs/plans/milestone-07-snapshot.md`의 `- [x]`를 전부 `- [x]`로 바꾸고:
 
 ```bash
 git add README.md docs/architecture.md docs/plans/milestone-07-snapshot.md
