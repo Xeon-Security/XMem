@@ -65,8 +65,9 @@ fn run_create(pid: u32, output: &str, full: bool, global: &GlobalArgs) -> Result
 }
 
 pub(crate) fn create_dump_file(pid: u32, output: &str, full: bool) -> Result<CreateSummary> {
-    let handle = open_for_dump(pid)?;
+    // 존재하지 않는 PID를 ProcessExited로 보고하기 위해 process_info를 먼저 호출한다.
     let info = process_info(pid)?;
+    let handle = open_for_dump(pid)?;
     let path = Path::new(output);
     let parent = path
         .parent()
