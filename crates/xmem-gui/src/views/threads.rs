@@ -30,14 +30,24 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         _ => {}
     }
+    if app.thread_selected.is_some() {
+        egui::Panel::bottom(egui::Id::new("thread_detail"))
+            .resizable(true)
+            .default_size(320.0)
+            .size_range(140.0..=900.0)
+            .show(ui, |ui| crate::views::thread::panel(ui, app));
+    }
     let Some(threads) = app.threads.as_ref() else {
         ui.label(egui::RichText::new("스레드를 불러오는 중...").weak());
         return;
     };
     ui.label(egui::RichText::new(format!("{}개 스레드", threads.len())).weak());
+    let selected_tid = app.thread_selected;
+    let mut clicked_thread: Option<xmem_core::ThreadInfo> = None;
     egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
+        .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(70.0))
         .column(egui_extras::Column::exact(80.0))
         .column(egui_extras::Column::exact(150.0))
@@ -53,6 +63,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         .body(|body| {
             body.rows(20.0, threads.len(), |mut row| {
                 let thread = &threads[row.index()];
+                row.set_selected(selected_tid == Some(thread.tid));
                 row.col(|ui| {
                     ui.label(thread.tid.to_string());
                 });
@@ -68,6 +79,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 row.col(|ui| {
                     ui.label(thread.start_module.as_deref().unwrap_or("-"));
                 });
+                if row.response().clicked() {
+                    clicked_thread = Some(thread.clone());
+                }
             });
         });
+    if let Some(thread) = clicked_thread {
+        app.select_thread(pid, thread);
+    }
 }

@@ -12,4 +12,5 @@ pub mod region;
 pub mod report;
 pub mod scan;
 pub mod snapshot;
+pub mod thread;
 pub mod threads;

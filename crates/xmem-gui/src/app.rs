@@ -10,6 +10,7 @@ use crate::views::map::MapSort;
 use crate::views::module::ModuleDetail;
 use crate::views::modules::ModuleBundle;
 use crate::views::region::RegionDetail;
+use crate::views::thread::ThreadDetail;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Tab {
@@ -125,6 +126,9 @@ pub struct XMemApp {
     pub modules_pe: bool,
     pub threads_task: BackgroundTask<(u32, Vec<xmem_core::ThreadInfo>)>,
     pub threads: Option<Vec<xmem_core::ThreadInfo>>,
+    pub thread_selected: Option<u32>,
+    pub thread_detail: Option<ThreadDetail>,
+    pub thread_detail_task: BackgroundTask<(u32, ThreadDetail)>,
     pub scan_state: crate::views::scan::ScanUiState,
     pub scan_task: BackgroundTask<(u32, xmem_memory::ScanReport)>,
     pub scan_report: Option<xmem_memory::ScanReport>,
@@ -199,6 +203,9 @@ impl XMemApp {
             modules_pe: false,
             threads_task: BackgroundTask::idle(),
             threads: None,
+            thread_selected: None,
+            thread_detail: None,
+            thread_detail_task: BackgroundTask::idle(),
             scan_state: crate::views::scan::ScanUiState::default(),
             scan_task: BackgroundTask::idle(),
             scan_report: None,
@@ -282,6 +289,8 @@ impl XMemApp {
         self.module_selected = None;
         self.module_detail = None;
         self.threads = None;
+        self.thread_selected = None;
+        self.thread_detail = None;
         self.scan_report = None;
         self.scan_state.selected_match = None;
         self.scan_state.preview = None;
@@ -349,8 +358,20 @@ impl XMemApp {
 
     pub fn start_threads(&mut self, pid: u32) {
         self.threads = None;
+        self.thread_selected = None;
+        self.thread_detail = None;
         self.threads_task = BackgroundTask::spawn("스레드", move |_| {
             Ok((pid, xmem_memory::LiveProcess::open(pid)?.threads()?))
+        });
+    }
+
+    pub fn select_thread(&mut self, pid: u32, thread: xmem_core::ThreadInfo) {
+        let tid = thread.tid;
+        self.thread_selected = Some(tid);
+        self.thread_detail = None;
+        self.thread_detail_task = BackgroundTask::spawn("스레드 상세", move |_| {
+            let detail = crate::views::thread::collect_thread_detail(pid, thread);
+            Ok((tid, detail))
         });
     }
 
@@ -569,6 +590,12 @@ impl eframe::App for XMemApp {
             && Some(task_pid) == self.selected_pid
         {
             self.threads = Some(threads);
+        }
+        if self.thread_detail_task.poll()
+            && let Some((tid, detail)) = self.thread_detail_task.take_done()
+            && Some(tid) == self.thread_selected
+        {
+            self.thread_detail = Some(detail);
         }
         if self.scan_task.poll()
             && let Some((task_pid, report)) = self.scan_task.take_done()
