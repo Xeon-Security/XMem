@@ -120,6 +120,16 @@ pub struct XMemApp {
     pub scan_state: crate::views::scan::ScanUiState,
     pub scan_task: BackgroundTask<(u32, xmem_memory::ScanReport)>,
     pub scan_report: Option<xmem_memory::ScanReport>,
+    pub detect_task: BackgroundTask<(u32, Vec<xmem_core::Finding>)>,
+    pub findings: Option<Vec<xmem_core::Finding>>,
+    pub detect_selected: Option<usize>,
+    pub snapshot_output: String,
+    pub snapshot_before: String,
+    pub snapshot_after: String,
+    pub snapshot_create_task: BackgroundTask<(u32, (String, u64))>,
+    pub snapshot_created: Option<(String, u64)>,
+    pub snapshot_diff_task: BackgroundTask<xmem_forensics::SnapshotDiff>,
+    pub snapshot_diff: Option<xmem_forensics::SnapshotDiff>,
 }
 
 impl XMemApp {
@@ -158,6 +168,16 @@ impl XMemApp {
             scan_state: crate::views::scan::ScanUiState::default(),
             scan_task: BackgroundTask::idle(),
             scan_report: None,
+            detect_task: BackgroundTask::idle(),
+            findings: None,
+            detect_selected: None,
+            snapshot_output: String::new(),
+            snapshot_before: String::new(),
+            snapshot_after: String::new(),
+            snapshot_create_task: BackgroundTask::idle(),
+            snapshot_created: None,
+            snapshot_diff_task: BackgroundTask::idle(),
+            snapshot_diff: None,
         };
         app.refresh_processes();
         if let Some(pid) = initial_pid {
@@ -180,6 +200,10 @@ impl XMemApp {
         self.scan_report = None;
         self.scan_state.selected_match = None;
         self.scan_state.preview = None;
+        self.findings = None;
+        self.detect_selected = None;
+        self.snapshot_created = None;
+        self.snapshot_diff = None;
     }
 
     pub fn start_overview(&mut self, pid: u32) {
@@ -233,6 +257,60 @@ impl XMemApp {
         self.scan_task = BackgroundTask::spawn("검색", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
             Ok((pid, xmem_memory::scan(&live, &pattern, &options, cancel)?))
+        });
+    }
+
+    pub fn start_detect(&mut self, pid: u32) {
+        self.findings = None;
+        self.detect_selected = None;
+        self.detect_task = BackgroundTask::spawn("탐지", move |_| {
+            let live = xmem_memory::LiveProcess::open(pid)?;
+            Ok((pid, xmem_detection::detect_source(&live)?))
+        });
+    }
+
+    pub fn start_snapshot_create(&mut self, pid: u32) {
+        let trimmed = self.snapshot_output.trim();
+        let output = if trimmed.is_empty() {
+            crate::config::default_output_dir().join(crate::config::output_file_name(
+                "snapshot",
+                pid,
+                "xmem",
+                chrono::Local::now(),
+            ))
+        } else {
+            std::path::PathBuf::from(trimmed)
+        };
+        if let Some(dir) = output.parent().filter(|p| !p.as_os_str().is_empty())
+            && let Err(err) = std::fs::create_dir_all(dir)
+        {
+            self.log
+                .push(LogLevel::Warn, format!("출력 디렉터리 생성 실패: {err}"));
+            return;
+        }
+        self.snapshot_output = output.to_string_lossy().into_owned();
+        self.snapshot_created = None;
+        self.snapshot_create_task = BackgroundTask::spawn("스냅샷 생성", move |cancel| {
+            let bytes = crate::views::snapshot::create_snapshot_file(pid, &output, cancel)?;
+            Ok((pid, (output.to_string_lossy().into_owned(), bytes)))
+        });
+    }
+
+    pub fn start_snapshot_diff(&mut self) {
+        let before = self.snapshot_before.trim();
+        let after = self.snapshot_after.trim();
+        if before.is_empty() || after.is_empty() {
+            self.log
+                .push(LogLevel::Warn, "비교할 스냅샷 두 개를 지정하세요");
+            return;
+        }
+        let before = std::path::PathBuf::from(before);
+        let after = std::path::PathBuf::from(after);
+        self.snapshot_diff = None;
+        self.snapshot_diff_task = BackgroundTask::spawn("스냅샷 비교", move |_| {
+            let before = xmem_forensics::read_file(&before)?;
+            let after = xmem_forensics::read_file(&after)?;
+            Ok(xmem_forensics::diff(&before, &after))
         });
     }
 
@@ -292,6 +370,23 @@ impl eframe::App for XMemApp {
             && Some(task_pid) == self.selected_pid
         {
             self.scan_report = Some(report);
+        }
+        if self.detect_task.poll()
+            && let Some((task_pid, findings)) = self.detect_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.findings = Some(findings);
+        }
+        if self.snapshot_create_task.poll()
+            && let Some((task_pid, created)) = self.snapshot_create_task.take_done()
+            && Some(task_pid) == self.selected_pid
+        {
+            self.snapshot_created = Some(created);
+        }
+        if self.snapshot_diff_task.poll()
+            && let Some(diff) = self.snapshot_diff_task.take_done()
+        {
+            self.snapshot_diff = Some(diff);
         }
         let palette = theme::palette(self.theme);
 
@@ -379,6 +474,8 @@ impl eframe::App for XMemApp {
                 Tab::Modules => crate::views::modules::ui(ui, self),
                 Tab::Threads => crate::views::threads::ui(ui, self),
                 Tab::Scan => crate::views::scan::ui(ui, self),
+                Tab::Detect => crate::views::detect::ui(ui, self),
+                Tab::Snapshot => crate::views::snapshot::ui(ui, self),
                 _ => {
                     ui.label(egui::RichText::new("이 탭은 다음 Task에서 채워집니다").weak());
                 }
