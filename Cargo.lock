@@ -1254,6 +1254,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "xmem-target"
+version = "0.1.0"
+dependencies = [
+ "serde_json",
+ "xmem-core",
+ "xmem-detection",
+ "xmem-memory",
+ "xmem-pe",
+ "xmem-windows",
+]
+
+[[package]]
 name = "xmem-windows"
 version = "0.1.0"
 dependencies = [

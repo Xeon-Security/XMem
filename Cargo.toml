@@ -8,6 +8,7 @@ members = [
     "crates/xmem-forensics",
     "crates/xmem-detection",
     "crates/xmem-cli",
+    "lab/targets/xmem-target",
 ]
 
 [workspace.package]

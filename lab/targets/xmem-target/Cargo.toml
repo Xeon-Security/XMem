@@ -1,0 +1,19 @@
+[package]
+name = "xmem-target"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+xmem-windows.workspace = true
+serde_json.workspace = true
+
+[dev-dependencies]
+xmem-core.workspace = true
+xmem-memory.workspace = true
+xmem-detection.workspace = true
+xmem-pe.workspace = true
