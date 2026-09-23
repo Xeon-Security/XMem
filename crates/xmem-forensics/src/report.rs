@@ -313,7 +313,7 @@ mod tests {
             } else {
                 MemoryState::Commit
             },
-            protection: protection.clone(),
+            protection,
             allocation_protection: None,
             region_type: match class {
                 RegionClass::Image => Some(MemoryType::Image),
