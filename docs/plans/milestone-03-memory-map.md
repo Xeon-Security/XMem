@@ -1173,7 +1173,12 @@ mod tests {
     use xmem_core::{Heuristic, MemoryState, MemoryType, Protection};
 
     fn region(base: u64, state: MemoryState, ty: Option<MemoryType>, raw: u32) -> MemoryRegion {
-        let p = Protection::new(raw, true, true, true);
+        let (r, w, x) = match raw {
+            0x40 => (true, true, true),
+            0x20 => (true, false, true),
+            _ => (false, false, false),
+        };
+        let p = Protection::new(raw, r, w, x);
         MemoryRegion {
             base,
             size: 0x1000,
