@@ -1,7 +1,7 @@
 # XMem GUI 설계 스펙
 
-> 상태: 구현 완료(M13, 2026-09-23)
-> 관련 문서: `docs/architecture.md`(Core Analyzer 스펙), `docs/plans/milestone-13-gui.md`(구현 계획)
+> 상태: 구현 완료(M13, 2026-09-23) · 상세 뷰어 추가(v0.1.2, 2026-09-23)
+> 관련 문서: `docs/architecture.md`(Core Analyzer 스펙), `docs/plans/milestone-13-gui.md`(구현 계획), `docs/plans/v0.1.2-detail-viewer.md`(상세 뷰어 계획)
 > 원칙: 이 스펙은 "무엇을/왜"를 정의한다. "어떻게"는 구현 계획이 담당한다.
 
 ## 1. 목표
@@ -16,6 +16,9 @@ CLI 기능을 그대로 노출하되 가이드 페이지와 실패 사유 안내
 
 - 프로세스 목록/정보, 메모리 맵, 메모리 검색(+주소 미리보기), 모듈, 스레드, 탐지,
   스냅샷 생성/diff, 덤프 생성/분석, 리포트 저장
+- **상세 패널(v0.1.2)**: 메모리맵/모듈/스레드 표에서 행을 클릭하면 하단 리사이즈 패널이
+  열려 식별·보호·백킹·hex(4 KiB 페이지)·PE(디스크/메모리)·스레드 시간을 보여준다.
+  조회 실패는 `error_label`로 원인을 표시한다.
 - 관리자 상승(재시작), 실패 사유 구분, 진행 표시/취소, 설정 저장, 가이드 페이지,
   오류 로그 패널
 
@@ -38,8 +41,9 @@ CLI 기능을 그대로 노출하되 가이드 페이지와 실패 사유 안내
   - `elevate.rs` — `is_elevated()`, `restart_elevated(pid)` (ShellExecuteW runas)
   - `task.rs` — `BackgroundTask<T>`: 스레드 + `Arc<AtomicBool>` 취소 + mpsc + 상태
     (Idle/Running/Done/Failed/Cancelled)
-  - `views/` — `process`, `overview`, `map`, `scan`, `modules`, `threads`, `detect`,
-    `snapshot`, `dump`, `report`, `guide`, `log`
+  - `views/` — `process`, `overview`, `map`(+`region` 상세), `scan`, `modules`(+`module` 상세),
+    `threads`(+`thread` 상세), `detect`, `snapshot`, `dump`, `report`, `guide`, `log`
+  - `error.rs` — `XmemError` → 사람이 읽는 오류 라벨(`error_label`)
 - 모든 분석 호출은 태스크 스레드에서 **자체 `LiveProcess::open(pid)`**를 열어 수행한다.
   UI 스레드는 상태/결과만 그린다 (핸들 공유 없음 → 수명 문제 회피).
 - 새 분석 로직을 만들지 않는다. CLI와 동일한 모델(ProcessInfo/MemoryRegion/Finding/

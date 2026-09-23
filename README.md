@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **Milestone 13 (GUI)** 완료 — `xmem-gui`로 CLI의 분석 기능 전체(프로세스/메모리맵/검색/모듈/스레드/탐지/스냅샷/덤프/리포트)를 GUI에서 사용할 수 있다. 실험 자동화는 CLI 전용으로 유지된다.
+현재 **v0.1.2** — Milestone 13 (GUI)에 이어 메모리맵·모듈·스레드 **상세 패널**(hex 뷰어, 디스크/메모리 PE 비교, 스레드 시간)과 `memory map`의 allocation base(ALLOC) 컬럼, 사람이 읽을 수 있는 오류 라벨을 추가했다. 실험 자동화는 CLI 전용으로 유지된다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -30,7 +30,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | Windows 추상화 (Win32 오류 매핑, RAII `OwnedHandle`, 프로세스 primitive) | Implemented |
 | CLI 골격 (전체 명령 트리, `--json`, 로깅 분리, exit code 계약) | Implemented |
 | `process list` / `process info` (경로, arch, session, 생성시각, 사용자, 명령줄, 메모리, 스레드/모듈 수) | Implemented |
-| `memory map` (VirtualQueryEx, MEM_* state/type, PAGE_* 보호 속성, R/W/X, class, PE 프로브 heuristic 포함, mapped file, `--json`) | Implemented |
+| `memory map` (VirtualQueryEx, MEM_* state/type, PAGE_* 보호 속성, allocation base(ALLOC), R/W/X, class, PE 프로브 heuristic 포함, mapped file, `--json`) | Implemented |
 | `memory scan` (패턴/ASCII/UTF-16, 필터, chunked 병렬, 취소, `--json`) | Implemented |
 | `modules --pid` (Toolhelp 모듈 열거: base/size/path/arch, `--json`) | Implemented |
 | `threads --pid` (TID, priority, start address → region/module 상관관계, `--json`) | Implemented |
@@ -44,7 +44,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | `dump analyze <FILE>` (minidump 파싱: os/cpu/arch/pid/modules/threads/regions/findings, 오프라인 Detection, `--json`) | Implemented |
 | Test Target (`lab/targets/xmem-target`) (deterministic 시나리오 normal/pattern/private/private-exec/pe-like/threads/protection/all, Ground Truth JSON report, 회귀 테스트) | Implemented |
 | Experiment 자동화 (`experiment list` / `experiment run <NAME>`) (4개 정의 실험: remote-alloc/protection-flip/pe-staging/remote-thread, spawn한 xmem-target 한정, guard/신원 검증, cleanup, `--json`) | Implemented |
-| GUI (`xmem-gui`) (egui 단일 exe: 프로세스 목록/개요·메모리맵·검색+hex 미리보기·모듈·스레드·탐지·스냅샷·덤프·리포트, 아이콘·무콘솔, 시작 시 관리자 권한 자동 요청(runas), 가이드, 로그 패널, 다크/라이트) | Implemented |
+| GUI (`xmem-gui`) (egui 단일 exe: 프로세스 목록/개요·메모리맵·검색+hex 미리보기·모듈·스레드·탐지·스냅샷·덤프·리포트, **맵/모듈/스레드 상세 패널**(hex 페이지 뷰어·디스크/메모리 PE 비교·스레드 시간), 아이콘·무콘솔, 시작 시 관리자 권한 자동 요청(runas), 가이드, 로그 패널, 다크/라이트) | Implemented |
 
 세부 설계는 [`docs/architecture.md`](docs/architecture.md), 마일스톤 실행 계획은 [`docs/plans/`](docs/plans/) 참고.
 
@@ -182,8 +182,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 문자열 검색은 대소문자를 구분하며, 패턴 매처는 naive 구현이다(벤치마크 후 최적화 예정).
 - `memory scan` 통계에는 XMem 자신의 RSS(작업 집합)가 포함된다(peak RSS 추적은 후속).
 - `executable_anonymous` / `private_executable_pe_like` heuristic은 private executable 영역의 헤더 prefix(4 KiB)를 읽어 판정한다(읽기 실패/부분 읽기에서는 heuristic을 추가하지 않는다).
-- `modules --pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시되며, VM_READ 권한이 없거나 파싱에 실패한 모듈은 `-`로 표시된다(Malformed PE는 pe-like로 취급). `modules` 기본 출력의 모듈별 arch는 프로세스 arch를 상속한다.
-- `threads`의 priority는 동적 우선순위(조회 실패 시 `-`)이며, 스레드 시간 통계(`GetThreadTimes`)와 Wait 상태는 후속 마일스톤이다.
+- `modules --pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시되며, VM_READ 권한이 없거나 파싱에 실패한 모듈은 `-`로 표시된다(Malformed PE는 pe-like로 취급). `modules` 기본 출력의 모듈별 arch는 프로세스 arch를 상속한다. GUI 모듈 상세 패널은 디스크 PE 전체 파싱(`parse_pe_file`, 64 MiB 상한)을 우선 사용해 imports/exports/relocations/TLS/컴파일 시각까지 표시하고, 디스크 파싱이 실패하면 메모리 헤더 결과만 출처 라벨과 함께 보여준다.
+- `threads`의 priority는 동적 우선순위(조회 실패 시 `-`)이다. 스레드 시간 통계는 GUI 스레드 상세 패널에서 `GetThreadTimes`(생성/종료 시각, kernel/user 시간)로 표시되며, CLI 출력에는 아직 포함되지 않는다.
 - Snapshot 해싱은 기본 64 MiB 예산이며, 해시가 없는 영역은 content diff로 보고되지 않는다. `SnapshotSource`의 메모리 내용 read는 후속(MemoryImage)에서 지원 예정이다.
 - `dump analyze`는 MemoryInfoList 스트림에 의존한다(XMem이 만든 덤프에는 항상 포함). minidump에는 thread start address가 없어 XMEM-004는 침묵하고, mapped file 이름은 module 목록 기반 근사이며, 모듈 목록이 없는 덤프에서는 XMEM-003/004가 침묵한다. `--full`은 진행 중 취소를 지원하지 않는다(Ctrl+C는 XMem을 종료하며, 콜백 기반 취소는 후속).
 - `detect`의 finding은 관찰 기반 heuristic이며 **악성 판정이 아니다**. XMEM-002는 `memory map`의 4 KiB 헤더 프로브 결과에 의존한다. XMEM-003은 모듈 범위 밖 executable 영역 중 파일 백킹이 확인되지 않는 것만 보고한다(`mapped_file` basename이 로드된 모듈명과 일치하거나 `MEM_IMAGE`면 제외, private은 XMEM-001/002가 담당, 남은 `MEM_MAPPED` 무파일은 Low confidence). 그래도 .NET 내부 등 정상 소프트웨어에서 Low confidence finding이 발생할 수 있다. 모듈 조회가 실패하면 XMEM-003/004는 침묵한다(skip).
@@ -193,6 +193,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - Test Target은 자기 프로세스의 메모리만 변경하며(x64 Windows 전용), `threads` 시나리오의 스레드는 suspended 상태로 생성되어 실제로 실행되지 않는다. 아티팩트 주소는 실행마다 달라지므로 테스트/스모크는 `--report`의 주소를 사용해야 한다.
 - Experiment는 v1에서 XMem이 spawn한 `xmem-target` 전용이다(임의 PID 불가). `remote-thread`의 원격 스레드는 suspended 상태로 생성되어 실행되지 않으며, 변경 Win32 API 호출은 `xmem-experiments` 경로에서만 일어난다. 테스트에서는 `RunOptions::target_binary`로 바이너리를 지정하며, CLI는 실행 파일 기준 또는 `XMEM_TARGET` 환경 변수로 타깃을 찾는다.
 - GUI는 분석 기능만 제공한다(실험은 CLI 전용). 덤프 생성은 진행 중 취소를 지원하지 않으며, PPL 보호 프로세스는 관리자 권한으로도 열 수 없다. 검색은 진행률을 표시하지 않는다(취소는 가능). GUI는 시작할 때 `ShellExecuteW runas`로 자신을 관리자 권한으로 다시 띄우고(`--pid` 유지), UAC를 취소하면 표준 권한으로 계속 실행된다(상단 배지의 "관리자로 재시작"으로 다시 시도 가능). 콘솔 창은 뜨지 않는다.
+- GUI 상세 패널(맵/모듈/스레드)은 행을 클릭하면 하단에 열리며, 조회 실패 시 원인을 사람이 읽을 수 있는 오류 라벨(`error_label`: 접근 거부·부분 읽기·잘못된 주소·Windows API 코드 등)로 표시한다. 맵 상세의 hex 뷰어는 4 KiB 페이지 단위로 읽고, 읽지 못한 페이지는 사유를 표시한다.
 
 ## Documentation
 
@@ -224,6 +225,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | M11 | Experiment 자동화 (TargetGuard, 4개 실험, Baseline→Post 파이프라인) | 완료 |
 | M12 | 완성도 (`report` JSON/Markdown, 자원 모니터링 RSS, 문서 6종, UX) | 완료 |
 | M13 | GUI (`xmem-gui`: egui 단일 exe, 분석 전체 탭, 관리자 재시작, 가이드, 로그) | 완료 |
+| v0.1.2 | 상세 뷰어 (맵/모듈/스레드 상세 패널, ALLOC 컬럼, 디스크/메모리 PE 비교, 스레드 시간, 오류 라벨) | 완료 |
 
 ## License
 

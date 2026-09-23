@@ -56,7 +56,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
 | `xmem-experiments` | Experiment Framework(TargetGuard + 4개 실험 + 파이프라인). 변경 Win32 API 호출은 여기서만, lab target 한정 | M11 (생성됨) |
 | `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member): 자기 프로세스 한정 메모리 아티팩트, Ground Truth JSON report. `xmem-windows`만 의존 | M10 (생성됨) |
-| `xmem-gui` | egui 단일 exe 데스크톱 GUI: CLI와 동일한 crate를 직접 호출(IPC 없음), 분석 탭 + 가이드 + 로그 패널. 실험은 제외(CLI 전용). `unsafe` 금지 | M13 (생성됨) |
+| `xmem-gui` | egui 단일 exe 데스크톱 GUI: CLI와 동일한 crate를 직접 호출(IPC 없음), 분석 탭 + **맵/모듈/스레드 상세 패널**(v0.1.2) + 가이드 + 로그 패널. 실험은 제외(CLI 전용). `unsafe` 금지 | M13 (생성됨; 상세 패널 v0.1.2) |
 
 ## 4. Dependency 정책
 
@@ -100,6 +100,7 @@ pub struct ProcessInfo {
 
 pub struct MemoryRegion {
     pub base: u64, pub size: u64,
+    pub allocation_base: Option<u64>,          // VirtualQueryEx AllocationBase (v0.1.2)
     pub state: MemoryState,                    // Commit | Reserve | Free
     pub protection: Protection,                // 사람이 읽는 형태 + 플래그
     pub allocation_protection: Option<Protection>,
@@ -113,7 +114,7 @@ pub struct MemoryRegion {
 
 `Protection`은 raw `u32` 위에 읽기/쓰기/실행 플래그와 `Display`("RWX" 등)를 제공하는 뉴타입이다. raw flag만 출력하지 않는다.
 
-PE 분석(M6)은 `xmem-pe`의 `PeInfo`/`PeSection`/`MemoryPeClass`를 사용한다. `parse_pe`는 헤더를 bounds-checked로 먼저 파싱하고(4 KiB 프리픽스에서도 유효), 전체 파일이면 goblin으로 imports/exports/relocations/TLS를 보강한다. `MemoryPeClass`(None/NormalLoadedModule/MappedImage/PrivatePeLike/Malformed/Unknown)는 region 분류와 헤더 바이트로 결정되며, private executable 영역 프로브 결과가 `private_executable_pe_like`/`executable_anonymous` heuristic으로 반영된다.
+`allocation_base`는 `#[serde(default)]`로 추가되어(M12 이전 스냅샷과 호환) `memory map`의 ALLOC 컬럼과 GUI 영역 상세 패널에서 할당 시작 주소·할당 내 오프셋 표시에 사용된다. PE 분석(M6)은 `xmem-pe`의 `PeInfo`/`PeSection`/`MemoryPeClass`를 사용한다. `parse_pe`는 헤더를 bounds-checked로 먼저 파싱하고(4 KiB 프리픽스에서도 유효), 전체 파일이면 goblin으로 imports/exports/relocations/TLS를 보강한다. `PeInfo.time_date_stamp`(COFF 타임스탬프)와 디스크 파일 전체 파싱 `parse_pe_file(path)`(64 MiB 상한, `MAX_FILE_PARSE_BYTES`)가 v0.1.2에서 추가되어 GUI 모듈 상세 패널이 디스크 PE(imports/exports/relocations/TLS/컴파일 시각)와 메모리 헤더를 비교해 보여준다. `MemoryPeClass`(None/NormalLoadedModule/MappedImage/PrivatePeLike/Malformed/Unknown)는 region 분류와 헤더 바이트로 결정되며, private executable 영역 프로브 결과가 `private_executable_pe_like`/`executable_anonymous` heuristic으로 반영된다. GUI 스레드 상세 패널은 `xmem-windows::threads::thread_times`(`GetThreadTimes` → `ThreadTimes{creation, exit, kernel_100ns, user_100ns}`)를 사용한다.
 
 ## 6. Evidence 모델 (사실과 해석의 분리)
 
@@ -241,6 +242,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M10 | `VirtualAlloc`, `VirtualProtect`, `VirtualFree`, `CreateThread`, `GetThreadId` | 구현됨(`xmem-windows::selfmem`). lab target 전용, 자기 프로세스 한정. 외부 프로세스 조작(`VirtualAllocEx` 등)은 M11 `xmem-experiments` |
 | M11 | `VirtualAllocEx`, `VirtualProtectEx`, `WriteProcessMemory`, `CreateRemoteThread`, `FlushInstructionCache` | 구현됨(`xmem-windows::remotemem` + `threads::create_remote_thread`). 호출은 `xmem-experiments`만, lab target 한정 |
 | M13 | `ShellExecuteW`(`runas`), `OpenProcessToken`+`GetTokenInformation(TokenElevation)` (feature `Win32_UI_Shell`/`Win32_UI_WindowsAndMessaging` 추가) | 구현됨(`xmem-windows::elevate`). GUI는 시작 시 runas로 자신을 재실행(`--pid`·`--elevated` 유지), UAC 취소 시 표준 권한으로 계속. 아이콘은 build.rs에서 rc.exe로 리소스 컴파일(`-bins` 한정) |
+| v0.1.2 | `GetThreadTimes` (기존 feature), `VirtualQueryEx`의 `AllocationBase` 노출 | 구현됨(`xmem-windows::threads::thread_times` → `ThreadTimes`; `MemoryRegion.allocation_base`). GUI 스레드/영역 상세 패널에서 사용 |
 
 ## 12. CLI 계약
 
@@ -288,7 +290,8 @@ xmem experiment list | run <NAME>
 | M11 Experiment Automation(`xmem-experiments` TargetGuard/4개 실험/파이프라인, `experiment list`/`experiment run`, e2e 검증) | Done |
 | M12 완성도(`report` JSON/Markdown, `ScanStats.rss_bytes`, 문서 6종, UX) | Done |
 | M13 GUI(`xmem-gui` egui 단일 exe, 분석 탭 전체, 관리자 재시작, 가이드, 로그 패널, 다크/라이트) | Done |
-| M14+ | 계획 없음 (M13까지 완료) |
+| v0.1.2 상세 뷰어(`MemoryRegion.allocation_base`, `PeInfo.time_date_stamp`+`parse_pe_file`, `thread_times`, ALLOC 컬럼, GUI 맵/모듈/스레드 상세 패널, `error_label`) | Done |
+| 이후 | 계획 없음 (v0.1.2까지 완료) |
 
 ## 15. Non-Goals
 
