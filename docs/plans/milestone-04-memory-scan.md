@@ -1,6 +1,6 @@
 # XMem Milestone 4 — Memory Scanner Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem memory scan --pid <PID>`가 ReadProcessMemory chunked 읽기로 바이트 패턴(리터럴/와일드카드/니블 마스크), ASCII/UTF-16 문자열을 검색하고, 필터·bounded worker·취소·자원 카운터를 갖춘 결과를 human/JSON으로 출력한다.
 
@@ -70,7 +70,7 @@
   - `pub struct ScanPattern { pub pattern: BytePattern, pub kind: PatternKind, pub source: String }` — `hex()/ascii()/wide()/len()`
   - `pub const MAX_PATTERN_LEN: usize = 4096;`
 
-- [ ] **Step 1: error.rs에 variant 추가 + 테스트**
+- [x] **Step 1: error.rs에 variant 추가 + 테스트**
 
 `crates/xmem-core/src/error.rs`의 `Unimplemented` 아래, `WindowsApi` 위(또는 Io 앞)에 추가:
 
@@ -104,7 +104,7 @@
     }
 ```
 
-- [ ] **Step 2: pattern.rs 테스트 먼저 작성 (red)**
+- [x] **Step 2: pattern.rs 테스트 먼저 작성 (red)**
 
 `crates/xmem-core/src/pattern.rs`:
 
@@ -204,12 +204,12 @@ mod tests {
 pub use pattern::{BytePattern, MAX_PATTERN_LEN, PatternKind, ScanPattern};
 ```
 
-- [ ] **Step 3: red 확인**
+- [x] **Step 3: red 확인**
 
 Run: `cargo check -p xmem-core --tests`
 Expected: FAIL — `cannot find type BytePattern`(E0433), `ScanPattern` 등.
 
-- [ ] **Step 4: pattern.rs 구현**
+- [x] **Step 4: pattern.rs 구현**
 
 테스트 모듈 위에 추가:
 
@@ -406,12 +406,12 @@ impl BytePattern {
 }
 ```
 
-- [ ] **Step 5: green 확인**
+- [x] **Step 5: green 확인**
 
 Run: `cargo test -p xmem-core`
 Expected: PASS — 기존 23 + 신규 9 = 32 tests.
 
-- [ ] **Step 6: fmt + clippy + 커밋**
+- [x] **Step 6: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -434,7 +434,7 @@ git commit -m "feat(core): 패턴 파서/매처와 InvalidInput·Cancelled 에�
 - Produces: `pub fn read_process_memory(handle: &OwnedHandle, address: u64, buf: &mut [u8]) -> Result<usize>` — 성공 시 읽은 바이트 수, 299는 `XmemError::PartialRead { read }`.
 - Note: `ReadProcessMemory`는 `PROCESS_VM_READ`가 필요하다. 이 Task에서 `process.rs`에 `open_for_read(pid)`(= `PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ`)를 추가하고 lib.rs에서 재수출한다. 테스트는 `open_for_read`를 사용한다.
 
-- [ ] **Step 1: Cargo feature + 테스트 먼저 (red)**
+- [x] **Step 1: Cargo feature + 테스트 먼저 (red)**
 
 `crates/xmem-windows/Cargo.toml`의 windows features에 `"Win32_System_Diagnostics_Debug"` 추가.
 
@@ -511,12 +511,12 @@ mod tests {
 
 `crates/xmem-windows/src/lib.rs`에 `pub mod read;` 추가.
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `cannot find function read_process_memory`(E0425).
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 테스트 모듈 위에 추가:
 
@@ -566,12 +566,12 @@ pub fn read_process_memory(handle: &OwnedHandle, address: u64, buf: &mut [u8]) -
 }
 ```
 
-- [ ] **Step 4: green 확인**
+- [x] **Step 4: green 확인**
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 기존 38 + 신규 4 = 42 tests.
 
-- [ ] **Step 5: fmt + clippy + 커밋**
+- [x] **Step 5: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -602,7 +602,7 @@ git commit -m "feat(windows): ReadProcessMemory 청크 읽기 래퍼"
   - `pub fn scan<S: MemorySource + Sync>(source, pattern, options, cancel: &AtomicBool) -> Result<ScanReport>`
   - `impl MemorySource for LiveProcess`의 `read`가 실제 읽기로 동작
 
-- [ ] **Step 1: workspace/crate deps + LiveProcess::read + 테스트 조정 (red)**
+- [x] **Step 1: workspace/crate deps + LiveProcess::read + 테스트 조정 (red)**
 
 `Cargo.toml`(루트) `[workspace.dependencies]`에 추가:
 
@@ -669,7 +669,7 @@ serde.workspace = true
     }
 ```
 
-- [ ] **Step 2: scan.rs 테스트 먼저 작성 (red)**
+- [x] **Step 2: scan.rs 테스트 먼저 작성 (red)**
 
 `crates/xmem-memory/src/scan.rs` — mock source 기반 테스트 모듈(테스트가 스펙):
 
@@ -725,7 +725,7 @@ mod tests {
 
 (전체 파일은 Step 3 구현과 함께 완성한다 — 테스트는 아래 시나리오 커버: 청크 경계 스트래들, offset 필터, 필터 선정, 실패 카운트, 취소, max_results/truncated, partial, guard/non-readable 스킵, 대형 프로세스 정책.)
 
-- [ ] **Step 3: 엔진 구현**
+- [x] **Step 3: 엔진 구현**
 
 핵심 구현(테스트 모듈 위):
 
@@ -1017,7 +1017,7 @@ pub use scan::{
 };
 ```
 
-- [ ] **Step 4: 테스트 시나리오 완성 + green**
+- [x] **Step 4: 테스트 시나리오 완성 + green**
 
 `scan.rs` 테스트 모듈에 mock + 시나리오(~12개)를 완성한다:
 
@@ -1074,7 +1074,7 @@ pub use scan::{
 Run: `cargo test -p xmem-memory`
 Expected: PASS — 기존 4(1개 수정) + live 1 + scan ~12 = 약 17 tests.
 
-- [ ] **Step 5: fmt + clippy + 커밋**
+- [x] **Step 5: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -1097,7 +1097,7 @@ git commit -m "feat(memory): chunked 병렬 메모리 스캔 엔진"
 - Consumes: `xmem_memory::{scan, ScanOptions, RegionFilters, ScanReport}`, `xmem_core::{ScanPattern, XmemError}`.
 - Produces: `MemoryCmd::Scan(ScanArgs)` 파싱, `commands::memory::run`의 Scan arm, `execute_scan(pid, pattern, opts, cancel) -> Result<(LiveProcess, ScanReport)>`(테스트용 pub(crate)).
 
-- [ ] **Step 1: cli.rs — ScanArgs + 테스트 (red)**
+- [x] **Step 1: cli.rs — ScanArgs + 테스트 (red)**
 
 `crates/xmem-cli/src/cli.rs`:
 
@@ -1202,12 +1202,12 @@ cli.rs 테스트 추가:
     }
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — `ScanArgs` 없음(E0422/E0433).
 
-- [ ] **Step 3: memory.rs — scan 구현 + 헬퍼 테스트**
+- [x] **Step 3: memory.rs — scan 구현 + 헬퍼 테스트**
 
 `crates/xmem-cli/src/commands/memory.rs`에 추가/수정:
 
@@ -1499,7 +1499,7 @@ fn scan_json_payload(
 
 (렌더/JSON 테스트는 Task 3 스타일의 수동 fixture로 작성; `ScanMatch`/`ScanStats`/`ScanReport`는 전 필드 pub이므로 리터럴 생성 가능.)
 
-- [ ] **Step 4: main.rs — exit 130**
+- [x] **Step 4: main.rs — exit 130**
 
 `exit_code_for`에 arm 추가:
 
@@ -1518,12 +1518,12 @@ fn scan_json_payload(
     }
 ```
 
-- [ ] **Step 5: green 확인**
+- [x] **Step 5: green 확인**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 기존 25 + 신규 약 7 = 약 32 tests.
 
-- [ ] **Step 6: fmt + clippy + 커밋**
+- [x] **Step 6: fmt + clippy + 커밋**
 
 ```bash
 cargo fmt --all
@@ -1541,7 +1541,7 @@ git commit -m "feat(cli): memory scan 명령과 취소 처리"
 - Modify: `docs/architecture.md`
 - Modify: `docs/plans/milestone-04-memory-scan.md` (체크박스)
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 표에 `memory scan (패턴/ASCII/UTF-16, 필터, chunked 병렬, 취소, --json) | Implemented` 추가, Status 문구 M4 완료로.
 - CLI Usage에 `memory scan` 옵션 표(패턴/필터/성능) 추가.
@@ -1549,7 +1549,7 @@ git commit -m "feat(cli): memory scan 명령과 취소 처리"
 - Limitations: guard/non-readable 영역은 스킵(카운트됨), 결과 기본 1024 상한, committed>4 GiB 정책, 문자열 검색은 대소문자 구분, 패턴 매처는 naive(벤치마크 후 최적화 예정).
 - Roadmap M4 완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - dependency 표: `rayon 1`(M4), `ctrlc 3`(M4) 도입 명기.
 - Status 표 M4 Done.
@@ -1557,7 +1557,7 @@ git commit -m "feat(cli): memory scan 명령과 취소 처리"
 - CLI 계약에 exit 130 추가.
 - xmem-memory 책임에 scan 엔진, core에 pattern 모듈 명기.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```bash
 cargo fmt --all -- --check
@@ -1568,7 +1568,7 @@ cargo test --workspace
 
 Expected: 전부 exit 0; 테스트 합계 약 130(core ≈32 + windows 42 + memory ≈17 + cli ≈32).
 
-- [ ] **Step 4: Windows 실검증**
+- [x] **Step 4: Windows 실검증**
 
 ```powershell
 # 1) 자기(사실상 pwsh) 메모리에서 고유 문자열 검색 — 결정적: pwsh는 자기 경로/이름을 메모리에 갖고 있음
@@ -1588,9 +1588,9 @@ cargo run -q -p xmem-cli -- memory scan --pid 4294967294 --string test
 
 취소 경로는 단위 테스트(`cancelled_flag_yields_cancelled_report`)로 검증됨. 실제 Ctrl+C 수동 확인은 선택(Task 5 완료 조건 아님).
 
-- [ ] **Step 5: 체크박스 갱신 + 커밋**
+- [x] **Step 5: 체크박스 갱신 + 커밋**
 
-이 계획서의 모든 `- [ ]`를 `- [x]`로 바꾸고:
+이 계획서의 모든 `- [x]`를 `- [x]`로 바꾸고:
 
 ```bash
 git add README.md docs/architecture.md docs/plans/milestone-04-memory-scan.md

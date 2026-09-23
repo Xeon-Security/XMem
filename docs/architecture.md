@@ -47,10 +47,10 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 
 | Crate | 책임 | 생성 |
 |---|---|---|
-| `xmem-core` | 데이터 모델, 에러, Evidence/Finding, Guard, MemorySource trait, 버전 상수 | M1 |
+| `xmem-core` | 데이터 모델, 에러, Evidence/Finding, Guard, MemorySource trait, Pattern 파서/매처, 버전 상수 | M1 |
 | `xmem-windows` | Win32 FFI, RAII Handle, Win32→XmemError 매핑 | M1 |
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
-| `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), Pattern 엔진, chunked scanner | M3 (생성됨) |
+| `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner | M3 (생성됨; scan 엔진 M4) |
 | `xmem-pe` | goblin 기반 PE 파싱, 메모리 PE artifact 탐지 | M6 |
 | `xmem-forensics` | Snapshot 포맷/직렬화, Diff, Report(JSON/Markdown), MemoryImage 소스 | M7 |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 |
@@ -69,8 +69,8 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `tracing` / `tracing-subscriber` | M1 | stderr 진단 로그 | stdout은 사용자 출력 전용 |
 | `chrono` | M2 | CLI 타임스탬프 표시 | M7 예정이었으나 M2로 앞당김 |
 | `uuid` | M7 | ID | |
-| `rayon` | M4 | region 단위 bounded 병렬 스캔 | thread pool 크기 고정 |
-| `ctrlc` | M4 | Ctrl+C cooperative cancel | |
+| `rayon` 1 | M4 | region 단위 bounded 병렬 스캔 | 도입됨(M4). thread pool 크기 고정 |
+| `ctrlc` 3 | M4 | Ctrl+C cooperative cancel | 도입됨(M4) |
 | `goblin` | M6 | PE 파싱 | |
 | `blake3` | M7 | region 내용 해시 | |
 | `minidump` | M9 | dump analyze | |
@@ -214,7 +214,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 |---|---|---|
 | M2 | `CreateToolhelp32Snapshot`, `Process32FirstW/NextW`, `OpenProcess`, `QueryFullProcessImageNameW`, `GetProcessTimes`, `IsWow64Process2`, `ProcessIdToSessionId`, `GetProcessMemoryInfo`, `OpenProcessToken`+`GetTokenInformation(TokenUser)`+`LookupAccountSidW`, `NtQueryInformationProcess`+PEB read (CommandLine) | 서명은 구현 시 windows-rs 문서로 검증. PEB는 WOW64/보호 프로세스에서 실패 가능 → `None` degrade |
 | M3 | `VirtualQueryEx` (주소 전진 루프, `ERROR_INVALID_PARAMETER`로 종료), `GetNativeSystemInfo`, `GetMappedFileNameW` | 구현됨(`xmem-windows` feature `Win32_System_Memory`). region 상태 변화/레이스는 정상 경로로 처리 |
-| M4 | `ReadProcessMemory` chunked(기본 1 MiB) | `ERROR_PARTIAL_COPY(299)`, `ERROR_ACCESS_DENIED(5)`, `ERROR_NOACCESS(998)` 매핑 |
+| M4 | `ReadProcessMemory` chunked(기본 1 MiB) | 구현됨(`xmem-windows` feature `Win32_System_Diagnostics_Debug`). `ERROR_PARTIAL_COPY(299)`→PartialRead, `ERROR_ACCESS_DENIED(5)`, `ERROR_NOACCESS(998)`/`ERROR_INVALID_ADDRESS(487)` 매핑 |
 | M5 | `TH32CS_SNAPMODULE(_32)`, `Module32FirstW/NextW`, `EnumProcessModulesEx`(fallback), `Thread32First/Next`, `OpenThread`, `GetThreadTimes`, `GetThreadPriority`, `NtQueryInformationThread(ThreadQuerySetWin32StartAddress)` | StartAddress는 반문서화 → 실패 시 skip |
 | M6 | 신규 없음 | goblin + 메모리 헤더 read |
 | M7 | 신규 없음 | 파일 I/O |
@@ -224,8 +224,8 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 ## 12. CLI 계약
 
 ```text
-전역 플래그: --json, -v/-q, --no-color  (--threads N은 M4에서 추가)
-exit code:  0 정상 / 1 오류 / 2 사용법 오류(clap) / 3 정책 거부(보호 프로세스)
+전역 플래그: --json, -v/-q, --no-color  (memory scan: --threads N)
+exit code:  0 정상 / 1 오류 / 2 사용법 오류(clap) / 3 정책 거부(보호 프로세스) / 130 취소(Ctrl+C)
 stdout: 사용자 출력(사람용 또는 --json)  /  stderr: tracing 로그
 ```
 
@@ -243,9 +243,9 @@ xmem experiment list | run <NAME>
 
 - **Read-only 기본**: 분석 명령은 대상 프로세스 상태를 절대 변경하지 않는다(스레드 suspend/resume 포함 금지).
 - **실험 격리**: 변경 API는 XMem이 spawn한 `xmem-target`에만 사용한다. 임의 PID 실험 금지.
-- **자원 상한**: scan worker `min(논리CPU-1, 4)`(최소 1), chunk 1 MiB(4 KiB~16 MiB), region당 기본 상한 64 MiB(`--max-region-size`), 무제한 `Vec` 누적 금지, bounded buffer 재사용.
+- **자원 상한**: scan worker `min(논리CPU-1, 4)`(최소 1), chunk 1 MiB(4 KiB~16 MiB), `--max-region-size`(기본 없음), 무제한 `Vec` 누적 금지, bounded buffer 재사용.
 - **스캔 우선순위**: Executable → Private Executable → Writable → 기타. committed > 4 GiB 프로세스는 기본적으로 executable+private만(`--all`로 확장).
-- **자원 모니터링**: bytes/regions scanned/skipped, read failures, elapsed, peak RSS를 요약 출력.
+- **자원 모니터링**: bytes/regions scanned/skipped, read failures, partial reads, elapsed 요약 출력(peak RSS는 M12).
 - **Disk 보호**: snapshot/dump 생성 전 예상 크기 계산 + 여유 공간 확인, 부족 시 거부. temp → validate → atomic rename.
 - **Ctrl+C**: cooperative cancel(atomic flag) → handle/임시파일 정리 → XMem이 만든 프로세스만 종료.
 - **정책 거부(exit 3)**: 보호 프로세스에 대한 변경 작업 거부.
@@ -257,7 +257,8 @@ xmem experiment list | run <NAME>
 | M1 기반 구조(workspace/core/windows/cli) | Done |
 | M2 Process(`process list`/`process info`) | Done |
 | M3 Virtual Memory(`memory map`, `LiveProcess` MemorySource) | Done |
-| M4~M12 | Planned |
+| M4 Memory Scanner(`memory scan`, Pattern 파서/매처, chunked 병렬 scan, Ctrl+C) | Done |
+| M5~M12 | Planned |
 
 ## 15. Non-Goals
 
