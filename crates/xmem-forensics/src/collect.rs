@@ -5,6 +5,7 @@ use xmem_core::{
     JSON_SCHEMA_VERSION, MemoryRegion, MemorySource, MemoryState, RegionClass, Result,
     SNAPSHOT_FORMAT_VERSION, VERSION, XmemError,
 };
+use xmem_detection::{DetectionContext, detect};
 
 use crate::envelope::{AcquisitionMeta, RegionHash, SnapshotEnvelope};
 
@@ -125,6 +126,11 @@ pub fn collect<S: MemorySource>(
         }
     }
     let hashed_regions = content_hashes.len();
+    let findings = detect(&DetectionContext {
+        regions: &regions,
+        modules: &modules,
+        threads: &threads,
+    });
     Ok(SnapshotEnvelope {
         schema_version: JSON_SCHEMA_VERSION,
         xmem_version: VERSION.to_string(),
@@ -135,7 +141,7 @@ pub fn collect<S: MemorySource>(
         modules,
         threads,
         content_hashes,
-        findings: Vec::new(),
+        findings,
         acquisition: AcquisitionMeta {
             source: "live_process".to_string(),
             pid: source.process().pid,
@@ -301,5 +307,19 @@ mod tests {
         let cancel = AtomicBool::new(true);
         let err = collect(&source, &CollectOptions::default(), &cancel).unwrap_err();
         assert!(matches!(err, XmemError::Cancelled { .. }));
+    }
+
+    #[test]
+    fn collect_includes_findings_from_heuristics() {
+        use xmem_core::Heuristic;
+        let mut source = mock_source();
+        source.regions[0].heuristics = vec![Heuristic::ExecutablePrivate];
+        let envelope = collect(&source, &CollectOptions::default(), &no_cancel()).unwrap();
+        assert!(
+            envelope
+                .findings
+                .iter()
+                .any(|finding| finding.rule_id == "XMEM-001")
+        );
     }
 }

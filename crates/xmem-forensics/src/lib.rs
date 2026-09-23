@@ -9,8 +9,8 @@ pub mod source;
 
 pub use collect::{CollectOptions, DEFAULT_HASH_BUDGET_BYTES, collect};
 pub use diff::{
-    ContentChange, DiffSummary, ModuleChange, RegionChange, SnapshotDiff, SnapshotRef,
-    ThreadChange, diff,
+    ContentChange, DiffSummary, FindingChange, ModuleChange, RegionChange, SnapshotDiff,
+    SnapshotRef, ThreadChange, diff,
 };
 pub use envelope::{AcquisitionMeta, RegionHash, SnapshotEnvelope};
 pub use format::{HEADER_LEN, MAGIC, decode, encode, read_file, write_file};

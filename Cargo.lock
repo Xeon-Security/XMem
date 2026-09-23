@@ -968,6 +968,7 @@ dependencies = [
  "serde_json",
  "tracing",
  "xmem-core",
+ "xmem-detection",
 ]
 
 [[package]]

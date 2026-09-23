@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use xmem_core::{Heuristic, MemoryRegion, ModuleInfo, ProcessArch, ThreadInfo};
+use xmem_core::{Finding, Heuristic, MemoryRegion, ModuleInfo, ProcessArch, ThreadInfo};
 
 use crate::envelope::{RegionHash, SnapshotEnvelope};
 
@@ -41,6 +41,13 @@ pub struct ThreadChange {
     pub changes: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize)]
+pub struct FindingChange {
+    pub before: Finding,
+    pub after: Finding,
+    pub changes: Vec<String>,
+}
+
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct DiffSummary {
     pub regions_added: usize,
@@ -53,6 +60,9 @@ pub struct DiffSummary {
     pub threads_added: usize,
     pub threads_removed: usize,
     pub threads_changed: usize,
+    pub detections_added: usize,
+    pub detections_removed: usize,
+    pub detections_changed: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -69,6 +79,9 @@ pub struct SnapshotDiff {
     pub threads_added: Vec<ThreadInfo>,
     pub threads_removed: Vec<ThreadInfo>,
     pub threads_changed: Vec<ThreadChange>,
+    pub detections_added: Vec<Finding>,
+    pub detections_removed: Vec<Finding>,
+    pub detections_changed: Vec<FindingChange>,
     pub summary: DiffSummary,
 }
 
@@ -209,6 +222,57 @@ fn thread_changes(before: &ThreadInfo, after: &ThreadInfo) -> Vec<String> {
     changes
 }
 
+fn finding_key(finding: &Finding) -> (String, u64, u64) {
+    let evidence = finding.evidence.first();
+    (
+        finding.rule_id.clone(),
+        evidence
+            .and_then(|item| item.region_base)
+            .unwrap_or(u64::MAX),
+        evidence.and_then(|item| item.address).unwrap_or(u64::MAX),
+    )
+}
+
+fn finding_changes(before: &Finding, after: &Finding) -> Vec<String> {
+    let mut changes = Vec::new();
+    if before.severity != after.severity {
+        changes.push(format!(
+            "severity: {} -> {}",
+            severity_text(before.severity),
+            severity_text(after.severity)
+        ));
+    }
+    if before.confidence != after.confidence {
+        changes.push(format!(
+            "confidence: {} -> {}",
+            confidence_text(before.confidence),
+            confidence_text(after.confidence)
+        ));
+    }
+    if before.name != after.name {
+        changes.push(format!("name: {} -> {}", before.name, after.name));
+    }
+    changes
+}
+
+fn severity_text(severity: xmem_core::Severity) -> &'static str {
+    match severity {
+        xmem_core::Severity::Info => "info",
+        xmem_core::Severity::Low => "low",
+        xmem_core::Severity::Medium => "medium",
+        xmem_core::Severity::High => "high",
+        xmem_core::Severity::Critical => "critical",
+    }
+}
+
+fn confidence_text(confidence: xmem_core::Confidence) -> &'static str {
+    match confidence {
+        xmem_core::Confidence::Low => "low",
+        xmem_core::Confidence::Medium => "medium",
+        xmem_core::Confidence::High => "high",
+    }
+}
+
 /// 두 envelope의 구조적 차이를 계산한다. 변화가 없으면 빈 diff를 반환한다.
 pub fn diff(before: &SnapshotEnvelope, after: &SnapshotEnvelope) -> SnapshotDiff {
     let before_regions: BTreeMap<u64, &MemoryRegion> = before
@@ -327,6 +391,39 @@ pub fn diff(before: &SnapshotEnvelope, after: &SnapshotEnvelope) -> SnapshotDiff
             threads_removed.push((*thread).clone());
         }
     }
+    let before_findings: BTreeMap<(String, u64, u64), &Finding> = before
+        .findings
+        .iter()
+        .map(|finding| (finding_key(finding), finding))
+        .collect();
+    let after_findings: BTreeMap<(String, u64, u64), &Finding> = after
+        .findings
+        .iter()
+        .map(|finding| (finding_key(finding), finding))
+        .collect();
+    let mut detections_added = Vec::new();
+    let mut detections_changed = Vec::new();
+    for (key, finding) in &after_findings {
+        match before_findings.get(key) {
+            None => detections_added.push((*finding).clone()),
+            Some(old) => {
+                let changes = finding_changes(old, finding);
+                if !changes.is_empty() {
+                    detections_changed.push(FindingChange {
+                        before: (*old).clone(),
+                        after: (*finding).clone(),
+                        changes,
+                    });
+                }
+            }
+        }
+    }
+    let mut detections_removed = Vec::new();
+    for (key, finding) in &before_findings {
+        if !after_findings.contains_key(key) {
+            detections_removed.push((*finding).clone());
+        }
+    }
     let summary = DiffSummary {
         regions_added: regions_added.len(),
         regions_removed: regions_removed.len(),
@@ -338,6 +435,9 @@ pub fn diff(before: &SnapshotEnvelope, after: &SnapshotEnvelope) -> SnapshotDiff
         threads_added: threads_added.len(),
         threads_removed: threads_removed.len(),
         threads_changed: threads_changed.len(),
+        detections_added: detections_added.len(),
+        detections_removed: detections_removed.len(),
+        detections_changed: detections_changed.len(),
     };
     SnapshotDiff {
         before: snapshot_ref(before),
@@ -352,6 +452,9 @@ pub fn diff(before: &SnapshotEnvelope, after: &SnapshotEnvelope) -> SnapshotDiff
         threads_added,
         threads_removed,
         threads_changed,
+        detections_added,
+        detections_removed,
+        detections_changed,
         summary,
     }
 }
@@ -465,6 +568,55 @@ mod tests {
                 .changes
                 .iter()
                 .any(|change| change.starts_with("start_address:"))
+        );
+    }
+
+    #[test]
+    fn detects_finding_appeared_and_disappeared() {
+        use xmem_core::{Confidence, Evidence, Finding, Severity};
+        let before = sample_envelope(1, 0x1000, 0x40);
+        let mut after = sample_envelope(1, 0x1000, 0x40);
+        after.findings.push(Finding {
+            rule_id: "XMEM-001".to_string(),
+            name: "Executable Private Memory".to_string(),
+            severity: Severity::Medium,
+            confidence: Confidence::High,
+            evidence: vec![Evidence::new("region").with_region_base(0x1000)],
+            heuristic: "private memory with executable protection".to_string(),
+            interpretation: "Potentially suspicious memory region".to_string(),
+        });
+        let appeared = diff(&before, &after);
+        assert_eq!(appeared.detections_added.len(), 1);
+        assert_eq!(appeared.summary.detections_added, 1);
+        let disappeared = diff(&after, &before);
+        assert_eq!(disappeared.detections_removed.len(), 1);
+        assert_eq!(disappeared.summary.detections_removed, 1);
+    }
+
+    #[test]
+    fn detects_finding_severity_change() {
+        use xmem_core::{Confidence, Evidence, Finding, Severity};
+        let finding = |severity: Severity| Finding {
+            rule_id: "XMEM-005".to_string(),
+            name: "Memory Protection Anomaly".to_string(),
+            severity,
+            confidence: Confidence::High,
+            evidence: vec![Evidence::new("region").with_region_base(0x1000)],
+            heuristic: "writable and executable protection".to_string(),
+            interpretation: "Potentially suspicious protection".to_string(),
+        };
+        let mut before = sample_envelope(1, 0x1000, 0x40);
+        before.findings.push(finding(Severity::Low));
+        let mut after = sample_envelope(1, 0x1000, 0x40);
+        after.findings.push(finding(Severity::High));
+        let result = diff(&before, &after);
+        assert_eq!(result.detections_changed.len(), 1);
+        assert_eq!(result.summary.detections_changed, 1);
+        assert!(
+            result.detections_changed[0]
+                .changes
+                .iter()
+                .any(|change| change.starts_with("severity:"))
         );
     }
 }
