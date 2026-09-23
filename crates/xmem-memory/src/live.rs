@@ -1,6 +1,8 @@
 use xmem_core::{
-    MemoryRegion, MemorySource, ModuleInfo, ProcessInfo, ReadOutcome, Result, ThreadInfo, XmemError,
+    Heuristic, MemoryRegion, MemorySource, MemoryState, ModuleInfo, ProcessInfo, ReadOutcome,
+    RegionClass, Result, ThreadInfo, XmemError,
 };
+use xmem_pe::{MemoryPeClass, PE_HEADER_PREFIX, classify_memory_pe};
 use xmem_windows::{
     OwnedHandle, list_raw_modules, list_raw_threads, memory, open_for_query, open_for_read,
     open_thread_for_query, process_info, thread_priority, thread_start_address,
@@ -42,6 +44,7 @@ impl LiveProcess {
         )?;
         let mut regions = Vec::with_capacity(walk.regions.len());
         let mut buf = vec![0u16; 32 * 1024];
+        let mut header_buf = vec![0u8; PE_HEADER_PREFIX];
         for raw in &walk.regions {
             let mapped_file = if memory::is_file_backed(raw) {
                 memory::mapped_file_name(&self.handle, raw.base, &mut buf)
@@ -49,7 +52,12 @@ impl LiveProcess {
                 None
             };
             match memory::region_from_raw(raw, mapped_file) {
-                Some(region) => regions.push(region),
+                Some(mut region) => {
+                    if region.classification == RegionClass::Private && region.executable {
+                        self.probe_region_pe(&mut region, &mut header_buf);
+                    }
+                    regions.push(region);
+                }
                 None => tracing::warn!(
                     base = format_args!("{:#x}", raw.base),
                     state = raw.state,
@@ -61,6 +69,33 @@ impl LiveProcess {
             regions,
             truncated: walk.truncated,
         })
+    }
+
+    /// private executable 영역의 헤더 prefix를 읽어 PE artifact heuristic을 보강한다.
+    /// 읽기 실패/부분 읽기에서는 heuristic을 추가하지 않는다(오단정 금지).
+    fn probe_region_pe(&self, region: &mut MemoryRegion, buf: &mut [u8]) {
+        if region.state != MemoryState::Commit {
+            return;
+        }
+        let len = region.size.min(buf.len() as u64) as usize;
+        if len < 64 {
+            return;
+        }
+        let Ok(outcome) = self.read(region.base, &mut buf[..len]) else {
+            return;
+        };
+        if outcome.bytes_read < 64 {
+            return;
+        }
+        let Some(heuristic) = pe_probe_heuristics(classify_memory_pe(
+            region.classification,
+            &buf[..outcome.bytes_read],
+        )) else {
+            return;
+        };
+        if !region.heuristics.contains(&heuristic) {
+            region.heuristics.push(heuristic);
+        }
     }
 
     /// 로드된 모듈 목록. arch는 프로세스 arch를 상속한다(모듈별 arch는 PE 분석에서).
@@ -119,6 +154,18 @@ fn contains(region: &MemoryRegion, address: u64) -> bool {
 
 fn contains_module(module: &ModuleInfo, address: u64) -> bool {
     address >= module.base && address < module.base.saturating_add(module.size)
+}
+
+fn pe_probe_heuristics(class: MemoryPeClass) -> Option<Heuristic> {
+    match class {
+        MemoryPeClass::None => Some(Heuristic::ExecutableAnonymous),
+        MemoryPeClass::PrivatePeLike | MemoryPeClass::Malformed => {
+            Some(Heuristic::PrivateExecutablePeLike)
+        }
+        MemoryPeClass::NormalLoadedModule | MemoryPeClass::MappedImage | MemoryPeClass::Unknown => {
+            None
+        }
+    }
 }
 
 impl MemorySource for LiveProcess {
@@ -238,5 +285,38 @@ mod tests {
         let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
         assert!(!live.modules().unwrap().is_empty());
         assert!(!live.threads().unwrap().is_empty());
+    }
+
+    #[test]
+    fn pe_probe_heuristics_maps_classes() {
+        assert_eq!(
+            pe_probe_heuristics(MemoryPeClass::None),
+            Some(Heuristic::ExecutableAnonymous)
+        );
+        assert_eq!(
+            pe_probe_heuristics(MemoryPeClass::PrivatePeLike),
+            Some(Heuristic::PrivateExecutablePeLike)
+        );
+        assert_eq!(
+            pe_probe_heuristics(MemoryPeClass::Malformed),
+            Some(Heuristic::PrivateExecutablePeLike)
+        );
+        assert_eq!(pe_probe_heuristics(MemoryPeClass::NormalLoadedModule), None);
+        assert_eq!(pe_probe_heuristics(MemoryPeClass::MappedImage), None);
+        assert_eq!(pe_probe_heuristics(MemoryPeClass::Unknown), None);
+    }
+
+    #[test]
+    fn region_map_probes_private_executable_regions() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        let map = live.region_map().unwrap();
+        assert!(!map.regions.is_empty());
+        for region in map
+            .regions
+            .iter()
+            .filter(|region| region.classification == RegionClass::Private && region.executable)
+        {
+            assert!(region.heuristics.contains(&Heuristic::ExecutablePrivate));
+        }
     }
 }
