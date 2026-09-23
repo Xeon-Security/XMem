@@ -266,7 +266,9 @@ pub fn process_info(pid: u32) -> Result<ProcessInfo> {
         .ok_or(XmemError::ProcessExited { pid })?;
     let handle = match open_for_query(pid) {
         Ok(h) => h,
-        Err(XmemError::WindowsApi { code: 87, .. }) => return Err(XmemError::ProcessExited { pid }),
+        Err(XmemError::WindowsApi { code: 87, .. }) => {
+            return Err(XmemError::ProcessExited { pid });
+        }
         Err(e) => return Err(e),
     };
     Ok(ProcessInfo {
@@ -445,7 +447,11 @@ mod tests {
         assert!(info.thread_count.unwrap_or(0) >= 1);
         assert!(info.module_count.unwrap_or(0) >= 1);
         assert!(info.session_id.is_some());
-        assert!(info.memory_stats.map(|m| m.working_set > 0).unwrap_or(false));
+        assert!(
+            info.memory_stats
+                .map(|m| m.working_set > 0)
+                .unwrap_or(false)
+        );
         assert!(info.creation_time.is_some());
         assert!(info.user.is_some());
     }
