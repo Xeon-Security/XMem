@@ -587,6 +587,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "xmem-memory"
+version = "0.1.0"
+dependencies = [
+ "tracing",
+ "xmem-core",
+ "xmem-windows",
+]
+
+[[package]]
 name = "xmem-windows"
 version = "0.1.0"
 dependencies = [
