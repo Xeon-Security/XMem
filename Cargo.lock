@@ -952,6 +952,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "xmem-detection"
+version = "0.1.0"
+dependencies = [
+ "xmem-core",
+]
+
+[[package]]
 name = "xmem-forensics"
 version = "0.1.0"
 dependencies = [
