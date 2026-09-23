@@ -11,4 +11,6 @@ workspace = true
 [dependencies]
 xmem-core.workspace = true
 xmem-windows.workspace = true
+rayon.workspace = true
+serde.workspace = true
 tracing.workspace = true

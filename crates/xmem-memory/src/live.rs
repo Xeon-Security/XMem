@@ -1,7 +1,7 @@
 use xmem_core::{
     MemoryRegion, MemorySource, ModuleInfo, ProcessInfo, ReadOutcome, Result, ThreadInfo, XmemError,
 };
-use xmem_windows::{OwnedHandle, memory, open_for_query, process_info};
+use xmem_windows::{OwnedHandle, memory, open_for_query, open_for_read, process_info};
 
 #[derive(Debug, Clone)]
 pub struct RegionMap {
@@ -20,7 +20,13 @@ pub struct LiveProcess {
 impl LiveProcess {
     pub fn open(pid: u32) -> Result<Self> {
         let info = process_info(pid)?;
-        let handle = open_for_query(pid)?;
+        // scan에는 VM_READ가 필요하다. VM_READ가 거부되면 QUERY 전용 핸들로
+        // fallback한다(이 경우 memory map은 동작하지만 read는 AccessDenied).
+        let handle = match open_for_read(pid) {
+            Ok(handle) => handle,
+            Err(XmemError::AccessDenied { .. }) => open_for_query(pid)?,
+            Err(err) => return Err(err),
+        };
         Ok(Self { pid, handle, info })
     }
 
@@ -64,10 +70,18 @@ impl MemorySource for LiveProcess {
         Ok(self.region_map()?.regions)
     }
 
-    fn read(&self, _address: u64, _buf: &mut [u8]) -> Result<ReadOutcome> {
-        Err(XmemError::Unimplemented {
-            feature: "memory read",
-        })
+    fn read(&self, address: u64, buf: &mut [u8]) -> Result<ReadOutcome> {
+        match xmem_windows::read::read_process_memory(&self.handle, address, buf) {
+            Ok(bytes_read) => Ok(ReadOutcome {
+                bytes_read,
+                partial: bytes_read < buf.len(),
+            }),
+            Err(XmemError::PartialRead { read, .. }) => Ok(ReadOutcome {
+                bytes_read: read,
+                partial: true,
+            }),
+            Err(err) => Err(err),
+        }
     }
 
     fn modules(&self) -> Result<Vec<ModuleInfo>> {
@@ -129,12 +143,19 @@ mod tests {
     }
 
     #[test]
+    fn read_self_stack_value() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        let value: u64 = 0x0102_0304_0506_0708;
+        let mut buf = [0u8; 8];
+        let outcome = live.read((&value as *const u64) as u64, &mut buf).unwrap();
+        assert_eq!(outcome.bytes_read, 8);
+        assert!(!outcome.partial);
+        assert_eq!(u64::from_ne_bytes(buf), value);
+    }
+
+    #[test]
     fn unimplemented_methods_are_explicit() {
         let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
-        assert!(matches!(
-            live.read(0, &mut [0u8; 4]).unwrap_err(),
-            XmemError::Unimplemented { .. }
-        ));
         assert!(matches!(
             live.modules().unwrap_err(),
             XmemError::Unimplemented { .. }
