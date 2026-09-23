@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **Milestone 11 (Experiment Automation)** 완료. `xmem experiment list` / `xmem experiment run <NAME>`로 XMem이 spawn한 lab target에 대해 Baseline → Action → Post → Diff → Detection → Report 파이프라인을 실행한다.
+현재 **Milestone 12 (완성도)** 완료 — 12개 마일스톤이 모두 완료되었다. `xmem report --pid <PID> --output <FILE>`로 JSON/Markdown 리포트를 생성하고, `memory scan` 통계에 XMem 자신의 RSS가 포함되며, `docs/`에 6종 기술 문서가 추가되었다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -39,6 +39,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | `snapshot create` (포맷 v1, 메타데이터 + 영역 blake3 + findings, 디스크 사전 검사, atomic rename, `--json`) | Implemented |
 | `snapshot diff` (region/module/thread/protection/content/detection 변화, `--json`) | Implemented |
 | `detect --pid` (Rule 기반 XMEM-001~005, Observed/Evidence/Heuristic/Confidence 분리, `--json`) | Implemented |
+| `report --pid <PID> --output <FILE>` (JSON/Markdown 리포트: regions/modules/threads/findings + summary, 확장자 `.md`면 Markdown, temp→rename, `--json`) | Implemented |
 | `dump create --pid <PID> --output <FILE> [--full]` (MiniDumpWriteDump, metadata+FullMemoryInfo 기본, `--full`은 전체 메모리·디스크 사전 검사, temp→검증→rename, `--json`) | Implemented |
 | `dump analyze <FILE>` (minidump 파싱: os/cpu/arch/pid/modules/threads/regions/findings, 오프라인 Detection, `--json`) | Implemented |
 | Test Target (`lab/targets/xmem-target`) (deterministic 시나리오 normal/pattern/private/private-exec/pe-like/threads/protection/all, Ground Truth JSON report, 회귀 테스트) | Implemented |
@@ -80,6 +81,7 @@ xmem snapshot diff before.xmem after.xmem               # 변화 분석 (region/
 xmem detect --pid <PID>                                 # Detection Rule 실행 (findings + evidence)
 xmem dump create --pid <PID> --output target.dmp        # 미니덤프 생성 (기본 metadata + FullMemoryInfo)
 xmem dump analyze target.dmp                            # 오프라인 분석 (regions/modules/threads + findings)
+xmem report --pid <PID> --output report.md              # JSON/Markdown 리포트 (findings 포함)
 cargo build -p xmem-target                              # Research Lab Test Target 빌드
 .\target\debug\xmem-target.exe run all --hold-secs 60 --report report.json  # 알려진 아티팩트 프로세스
 xmem detect --pid <TARGET-PID>                          # 타깃에서 XMEM-001/002/004 등 관찰
@@ -170,11 +172,12 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Limitations
 
 - **User-mode 전용**: Kernel driver, 물리 메모리 접근, 커널 패칭은 범위 밖(Non-Goal).
-- M11 기준 `process list` / `process info` / `memory map` / `memory scan` / `modules` / `threads` / `snapshot create` / `snapshot diff` / `detect` / `dump create` / `dump analyze` / `experiment list` / `experiment run`이 구현되어 있다. `report` 명령은 스텁(오류 반환)이며 M12에서 추가된다.
+- M12 기준 모든 CLI 명령(`process` / `memory` / `modules` / `threads` / `snapshot` / `dump` / `detect` / `report` / `experiment`)이 구현되어 있다.
 - `memory map`의 mapped file 경로는 NT 디바이스 경로(`\Device\...`)로 표시된다(드라이브 문자 변환 미구현).
 - `memory scan`은 guard(no-access) 및 non-readable 영역을 사전 스킵하며(카운트됨), 결과는 기본 1024개 상한(초과 시 `truncated: true` 보고, `--max-results 0`으로 해제).
 - committed > 4 GiB 대형 프로세스는 기본적으로 executable/private 영역만 스캔한다(`--all`로 해제, `policy_restricted`로 보고).
 - 문자열 검색은 대소문자를 구분하며, 패턴 매처는 naive 구현이다(벤치마크 후 최적화 예정).
+- `memory scan` 통계에는 XMem 자신의 RSS(작업 집합)가 포함된다(peak RSS 추적은 후속).
 - `executable_anonymous` / `private_executable_pe_like` heuristic은 private executable 영역의 헤더 prefix(4 KiB)를 읽어 판정한다(읽기 실패/부분 읽기에서는 heuristic을 추가하지 않는다).
 - `modules --pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시되며, VM_READ 권한이 없거나 파싱에 실패한 모듈은 `-`로 표시된다(Malformed PE는 pe-like로 취급). `modules` 기본 출력의 모듈별 arch는 프로세스 arch를 상속한다.
 - `threads`의 priority는 동적 우선순위(조회 실패 시 `-`)이며, 스레드 시간 통계(`GetThreadTimes`)와 Wait 상태는 후속 마일스톤이다.
@@ -186,6 +189,17 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 실험 기능은 XMem이 직접 spawn한 전용 Test Target에만 수행한다(호스트 보호).
 - Test Target은 자기 프로세스의 메모리만 변경하며(x64 Windows 전용), `threads` 시나리오의 스레드는 suspended 상태로 생성되어 실제로 실행되지 않는다. 아티팩트 주소는 실행마다 달라지므로 테스트/스모크는 `--report`의 주소를 사용해야 한다.
 - Experiment는 v1에서 XMem이 spawn한 `xmem-target` 전용이다(임의 PID 불가). `remote-thread`의 원격 스레드는 suspended 상태로 생성되어 실행되지 않으며, 변경 Win32 API 호출은 `xmem-experiments` 경로에서만 일어난다. 테스트에서는 `RunOptions::target_binary`로 바이너리를 지정하며, CLI는 실행 파일 기준 또는 `XMEM_TARGET` 환경 변수로 타깃을 찾는다.
+
+## Documentation
+
+- [`docs/architecture.md`](docs/architecture.md) — 설계 스펙 (2계층 구조, Data Model, Windows API 계획, Safety)
+- [`docs/windows-memory.md`](docs/windows-memory.md) — Windows 가상 메모리 기초 (state/type/protection, VirtualQueryEx)
+- [`docs/vad.md`](docs/vad.md) — VAD 개념과 user-mode 근사(VirtualQueryEx)의 한계
+- [`docs/pe.md`](docs/pe.md) — PE 구조와 메모리 PE 분류 (`xmem-pe`)
+- [`docs/detection.md`](docs/detection.md) — Evidence 기반 Detection (XMEM-001~005)
+- [`docs/experiments.md`](docs/experiments.md) — 실험 방법론과 안전 원칙
+- [`docs/format.md`](docs/format.md) — Snapshot v1 / Minidump / Report / JSON envelope 포맷
+- [`docs/plans/`](docs/plans/) — 마일스톤 실행 계획
 
 ## Roadmap
 
@@ -202,7 +216,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | M9 | Minidump 생성 / 분석 | 완료 |
 | M10 | Research Lab (Test Target + Ground Truth) | 완료 |
 | M11 | Experiment 자동화 (TargetGuard, 4개 실험, Baseline→Post 파이프라인) | 완료 |
-| M12 | 완성도 (JSON, Report, 문서, 성능, UX) | 예정 |
+| M12 | 완성도 (`report` JSON/Markdown, 자원 모니터링 RSS, 문서 6종, UX) | 완료 |
 
 ## License
 

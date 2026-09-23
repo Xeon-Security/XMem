@@ -1,6 +1,6 @@
 # M12 완성도(Report, 문서, 자원 모니터링) 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem report --pid <PID> --output <FILE>`(JSON/Markdown)를 구현하고, 스펙 §42의 미작성 문서 6종을 추가하며, 스캔 자원 통계에 XMem 자신의 RSS를 포함한다.
 
@@ -47,7 +47,7 @@
   - `to_markdown(&ReportData) -> String`
   - `write_report(&ReportData, path: &Path) -> Result<u64>`
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `crates/xmem-forensics/src/report.rs` 생성(테스트만):
 
@@ -190,12 +190,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-forensics --tests`
 Expected: FAIL — `ReportData`/`to_markdown`/`write_report`/`is_markdown` 미정의(E0425/E0432/E0433)
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 테스트 모듈 위에 추가:
 
@@ -466,12 +466,12 @@ fn confidence_text(confidence: xmem_core::Confidence) -> &'static str {
 
 주의: `MemoryRegion` 필드 리터럴은 xmem-core 실제 정의와 일치해야 한다(기존 다른 테스트 픽스처 참고). `region.protection`은 `Display`가 있으므로 `{}`로 출력.
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-forensics`
 Expected: PASS — 기존 24 + 신규 3 = 27
 
-- [ ] **Step 5: fmt/clippy/커밋**
+- [x] **Step 5: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -492,7 +492,7 @@ git commit -m "feat(forensics): 분석 리포트(JSON/Markdown) 생성"
 - Consumes: `xmem_forensics::report::{ReportData, is_markdown, write_report}`, `xmem_detection::{DetectionContext, detect}`, `xmem_memory::LiveProcess`, `crate::commands::render::human_size`, `crate::output::{emit, emit_json, resolve_mode, success_envelope}`.
 - Produces: `pub(crate) fn build_report(pid: u32) -> Result<ReportData>`.
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `crates/xmem-cli/src/commands/report.rs`:
 
@@ -541,12 +541,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — `build_report` 미정의(E0425)
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 테스트 모듈 위에 추가:
 
@@ -613,12 +613,12 @@ pub(crate) fn build_report(pid: u32) -> Result<ReportData> {
 }
 ```
 
-- [ ] **Step 4: 테스트 통과 확인**
+- [x] **Step 4: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 기존 57 + 신규 2 = 59
 
-- [ ] **Step 5: fmt/clippy/커밋**
+- [x] **Step 5: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -636,7 +636,7 @@ git commit -m "feat(cli): report 명령(JSON/Markdown)"
 
 각 문서는 40~80행. 검증된 구현 사실과 개념 설명만 담는다. 미구현 기능은 "계획/한계"로 표기한다.
 
-- [ ] **Step 1: `docs/windows-memory.md`**
+- [x] **Step 1: `docs/windows-memory.md`**
 
 포함할 내용:
 - Virtual Address Space 개념(예약/커밋, 4 KiB 페이지, allocation granularity 64 KiB(x64)).
@@ -647,7 +647,7 @@ git commit -m "feat(cli): report 명령(JSON/Markdown)"
 - `GetMappedFileNameW` 디바이스 경로(`\Device\...`), pagefile 매핑은 조회 실패 가능.
 - XMem 매핑: `xmem-windows::memory`(walk), `xmem-memory::LiveProcess::region_map`, `xmem memory map` 출력 필드.
 
-- [ ] **Step 2: `docs/vad.md`**
+- [x] **Step 2: `docs/vad.md`**
 
 - VAD 개념: 커널 `EPROCESS`의 VAD 트리(NT 내부 자료구조)가 프로세스 주소 공간 영역을 기술한다는 것(개념 설명).
 - 사용자 모드에서 VAD를 직접 읽을 수 없음 → XMem은 `VirtualQueryEx`로 근사한다.
@@ -655,7 +655,7 @@ git commit -m "feat(cli): report 명령(JSON/Markdown)"
 - 이 근사가 Detector/Report에 미치는 영향(분류는 커밋된 영역 기준).
 - 향후 연구 방향(ETW/커널 없음 — Non-Goals 준수).
 
-- [ ] **Step 3: `docs/pe.md`**
+- [x] **Step 3: `docs/pe.md`**
 
 - PE 구조 요약: DOS Header(`MZ`, `e_lfanew`), PE Signature(`PE\0\0`), COFF Header(machine/sections/characteristics), Optional Header(PE32/PE32+ magic, entry RVA, image base, size_of_image, subsystem), Section Table(이름/VA/크기/특성), Data Directories(imports/exports/relocations/TLS).
 - 메모리에서의 PE: 로더가 매핑한 이미지 vs 디스크 레이아웃 차이(섹션 정렬).
@@ -663,7 +663,7 @@ git commit -m "feat(cli): report 명령(JSON/Markdown)"
 - 구현: bounds-checked 헤더 파서(`PE_HEADER_PREFIX` 4 KiB) + 전체 파일일 때만 goblin 보강; imports/exports/relocations/TLS는 전체 파일에서만 채워짐.
 - 탐지 연계: XMEM-002(4 KiB 프로브 기반, 한계 명시).
 
-- [ ] **Step 4: `docs/detection.md`**
+- [x] **Step 4: `docs/detection.md`**
 
 - Evidence 모델: Observed Fact → Evidence → Heuristic → Confidence → Interpretation, 악성 단정 금지.
 - 규칙 표 XMEM-001~005: 조건/severity/confidence(구현 코드 기준).
@@ -672,7 +672,7 @@ git commit -m "feat(cli): report 명령(JSON/Markdown)"
 - 0 findings ≠ 안전 문구.
 - Snapshot/Report에서의 findings(diff detections, report findings).
 
-- [ ] **Step 5: `docs/experiments.md`**
+- [x] **Step 5: `docs/experiments.md`**
 
 - 방법론: Baseline → Action → Post → Diff → Detection → Report.
 - 안전 원칙: XMem이 spawn한 `xmem-target`만, 변경 API(`VirtualAllocEx`/`VirtualProtectEx`/`WriteProcessMemory`/`CreateRemoteThread`)는 `xmem-experiments` 경로에서만, guard/신원 검증, Drop cleanup.
@@ -680,7 +680,7 @@ git commit -m "feat(cli): report 명령(JSON/Markdown)"
 - 판정: expected_present(baseline)/expected_observed(post) + report Ground Truth 대조.
 - 한계: suspended thread는 실제 실행되지 않음, 주소는 실행마다 다름(`--report` 참조), VM 권장.
 
-- [ ] **Step 6: `docs/format.md`**
+- [x] **Step 6: `docs/format.md`**
 
 - Snapshot v1: 헤더 `magic "XMEM"(4) | u16 format_version | u16 flags | u32 payload_len` + JSON payload, `SNAPSHOT_FORMAT_VERSION=1`, payload의 `format_version` 교차 검증, temp→재파싱 검증→rename.
 - payload 필드: schema_version/xmem_version/timestamp/process/regions/modules/threads/content_hashes(blake3, RegionHash)/findings/acquisition(AcquisitionMeta — 64 MiB 예산).
@@ -689,7 +689,7 @@ git commit -m "feat(cli): report 명령(JSON/Markdown)"
 - Report(JSON/Markdown): envelope 없이 파일 자체가 ReportData(JSON), Markdown은 동일 데이터 렌더.
 - 버전 관리 원칙: format_version/magic, 향후 migration.
 
-- [ ] **Step 7: 검증 + 커밋**
+- [x] **Step 7: 검증 + 커밋**
 
 문서 6종이 실제 코드와 일치하는지 육안 검증(규칙 ID, 포맷 바이트, 예산 64 MiB 등).
 
@@ -713,7 +713,7 @@ git commit -m "docs: 메모리/VAD/PE/탐지/실험/포맷 문서 추가"
 - Consumes: `xmem-windows::memory_counters`(기존 구현), `open_for_query`, `current_pid`.
 - Produces: `xmem_windows::current_rss_bytes() -> Result<u64>`; `ScanStats.rss_bytes: u64`.
 
-- [ ] **Step 1: 테스트 작성 (xmem-windows)**
+- [x] **Step 1: 테스트 작성 (xmem-windows)**
 
 `crates/xmem-windows/src/process.rs` 테스트 모듈에 추가:
 
@@ -725,12 +725,12 @@ fn current_rss_bytes_is_positive() {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `current_rss_bytes` 미정의
 
-- [ ] **Step 3: 구현 (xmem-windows)**
+- [x] **Step 3: 구현 (xmem-windows)**
 
 `memory_counters`의 실제 시그니처(기존 코드)를 확인하고 아래를 추가:
 
@@ -750,24 +750,24 @@ pub fn current_rss_bytes() -> Result<u64> {
 
 `lib.rs` 재수출에 `current_rss_bytes` 추가.
 
-- [ ] **Step 4: 스캔 통계에 연결 (xmem-memory)**
+- [x] **Step 4: 스캔 통계에 연결 (xmem-memory)**
 
 `crates/xmem-memory/src/scan.rs`:
 - `ScanStats`에 `pub rss_bytes: u64,` 추가(Default로 0).
 - `scan()`의 stats 생성 뒤: `stats.rss_bytes = xmem_windows::current_rss_bytes().unwrap_or(0);`
 
-- [ ] **Step 5: CLI 통계 출력 (xmem-cli/memory.rs)**
+- [x] **Step 5: CLI 통계 출력 (xmem-cli/memory.rs)**
 
 `render_scan`의 통계 줄을 확인해 `rss` 항목 추가:
 - 기존 사람용 통계 줄 끝에 `, rss {}`(human_size(report.stats.rss_bytes)) 추가.
 - JSON은 `stats`가 직렬화되어 자동 포함됨(수동 필드 추가 없음).
 
-- [ ] **Step 6: 테스트/게이트**
+- [x] **Step 6: 테스트/게이트**
 
 Run: `cargo test -p xmem-windows -p xmem-memory -p xmem-cli`
 Expected: windows 62(61+1), memory 21, cli 59 — 전부 green
 
-- [ ] **Step 7: README/architecture.md 갱신**
+- [x] **Step 7: README/architecture.md 갱신**
 
 README:
 - Status 문구 → "현재 **Milestone 12 (완성도)** 완료. ... `xmem report`(JSON/Markdown), 문서 6종, 스캔 RSS 통계까지 포함한다."
@@ -783,7 +783,7 @@ architecture.md:
 - §14 Status: M12 Done + "M13+ | 없음(계획 없음)".
 - CLI 계약에 report 라인 이미 있음(유지).
 
-- [ ] **Step 8: 전체 게이트**
+- [x] **Step 8: 전체 게이트**
 
 ```powershell
 cargo fmt --all -- --check
@@ -794,7 +794,7 @@ cargo test --workspace 2>&1 | Out-File -Encoding utf8 "$env:TEMP\opencode\xmem-m
 
 Expected: fmt/check/clippy=0; 테스트 **229** = cli 59 + core 34 + detection 8 + experiments 3 + forensics 27 + memory 21 + pe 9 + windows 62 + xmem-target 7.
 
-- [ ] **Step 9: Windows 스모크**
+- [x] **Step 9: Windows 스모크**
 
 ```powershell
 $dir = Join-Path $env:TEMP "xmem-m12"; Remove-Item -Recurse -Force $dir -ErrorAction SilentlyContinue
@@ -822,9 +822,9 @@ Remove-Item -Recurse -Force $dir
 
 기록: JSON/MD 크기, 섹션 존재, lsass/bogus PID exit 1, `.tmp-` 없음, 반복 3회 0, 스캔 통계의 rss 값.
 
-- [ ] **Step 10: 체크박스 + 커밋**
+- [x] **Step 10: 체크박스 + 커밋**
 
-계획서 체크박스 `- [ ]` → `- [x]` replaceAll.
+계획서 체크박스 `- [x]` → `- [x]` replaceAll.
 
 ```powershell
 git add README.md docs/architecture.md docs/plans/milestone-12-completeness.md Cargo.lock

@@ -52,7 +52,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
 | `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner, 모듈/스레드 상관관계 | M3 (생성됨; scan 엔진 M4, 모듈/스레드 M5) |
 | `xmem-pe` | PE 파싱(bounds-checked 헤더 파서 + 전체 파일 goblin 보강), 메모리 PE artifact 분류 | M6 (생성됨) |
-| `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Minidump 분석(MinidumpSource), Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Minidump M9, Report/MemoryImage는 후속) |
+| `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Minidump 분석(MinidumpSource), Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Minidump M9, Report M12, MemoryImage는 후속) |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
 | `xmem-experiments` | Experiment Framework(TargetGuard + 4개 실험 + 파이프라인). 변경 Win32 API 호출은 여기서만, lab target 한정 | M11 (생성됨) |
 | `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member): 자기 프로세스 한정 메모리 아티팩트, Ground Truth JSON report. `xmem-windows`만 의존 | M10 (생성됨) |
@@ -262,7 +262,7 @@ xmem experiment list | run <NAME>
 - **실험 격리**: 변경 API는 XMem이 spawn한 `xmem-target`에만 사용한다. 임의 PID 실험 금지.
 - **자원 상한**: scan worker `min(논리CPU-1, 4)`(최소 1), chunk 1 MiB(4 KiB~16 MiB), `--max-region-size`(기본 없음), 무제한 `Vec` 누적 금지, bounded buffer 재사용.
 - **스캔 우선순위**: Executable → Private Executable → Writable → 기타. committed > 4 GiB 프로세스는 기본적으로 executable+private만(`--all`로 확장).
-- **자원 모니터링**: bytes/regions scanned/skipped, read failures, partial reads, elapsed 요약 출력(peak RSS는 M12).
+- **자원 모니터링**: bytes/regions scanned/skipped, read failures, partial reads, elapsed, XMem 자신의 RSS(작업 집합) 요약 출력(`rss_bytes`, M12 구현; peak 샘플링은 후속).
 - **Disk 보호**: snapshot/dump 생성 전 예상 크기 계산 + 여유 공간 확인, 부족 시 거부. temp → validate → atomic rename.
 - **Ctrl+C**: cooperative cancel(atomic flag) → handle/임시파일 정리 → XMem이 만든 프로세스만 종료.
 - **정책 거부(exit 3)**: 보호 프로세스에 대한 변경 작업 거부.
@@ -282,7 +282,8 @@ xmem experiment list | run <NAME>
 | M9 Minidump(`dump create`/`dump analyze`, `MinidumpSource` MemorySource, 오프라인 Detection) | Done |
 | M10 Research Lab(`lab/targets/xmem-target` deterministic 시나리오, Ground Truth 회귀 테스트, `xmem-windows::selfmem`) | Done |
 | M11 Experiment Automation(`xmem-experiments` TargetGuard/4개 실험/파이프라인, `experiment list`/`experiment run`, e2e 검증) | Done |
-| M12 | Planned |
+| M12 완성도(`report` JSON/Markdown, `ScanStats.rss_bytes`, 문서 6종, UX) | Done |
+| M13+ | 계획 없음 (스펙 M1~M12 완료) |
 
 ## 15. Non-Goals
 
