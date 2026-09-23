@@ -1,4 +1,4 @@
-//! Toolhelp32 스레드 열거와 스레드 쿼리(read-only).
+//! Toolhelp32 스레드 열거와 스레드 쿼리(read-only) + 원격 스레드 생성(lab target 전용).
 
 use std::ffi::c_void;
 use std::mem::size_of;
@@ -8,7 +8,8 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
 };
 use windows::Win32::System::Threading::{
-    GetThreadPriority, OpenThread, THREAD_ACCESS_RIGHTS, THREAD_QUERY_INFORMATION,
+    CreateRemoteThread, GetThreadPriority, LPTHREAD_START_ROUTINE, OpenThread,
+    THREAD_ACCESS_RIGHTS, THREAD_CREATE_SUSPENDED, THREAD_QUERY_INFORMATION,
     THREAD_QUERY_LIMITED_INFORMATION,
 };
 
@@ -97,6 +98,25 @@ pub fn thread_start_address(handle: &OwnedHandle) -> Option<u64> {
         )
     };
     (status.0 >= 0).then_some(address)
+}
+
+/// 대상 프로세스에 원격 스레드를 생성한다(lab target 전용). suspended면 시작하지 않는다.
+pub fn create_remote_thread(
+    process: &OwnedHandle,
+    start_address: u64,
+    suspended: bool,
+) -> Result<OwnedHandle> {
+    // SAFETY: start_address는 대상 프로세스의 실행 가능한 주소여야 한다(호출자 계약).
+    let start: LPTHREAD_START_ROUTINE = unsafe { std::mem::transmute(start_address) };
+    let flags = if suspended {
+        THREAD_CREATE_SUSPENDED.0
+    } else {
+        0
+    };
+    // SAFETY: process는 유효한 핸들이며 start는 실행 가능한 원격 주소다.
+    let handle = unsafe { CreateRemoteThread(process.raw(), None, 0, start, None, flags, None) }
+        .map_err(|e| error_from_win32("CreateRemoteThread", &e))?;
+    OwnedHandle::new(handle).ok_or(XmemError::InvalidHandle { handle: 0 })
 }
 
 #[cfg(test)]
