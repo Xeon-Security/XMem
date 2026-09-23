@@ -20,10 +20,11 @@ use windows::Win32::System::Threading::{
     PROCESS_QUERY_LIMITED_INFORMATION, QueryFullProcessImageNameW,
 };
 use windows::core::PWSTR;
-use xmem_core::{MemoryStats, ProcessArch, Result, XmemError};
+use xmem_core::{MemoryStats, ProcessArch, ProcessInfo, Result, XmemError};
 
 use crate::error::{error_from_win32, last_win32_error};
 use crate::handle::OwnedHandle;
+use crate::toolhelp;
 
 pub fn current_pid() -> u32 {
     // SAFETY: 인자 없는 쿼리 API이며 반환값은 항상 유효한 PID다.
@@ -255,6 +256,66 @@ fn read_unicode_string(us: &UNICODE_STRING, base: usize, byte_len: usize) -> Opt
     Some(String::from_utf16_lossy(units))
 }
 
+/// 단일 프로세스의 메타데이터를 수집한다. 열거에 없으면 ProcessExited,
+/// 열 수 없으면 AccessDenied를 돌려준다. 핸들이 열린 뒤의 개별 조회 실패는
+/// None 필드로 degrade한다.
+pub fn process_info(pid: u32) -> Result<ProcessInfo> {
+    let raw = toolhelp::list_raw_processes()?
+        .into_iter()
+        .find(|e| e.pid == pid)
+        .ok_or(XmemError::ProcessExited { pid })?;
+    let handle = match open_for_query(pid) {
+        Ok(h) => h,
+        Err(XmemError::WindowsApi { code: 87, .. }) => return Err(XmemError::ProcessExited { pid }),
+        Err(e) => return Err(e),
+    };
+    Ok(ProcessInfo {
+        pid,
+        ppid: Some(raw.ppid),
+        name: raw.name,
+        image_path: process_image_path(&handle).ok(),
+        arch: process_arch(&handle).unwrap_or(ProcessArch::Unknown),
+        session_id: session_id(pid).ok(),
+        creation_time: process_creation_time(&handle).ok(),
+        command_line: process_command_line(&handle).ok(),
+        user: crate::token::process_user(&handle).ok(),
+        memory_stats: memory_counters(&handle).ok(),
+        thread_count: Some(raw.thread_count),
+        module_count: toolhelp::count_modules(pid).ok(),
+    })
+}
+
+/// 시스템 전체 프로세스를 ProcessInfo로 열거한다. 개별 프로세스의
+/// 메타데이터 조회 실패는 None 필드로 degrade하고 전체를 중단하지 않는다.
+pub fn list_processes() -> Result<Vec<ProcessInfo>> {
+    let mut raws = toolhelp::list_raw_processes()?;
+    raws.sort_by_key(|e| e.pid);
+    Ok(raws
+        .into_iter()
+        .map(|raw| {
+            let mut info = ProcessInfo {
+                pid: raw.pid,
+                ppid: Some(raw.ppid),
+                name: raw.name,
+                image_path: None,
+                arch: ProcessArch::Unknown,
+                session_id: session_id(raw.pid).ok(),
+                creation_time: None,
+                command_line: None,
+                user: None,
+                memory_stats: None,
+                thread_count: Some(raw.thread_count),
+                module_count: None,
+            };
+            if let Ok(handle) = open_for_query(raw.pid) {
+                info.image_path = process_image_path(&handle).ok();
+                info.arch = process_arch(&handle).unwrap_or(ProcessArch::Unknown);
+            }
+            info
+        })
+        .collect())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -365,5 +426,52 @@ mod tests {
         assert_eq!(read_unicode_string(&us, base + 4096, text.len() * 2), None);
         let odd = UNICODE_STRING { Length: 3, ..us };
         assert_eq!(read_unicode_string(&odd, base, text.len() * 2), None);
+    }
+
+    #[test]
+    fn process_info_of_self_is_populated() {
+        let pid = current_pid();
+        let info = process_info(pid).expect("info of self");
+        assert_eq!(info.pid, pid);
+        assert!(!info.name.is_empty());
+        assert!(
+            info.image_path
+                .as_deref()
+                .unwrap_or("")
+                .to_lowercase()
+                .ends_with(".exe")
+        );
+        assert!(info.ppid.is_some());
+        assert!(info.thread_count.unwrap_or(0) >= 1);
+        assert!(info.module_count.unwrap_or(0) >= 1);
+        assert!(info.session_id.is_some());
+        assert!(info.memory_stats.map(|m| m.working_set > 0).unwrap_or(false));
+        assert!(info.creation_time.is_some());
+        assert!(info.user.is_some());
+    }
+
+    #[test]
+    fn process_info_bogus_pid_errs_structured() {
+        let err = match process_info(0xFFFF_FFFE) {
+            Ok(_) => panic!("bogus pid must fail"),
+            Err(e) => e,
+        };
+        assert!(matches!(
+            err,
+            XmemError::AccessDenied { .. }
+                | XmemError::WindowsApi { .. }
+                | XmemError::ProcessExited { .. }
+        ));
+    }
+
+    #[test]
+    fn list_processes_is_sorted_and_contains_self() {
+        let pid = current_pid();
+        let list = list_processes().expect("list");
+        assert!(
+            list.windows(2).all(|w| w[0].pid <= w[1].pid),
+            "must be pid-sorted"
+        );
+        assert!(list.iter().any(|p| p.pid == pid));
     }
 }
