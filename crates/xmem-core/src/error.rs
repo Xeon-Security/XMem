@@ -41,6 +41,12 @@ pub enum XmemError {
     #[error("not implemented yet: {feature}")]
     Unimplemented { feature: &'static str },
 
+    #[error("invalid input: {reason}")]
+    InvalidInput { reason: String },
+
+    #[error("cancelled: {reason}")]
+    Cancelled { reason: String },
+
     #[error("windows api {api} failed (code {code}): {message}")]
     WindowsApi {
         api: &'static str,
@@ -106,5 +112,23 @@ mod tests {
             reason: "unexpected token".to_string(),
         };
         assert!(err.to_string().contains("unexpected token"));
+    }
+
+    #[test]
+    fn invalid_input_and_cancelled_display() {
+        assert_eq!(
+            XmemError::InvalidInput {
+                reason: "bad pattern".into()
+            }
+            .to_string(),
+            "invalid input: bad pattern"
+        );
+        assert_eq!(
+            XmemError::Cancelled {
+                reason: "Ctrl+C".into()
+            }
+            .to_string(),
+            "cancelled: Ctrl+C"
+        );
     }
 }

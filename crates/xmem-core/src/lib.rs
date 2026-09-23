@@ -6,6 +6,7 @@ pub mod error;
 pub mod evidence;
 pub mod guard;
 pub mod model;
+pub mod pattern;
 pub mod source;
 pub mod version;
 
@@ -13,5 +14,6 @@ pub use classify::{classify, heuristics};
 pub use error::{Result, XmemError};
 pub use evidence::{Confidence, Evidence, Finding, Severity};
 pub use model::*;
+pub use pattern::{BytePattern, MAX_PATTERN_LEN, PatternKind, ScanPattern};
 pub use source::{MemorySource, ReadOutcome};
 pub use version::{JSON_SCHEMA_VERSION, SNAPSHOT_FORMAT_VERSION, VERSION};
