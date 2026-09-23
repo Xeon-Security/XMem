@@ -1,6 +1,7 @@
 //! Ground Truth 회귀 테스트: xmem-target을 spawn하고 라이브 분석 결과를 대조한다.
+#![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::sync::atomic::AtomicBool;
 use std::time::{Duration, Instant};
@@ -14,7 +15,7 @@ fn temp_dir(name: &str) -> PathBuf {
     dir
 }
 
-fn spawn_target(scenario: &str, report: &PathBuf) -> Child {
+fn spawn_target(scenario: &str, report: &Path) -> Child {
     Command::new(env!("CARGO_BIN_EXE_xmem-target"))
         .args([
             "run",
@@ -28,7 +29,7 @@ fn spawn_target(scenario: &str, report: &PathBuf) -> Child {
         .unwrap()
 }
 
-fn wait_for_report(path: &PathBuf) -> serde_json::Value {
+fn wait_for_report(path: &Path) -> serde_json::Value {
     let deadline = Instant::now() + Duration::from_secs(10);
     loop {
         if let Ok(text) = std::fs::read_to_string(path)
