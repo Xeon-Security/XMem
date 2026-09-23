@@ -1,6 +1,6 @@
 # M9 Minidump 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem dump create --pid <PID> --output <FILE> [--full]`와 `xmem dump analyze <FILE>`를 구현한다. 덤프는 Win32 `MiniDumpWriteDump`로 생성하고, 분석은 `minidump` crate로 파싱해 기존 Detection/Evidence 파이프라인을 그대로 재사용한다.
 
@@ -56,7 +56,7 @@
 - `MINIDUMP_TYPE(pub i32)` + `BitOr`; `MiniDumpNormal = 0`, `MiniDumpWithFullMemory = 2`, `MiniDumpWithFullMemoryInfo = 2048`.
 - `CreateFileW<P0: Param<PCWSTR>>(lpfilename: P0, dwdesiredaccess: u32, dwsharemode: FILE_SHARE_MODE, lpsecurityattributes: Option<*const SECURITY_ATTRIBUTES>, dwcreationdisposition: FILE_CREATION_DISPOSITION, dwflagsandattributes: FILE_FLAGS_AND_ATTRIBUTES, htemplatefile: Option<HANDLE>) -> Result<HANDLE>`; `CREATE_ALWAYS = FILE_CREATION_DISPOSITION(2)`, `FILE_ATTRIBUTE_NORMAL = FILE_FLAGS_AND_ATTRIBUTES(128)`, `FILE_SHARE_READ = FILE_SHARE_MODE(1)`, `FILE_SHARE_WRITE = FILE_SHARE_MODE(2)`, `GENERIC_WRITE = GENERIC_ACCESS_RIGHTS(1073741824)`(Win32::Foundation).
 
-- [ ] **Step 1: 실패하는 테스트 작성 (process.rs)**
+- [x] **Step 1: 실패하는 테스트 작성 (process.rs)**
 
 `crates/xmem-windows/src/process.rs` 테스트 모듈에 추가:
 
@@ -70,12 +70,12 @@ fn open_for_dump_self_succeeds() {
 
 import에 `open_for_dump` 추가(같은 파일이므로 불필요). `use` 라인은 기존 테스트 모듈 참고.
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `cannot find function open_for_dump`
 
-- [ ] **Step 3: open_for_dump 구현 (process.rs)**
+- [x] **Step 3: open_for_dump 구현 (process.rs)**
 
 `open_for_read` 아래에 추가:
 
@@ -95,7 +95,7 @@ pub fn open_for_dump(pid: u32) -> Result<OwnedHandle> {
 
 import에 `PROCESS_QUERY_INFORMATION`이 이미 있는지 확인(없으면 추가).
 
-- [ ] **Step 4: 실패하는 테스트 작성 (dump.rs)**
+- [x] **Step 4: 실패하는 테스트 작성 (dump.rs)**
 
 `crates/xmem-windows/src/dump.rs` 생성:
 
@@ -160,12 +160,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: 실패 확인**
+- [x] **Step 5: 실패 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `cannot find function write_minidump_file`, `validate_minidump` (E0425) 및 import 오류
 
-- [ ] **Step 6: dump.rs 구현**
+- [x] **Step 6: dump.rs 구현**
 
 테스트 모듈 위에 추가:
 
@@ -246,7 +246,7 @@ pub fn write_minidump_file(
 }
 ```
 
-- [ ] **Step 7: feature 추가 + lib.rs 등록**
+- [x] **Step 7: feature 추가 + lib.rs 등록**
 
 `crates/xmem-windows/Cargo.toml` features에 `"Win32_System_Kernel"` 추가(`Win32_System_Diagnostics_ToolHelp` 다음, 알파벳 순서 유지).
 
@@ -254,12 +254,12 @@ pub fn write_minidump_file(
 - `pub mod dump;` 추가(`disk` 다음).
 - 재수출에 `open_for_dump` 추가 + `pub use dump::{create_file_for_write, validate_minidump, write_minidump, write_minidump_file};`
 
-- [ ] **Step 8: 테스트 통과 확인**
+- [x] **Step 8: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 기존 50 + 신규 3 = 53
 
-- [ ] **Step 9: fmt/clippy/커밋**
+- [x] **Step 9: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -299,7 +299,7 @@ git commit -m "feat(windows): MiniDumpWriteDump 덤프 생성 primitive"
 - `MinidumpMiscInfo { raw: RawMiscInfo }` — `raw.process_id()`, `raw.process_create_time()` (각 `Option<&u32>`; 구현 시 정확한 반환형 확인).
 - 메모리: `UnifiedMemory::{base_address(), size(), bytes()}`, `UnifiedMemoryList::iter()`.
 
-- [ ] **Step 1: 실패하는 테스트 작성 (core Protection::from_win32)**
+- [x] **Step 1: 실패하는 테스트 작성 (core Protection::from_win32)**
 
 `crates/xmem-core/src/model/memory.rs` 테스트 모듈에 추가:
 
@@ -325,12 +325,12 @@ fn protection_from_win32_decodes_flags() {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-core --tests`
 Expected: FAIL — `no function or associated item named 'from_win32'`
 
-- [ ] **Step 3: core 구현 + xmem-windows 위임**
+- [x] **Step 3: core 구현 + xmem-windows 위임**
 
 `crates/xmem-core/src/model/memory.rs`의 `impl Protection`에 추가:
 
@@ -360,12 +360,12 @@ pub fn protection_from_raw(raw: u32) -> Protection {
 
 미사용이 된 `PAGE_*` import 정리(테스트에서 쓰는 것은 tests 모듈로 이동). 기존 보호 속성 테스트가 그대로 통과해야 한다.
 
-- [ ] **Step 4: core/windows 테스트 통과 확인**
+- [x] **Step 4: core/windows 테스트 통과 확인**
 
 Run: `cargo test -p xmem-core -p xmem-windows`
 Expected: PASS — core 34, windows 53
 
-- [ ] **Step 5: 실패하는 테스트 작성 (forensics dump.rs)**
+- [x] **Step 5: 실패하는 테스트 작성 (forensics dump.rs)**
 
 `crates/xmem-forensics/Cargo.toml`에 `minidump = "0.27"` 추가, `[dev-dependencies] xmem-windows.workspace = true` 추가. 루트 `Cargo.toml` `[workspace.dependencies]`에 `minidump = "0.27"` 추가 후 forensics에서 `minidump.workspace = true`.
 
@@ -460,12 +460,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 6: 실패 확인**
+- [x] **Step 6: 실패 확인**
 
 Run: `cargo check -p xmem-forensics --tests`
 Expected: FAIL — `DumpAnalysis`/`MinidumpSource`/`analyze_dump` 미정의
 
-- [ ] **Step 7: dump.rs 구현**
+- [x] **Step 7: dump.rs 구현**
 
 테스트 모듈 위에 추가:
 
@@ -759,12 +759,12 @@ fn file_name(path: &Path) -> String {
 
 `crates/xmem-forensics/src/lib.rs`: `pub mod dump;` 추가 + `pub use dump::{DumpAnalysis, MinidumpSource, analyze_dump};`
 
-- [ ] **Step 8: 테스트 통과 확인**
+- [x] **Step 8: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-forensics`
 Expected: PASS — 기존 20 + 신규 4 = 24
 
-- [ ] **Step 9: fmt/clippy/커밋**
+- [x] **Step 9: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -794,7 +794,7 @@ git commit -m "feat(forensics): Minidump 파싱과 MinidumpSource MemorySource"
 - `ensure_disk_space`는 snapshot.rs에 있으나 SnapshotError kind를 쓰므로 dump는 로컬 검사(6줄)를 쓴다.
 - `ProcessInfo.memory_stats: Option<MemoryStats>`, `MemoryStats.commit: u64`.
 
-- [ ] **Step 1: 실패하는 테스트 작성 (cli.rs 파싱)**
+- [x] **Step 1: 실패하는 테스트 작성 (cli.rs 파싱)**
 
 `crates/xmem-cli/src/cli.rs` 테스트 모듈에 추가:
 
@@ -816,12 +816,12 @@ fn parses_dump_create_with_full_flag() {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — `DumpCmd::Create`에 `full` 필드 없음(E0026/E0559)
 
-- [ ] **Step 3: cli.rs 수정**
+- [x] **Step 3: cli.rs 수정**
 
 ```rust
 pub enum DumpCmd {
@@ -841,7 +841,7 @@ pub enum DumpCmd {
 }
 ```
 
-- [ ] **Step 4: 실패하는 테스트 작성 (dump.rs)**
+- [x] **Step 4: 실패하는 테스트 작성 (dump.rs)**
 
 `crates/xmem-cli/src/commands/dump.rs` 전면 교체(테스트 + import + 스텁 함수 시그니처):
 
@@ -947,12 +947,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: 실패 확인**
+- [x] **Step 5: 실패 확인**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — `create_dump_file`/`render_dump`/`dump_json_payload` 미정의, `arch_str` 비공개
 
-- [ ] **Step 6: 구현 (dump.rs + process.rs/memory.rs 가시성)**
+- [x] **Step 6: 구현 (dump.rs + process.rs/memory.rs 가시성)**
 
 `process.rs`: `fn arch_str` → `pub(crate) fn arch_str`.
 `memory.rs`: `struct MapSummary` → `pub(crate) struct MapSummary`, `fn summarize` → `pub(crate) fn summarize`.
@@ -1119,12 +1119,12 @@ pub(crate) fn dump_json_payload(analysis: &DumpAnalysis, findings: &[Finding]) -
 
 `crates/xmem-cli/Cargo.toml`에 `xmem-forensics.workspace = true`가 이미 있는지 확인(있음 — M7에서 추가). `xmem-detection`도 이미 있음(M8).
 
-- [ ] **Step 7: 테스트 통과 확인**
+- [x] **Step 7: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 기존 50 + 신규 4 = 54
 
-- [ ] **Step 8: fmt/clippy/커밋**
+- [x] **Step 8: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -1142,7 +1142,7 @@ git commit -m "feat(cli): dump create/analyze 명령"
 - Modify: `docs/architecture.md`
 - Modify: `docs/plans/milestone-09-minidump.md` (체크박스)
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 문구: "현재 **Milestone 9 (Minidump)** 완료. ..." (M8 문구 교체).
 - Status 표에 두 행 추가(Planned (M9) 행이 있으면 교체):
@@ -1157,7 +1157,7 @@ git commit -m "feat(cli): dump create/analyze 명령"
 - Limitations에 M9 문단 추가: analyze는 MemoryInfoList 필요(XMem이 만든 덤프에는 항상 포함), minidump에는 thread start address가 없어 XMEM-004는 침묵, mapped file 이름은 module 목록 기반 근사, `--full`은 진행 중 취소 미지원(Ctrl+C는 프로세스 종료), module 없는 덤프에서는 XMEM-003/004 침묵.
 - Roadmap M9=완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - dependency 표에 minidump 행 추가(도입 시점 M9, 비고: "파싱 전용, PE와 무관").
 - crate 표 `xmem-forensics` 비고에 "Minidump 분석(M9)" 추가.
@@ -1165,7 +1165,7 @@ git commit -m "feat(cli): dump create/analyze 명령"
 - §10(Minidump) 제목에 "(M9 구현됨)" + 구현 노트: MinidumpSource가 MemorySource를 구현해 detect_source 재사용, thread start address 없음, temp→MDMP 검증→rename.
 - §14 Status 표: M9 Done, M10~M12 Planned.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```powershell
 cargo fmt --all -- --check
@@ -1176,7 +1176,7 @@ cargo test --workspace
 
 Expected: 전부 exit 0. 테스트 합계 **203** = cli 54 + core 34 + detection 8 + forensics 24 + memory 21 + pe 9 + windows 53.
 
-- [ ] **Step 4: Windows 스모크**
+- [x] **Step 4: Windows 스모크**
 
 ```powershell
 $dir = Join-Path $env:TEMP "xmem-m9"; New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -1208,9 +1208,9 @@ Remove-Item -Recurse -Force $dir
 
 기록할 것: 덤프 크기, analyze의 regions/modules/threads/finding 수, `--full` 파일 크기, exit code 전부, `.tmp-` 잔존 없음, 반복 3회 0.
 
-- [ ] **Step 5: 계획서 체크박스 + 커밋**
+- [x] **Step 5: 계획서 체크박스 + 커밋**
 
-`docs/plans/milestone-09-minidump.md`의 모든 `- [ ]` → `- [x]` (replaceAll).
+`docs/plans/milestone-09-minidump.md`의 모든 `- [x]` → `- [x]` (replaceAll).
 
 ```powershell
 git add README.md docs/architecture.md docs/plans/milestone-09-minidump.md

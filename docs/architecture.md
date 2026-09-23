@@ -52,7 +52,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
 | `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner, 모듈/스레드 상관관계 | M3 (생성됨; scan 엔진 M4, 모듈/스레드 M5) |
 | `xmem-pe` | PE 파싱(bounds-checked 헤더 파서 + 전체 파일 goblin 보강), 메모리 PE artifact 분류 | M6 (생성됨) |
-| `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Report/MemoryImage는 M9/M12) |
+| `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Minidump 분석(MinidumpSource), Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Minidump M9, Report/MemoryImage는 후속) |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
 | `xmem-experiments` | 실험 프레임워크, lab target 오케스트레이션, Guard 강제 | M11 |
 | `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member) | M10 |
@@ -73,7 +73,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `ctrlc` 3 | M4 | Ctrl+C cooperative cancel | 도입됨(M4) |
 | `goblin` 0.10 | M6 | PE 파싱(전체 파일일 때 imports/exports/relocations/TLS 보강) | `default-features = false`, features `std,pe32,pe64`. 헤더 prefix는 bounds-checked 수동 파서 사용(프리픽스에서 goblin은 하드 에러) |
 | `blake3` | M7 | region 내용 해시 | 도입됨(M7) |
-| `minidump` | M9 | dump analyze | |
+| `minidump` 0.27 | M9 | dump analyze 파싱(SystemInfo/Module/Thread/MemoryInfo/Misc 스트림, 메모리 범위) | 도입됨(M9). `MinidumpMemoryInfoList::iter()`는 `&MinidumpMemoryInfo`를 반환(주의). memmap2는 이 crate의 전이 의존으로 들어옴 |
 | `memmap2` | M9+ | MemoryImage 소스 | 필요 시점 도입 |
 
 미도입(의도적): `tokio`(비동기 불필요), `winapi`(windows-rs로 단일화), 테이블 포매팅 crate(수동 정렬로 충분).
@@ -158,7 +158,9 @@ pub trait MemorySource {
 pub struct ReadOutcome { pub bytes_read: usize, pub partial: bool }  // Partial Read를 정상 반환
 ```
 
-구현: `LiveProcess`(xmem-memory, M3), `Snapshot`(xmem-forensics, M7), `Minidump`·`MemoryImage`(M9+).
+구현: `LiveProcess`(xmem-memory, M3), `Snapshot`(xmem-forensics, M7), `Minidump`(xmem-forensics, M9), `MemoryImage`(후속).
+
+Minidump 소스(M9 구현됨): `MinidumpSource`가 `MemorySource`를 구현하므로 `detect_source` 등 상위 계층이 라이브 프로세스와 동일하게 동작한다(Offline Forensics). `MinidumpSource::open`이 minidump 스트림(SystemInfo/ModuleList/ThreadList/MemoryInfoList/MiscInfo)과 메모리 범위를 1회 파싱해 보관하고, `read`는 메모리 범위를 선형 탐색한다(범위 밖 → `InvalidAddress`, 메모리 스트림 없음 → `DumpError`). minidump에는 thread start address가 없어 `ThreadInfo.start_address`는 `None`이다(XMEM-004는 침묵). `mapped_file`은 모듈 목록 기반 근사다. 파일 생성(`xmem-windows::write_minidump_file`)은 temp → `MDMP` 시그니처 검증 → atomic rename이며 실패 시 temp를 제거한다.
 
 ## 8. Snapshot 포맷 v1 (M7 구현됨)
 
@@ -230,7 +232,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M5 | `TH32CS_SNAPMODULE(_32)`, `Module32FirstW/NextW`, `Thread32First/Next`, `OpenThread`, `GetThreadPriority`, `NtQueryInformationThread(ThreadQuerySetWin32StartAddress)` | 구현됨. StartAddress는 반문서화 → 실패 시 `None` degrade. `GetThreadTimes`/`EnumProcessModulesEx` fallback은 후속 |
 | M6 | 신규 없음 | 기존 `ReadProcessMemory` 재사용(영역/모듈 헤더 prefix 4 KiB). 파싱 실패는 `InvalidPe`/`None` degrade |
 | M7 | `GetDiskFreeSpaceExW` (feature `Win32_Storage_FileSystem`) | 구현됨. snapshot 생성 전 예상 크기 + 16 MiB 여유 검사 |
-| M9 | `MiniDumpWriteDump`(dbghelp) | 기본은 metadata dump, `--full`은 사전 크기/디스크 검사 후 |
+| M9 | `MiniDumpWriteDump`(dbghelp), `CreateFileW` (feature `Win32_System_Kernel` 추가) | 구현됨. 기본 `MiniDumpNormal \| MiniDumpWithFullMemoryInfo`, `--full`은 `MiniDumpWithFullMemory \| FullMemoryInfo` + commit 바이트·16 MiB 디스크 사전 검사. temp → `MDMP` 검증 → atomic rename |
 | M11 | `VirtualAllocEx`, `VirtualProtectEx`, `WriteProcessMemory`, `CreateRemoteThread`, `FlushInstructionCache` | **xmem-experiments 전용, lab target 한정** |
 
 ## 12. CLI 계약
@@ -246,7 +248,7 @@ xmem process list | info --pid <PID>
 xmem memory map --pid <PID> | scan --pid <PID>
 xmem modules --pid <PID> | threads --pid <PID>
 xmem snapshot create --pid <PID> --output <FILE> | snapshot diff <A> <B>
-xmem dump create --pid <PID> --output <FILE> | dump analyze <FILE>
+xmem dump create --pid <PID> --output <FILE> [--full] | dump analyze <FILE>
 xmem detect --pid <PID> | report --pid <PID> --output <FILE>
 xmem experiment list | run <NAME>
 ```
@@ -274,7 +276,8 @@ xmem experiment list | run <NAME>
 | M6 PE Analysis(`xmem-pe` 파서/메모리 PE 분류, `modules --pe`, heuristic 활성화) | Done |
 | M7 Snapshot(`xmem-forensics` 포맷 v1, `snapshot create`/`snapshot diff`, collect 해싱, Disk 사전 검사) | Done |
 | M8 Detection(`xmem-detection` Rule 엔진, XMEM-001~005, `detect`, Snapshot findings/detection diff) | Done |
-| M9~M12 | Planned |
+| M9 Minidump(`dump create`/`dump analyze`, `MinidumpSource` MemorySource, 오프라인 Detection) | Done |
+| M10~M12 | Planned |
 
 ## 15. Non-Goals
 
