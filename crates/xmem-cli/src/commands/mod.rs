@@ -4,6 +4,7 @@ pub mod experiment;
 pub mod memory;
 pub mod modules;
 pub mod process;
+pub(crate) mod render;
 pub mod report;
 pub mod snapshot;
 pub mod threads;

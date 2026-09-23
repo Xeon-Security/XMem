@@ -1,4 +1,5 @@
 use crate::cli::{GlobalArgs, ProcessCmd};
+use crate::commands::render::truncate;
 use crate::output::{OutputMode, emit_json, resolve_mode, success_envelope};
 use xmem_core::{ProcessArch, ProcessInfo, Result, XmemError};
 
@@ -44,15 +45,6 @@ fn arch_str(arch: ProcessArch) -> &'static str {
         ProcessArch::Arm64 => "arm64",
         ProcessArch::Unknown => "-",
     }
-}
-
-fn truncate(text: &str, max: usize) -> String {
-    if text.chars().count() <= max {
-        return text.to_string();
-    }
-    let mut out: String = text.chars().take(max.saturating_sub(3)).collect();
-    out.push_str("...");
-    out
 }
 
 pub fn render_list(infos: &[ProcessInfo]) -> String {
