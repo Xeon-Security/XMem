@@ -9,7 +9,7 @@ pub mod report;
 pub mod snapshot;
 pub mod threads;
 
-use xmem_core::{Result, XmemError};
+use xmem_core::Result;
 
 use crate::cli::{Cli, Command};
 
@@ -25,8 +25,4 @@ pub fn dispatch(cli: &Cli) -> Result<()> {
         Command::Report { pid, output } => report::run(pid, output, &cli.global),
         Command::Experiment { cmd } => experiment::run(cmd, &cli.global),
     }
-}
-
-pub(crate) fn unimplemented(feature: &'static str) -> Result<()> {
-    Err(XmemError::Unimplemented { feature })
 }
