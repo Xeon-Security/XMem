@@ -17,3 +17,4 @@ xmem-core.workspace = true
 xmem-memory.workspace = true
 xmem-detection.workspace = true
 xmem-pe.workspace = true
+xmem-experiments.workspace = true

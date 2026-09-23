@@ -1274,6 +1274,7 @@ dependencies = [
  "serde_json",
  "xmem-core",
  "xmem-detection",
+ "xmem-experiments",
  "xmem-memory",
  "xmem-pe",
  "xmem-windows",

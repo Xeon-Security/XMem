@@ -2,12 +2,16 @@
 
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use xmem_core::guard::{PolicyDecision, ProcessIdentity, check_state_change};
 use xmem_core::{Result, XmemError};
 use xmem_windows::process_info;
+
+/// spawn마다 temp dir 이름에 붙는 순번(동시 spawn 충돌 방지).
+static SPAWN_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 /// target 실행 옵션.
 #[derive(Debug, Clone)]
@@ -79,8 +83,12 @@ impl TargetGuard {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.as_millis())
             .unwrap_or(0);
-        let temp_dir =
-            std::env::temp_dir().join(format!("xmem-exp-{}-{millis}", std::process::id()));
+        // 동시 spawn(병렬 테스트 등)에서도 temp dir이 겹치지 않도록 카운터를 붙인다.
+        let sequence = SPAWN_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        let temp_dir = std::env::temp_dir().join(format!(
+            "xmem-exp-{}-{millis}-{sequence}",
+            std::process::id()
+        ));
         std::fs::create_dir_all(&temp_dir).map_err(XmemError::Io)?;
         let report_path = temp_dir.join("report.json");
 
