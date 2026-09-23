@@ -75,11 +75,96 @@ pub struct MemoryRegion {
     pub state: MemoryState,
     pub protection: Protection,
     pub allocation_protection: Option<Protection>,
-    pub region_type: MemoryType,
+    pub region_type: Option<MemoryType>,
     pub readable: bool,
     pub writable: bool,
     pub executable: bool,
     pub classification: RegionClass,
     pub heuristics: Vec<Heuristic>,
     pub mapped_file: Option<String>,
+}
+
+impl fmt::Display for MemoryState {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            MemoryState::Commit => "MEM_COMMIT",
+            MemoryState::Reserve => "MEM_RESERVE",
+            MemoryState::Free => "MEM_FREE",
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for MemoryType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            MemoryType::Image => "MEM_IMAGE",
+            MemoryType::Mapped => "MEM_MAPPED",
+            MemoryType::Private => "MEM_PRIVATE",
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for RegionClass {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            RegionClass::Image => "image",
+            RegionClass::Mapped => "mapped",
+            RegionClass::Private => "private",
+            RegionClass::Free => "free",
+            RegionClass::Reserved => "reserved",
+            RegionClass::Unknown => "unknown",
+        };
+        f.write_str(name)
+    }
+}
+
+impl fmt::Display for Heuristic {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let name = match self {
+            Heuristic::ExecutablePrivate => "executable_private",
+            Heuristic::ExecutableAnonymous => "executable_anonymous",
+            Heuristic::PrivateExecutablePeLike => "private_executable_pe_like",
+            Heuristic::WritableExecutable => "writable_executable",
+        };
+        f.write_str(name)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn display_names_match_windows_flags() {
+        assert_eq!(MemoryState::Commit.to_string(), "MEM_COMMIT");
+        assert_eq!(MemoryState::Reserve.to_string(), "MEM_RESERVE");
+        assert_eq!(MemoryState::Free.to_string(), "MEM_FREE");
+        assert_eq!(MemoryType::Image.to_string(), "MEM_IMAGE");
+        assert_eq!(MemoryType::Mapped.to_string(), "MEM_MAPPED");
+        assert_eq!(MemoryType::Private.to_string(), "MEM_PRIVATE");
+        assert_eq!(RegionClass::Reserved.to_string(), "reserved");
+        assert_eq!(RegionClass::Unknown.to_string(), "unknown");
+        assert_eq!(
+            Heuristic::ExecutablePrivate.to_string(),
+            "executable_private"
+        );
+        assert_eq!(
+            Heuristic::PrivateExecutablePeLike.to_string(),
+            "private_executable_pe_like"
+        );
+    }
+
+    #[test]
+    fn protection_display_includes_flags_and_raw() {
+        assert_eq!(
+            Protection::new(0x40, true, true, true).to_string(),
+            "RWX (0x40)"
+        );
+        assert_eq!(
+            Protection::new(0x01, false, false, false).to_string(),
+            "--- (0x01)"
+        );
+    }
 }
