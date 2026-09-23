@@ -67,7 +67,8 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `thiserror` 2 | M1 | 에러 enum | |
 | `anyhow` | M1 | CLI/experiments 전용 | 라이브러리 금지 |
 | `tracing` / `tracing-subscriber` | M1 | stderr 진단 로그 | stdout은 사용자 출력 전용 |
-| `chrono` (serde) / `uuid` | M7 | 타임스탬프, ID | |
+| `chrono` | M2 | CLI 타임스탬프 표시 | M7 예정이었으나 M2로 앞당김 |
+| `uuid` | M7 | ID | |
 | `rayon` | M4 | region 단위 bounded 병렬 스캔 | thread pool 크기 고정 |
 | `ctrlc` | M4 | Ctrl+C cooperative cancel | |
 | `goblin` | M6 | PE 파싱 | |
@@ -253,8 +254,9 @@ xmem experiment list | run <NAME>
 
 | 컴포넌트 | 상태 |
 |---|---|
-| M1 기반 구조(workspace/core/windows/cli) | In progress |
-| M2~M12 | Planned |
+| M1 기반 구조(workspace/core/windows/cli) | Done |
+| M2 Process(`process list`/`process info`) | Done |
+| M3~M12 | Planned |
 
 ## 15. Non-Goals
 

@@ -1,6 +1,6 @@
 # Milestone 2 — Process 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem process list`와 `xmem process info --pid <PID>`를 구현해 Windows 프로세스 열거·메타데이터 수집을 제공한다.
 
@@ -46,7 +46,7 @@
 - Consumes: 없음
 - Produces: `xmem_core::model::process::filetime_to_unix_secs(ft: u64) -> i64` (model::* 재수출로 `xmem_core::filetime_to_unix_secs` 사용 가능)
 
-- [ ] **Step 1: 실패 테스트 작성**
+- [x] **Step 1: 실패 테스트 작성**
 
 `crates/xmem-core/src/model/process.rs` 끝에 추가:
 
@@ -80,12 +80,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo check -p xmem-core --tests`
 Expected: FAIL — `cannot find function filetime_to_unix_secs`
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-core/src/model/process.rs`의 `ProcessInfo` 정의 아래(테스트 모듈 위)에 추가:
 
@@ -104,12 +104,12 @@ pub fn filetime_to_unix_secs(ft: u64) -> i64 {
 }
 ```
 
-- [ ] **Step 4: 통과 확인**
+- [x] **Step 4: 통과 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo test -p xmem-core`
 Expected: PASS (기존 11개 + 신규 4개)
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add crates/xmem-core/src/model/process.rs
@@ -134,7 +134,7 @@ git commit -m "feat(core): FILETIME을 Unix 초로 변환하는 헬퍼"
   - `xmem_windows::toolhelp::count_modules(pid: u32) -> xmem_core::Result<u32>`
   - `xmem_windows::util::utf16_z_to_string(buf: &[u16]) -> String`
 
-- [ ] **Step 1: Cargo feature 추가**
+- [x] **Step 1: Cargo feature 추가**
 
 `crates/xmem-windows/Cargo.toml`의 `windows` 의존성을 교체:
 
@@ -152,7 +152,7 @@ windows = { version = "0.62", features = [
 ] }
 ```
 
-- [ ] **Step 2: 실패 테스트 작성**
+- [x] **Step 2: 실패 테스트 작성**
 
 `crates/xmem-windows/src/util.rs` 생성:
 
@@ -314,21 +314,21 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: lib.rs에 모듈 등록**
+- [x] **Step 3: lib.rs에 모듈 등록**
 
 `crates/xmem-windows/src/lib.rs`에 `pub mod toolhelp;`와 `pub mod util;`을 추가한다 (기존 `pub mod error/handle/process;` 유지, re-export는 기존 것 유지).
 
-- [ ] **Step 4: 실패 확인 후 구현 확인**
+- [x] **Step 4: 실패 확인 후 구현 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo check -p xmem-windows --tests`
 Expected: Step 2 코드가 전부 있으므로 이 시점에 컴파일 성공해야 한다. (테스트를 먼저 쓰고 구현을 나중에 하는 순서를 지키려면 util.rs 테스트만 먼저 쓰고 check로 실패를 확인한 뒤 나머지를 추가해도 된다.)
 
-- [ ] **Step 5: 테스트 + clippy**
+- [x] **Step 5: 테스트 + clippy**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo test -p xmem-windows; cargo clippy -p xmem-windows --all-targets -- -D warnings`
 Expected: PASS (기존 9개 + 신규 6개), clippy 클린
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add crates/xmem-windows/Cargo.toml crates/xmem-windows/src/util.rs crates/xmem-windows/src/toolhelp.rs crates/xmem-windows/src/lib.rs
@@ -357,7 +357,7 @@ git commit -m "feat(windows): Toolhelp 열거와 UTF-16 유틸"
   - `process::process_command_line(h: &OwnedHandle) -> Result<String>`
   - `token::process_user(h: &OwnedHandle) -> Result<String>`
 
-- [ ] **Step 1: 실패 테스트 작성**
+- [x] **Step 1: 실패 테스트 작성**
 
 `crates/xmem-windows/src/process.rs`의 기존 `mod tests`에 추가:
 
@@ -537,12 +537,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo check -p xmem-windows --tests`
 Expected: FAIL — `cannot find function process_image_path / open_for_query / ...` (token.rs 미등록 시 모듈 오류 포함)
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-windows/src/process.rs`에 use 추가:
 
@@ -762,14 +762,14 @@ fn read_unicode_string(us: &UNICODE_STRING, base: usize, byte_len: usize) -> Opt
 }
 ```
 
-- [ ] **Step 4: 테스트 + clippy**
+- [x] **Step 4: 테스트 + clippy**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo test -p xmem-windows; cargo clippy -p xmem-windows --all-targets -- -D warnings`
 Expected: PASS, clippy 클린
 
 주의: `read_unicode_string`은 `#[cfg(test)]`에서 직접 호출하므로 테스트 모듈에서 `use super::*;`로 접근 가능해야 한다(비공개 함수 OK).
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add crates/xmem-windows/src/process.rs crates/xmem-windows/src/token.rs crates/xmem-windows/src/lib.rs
@@ -789,7 +789,7 @@ git commit -m "feat(windows): 프로세스 경로/arch/session/메모리/명령�
   - `process::process_info(pid: u32) -> Result<ProcessInfo>`
   - `process::list_processes() -> Result<Vec<ProcessInfo>>`
 
-- [ ] **Step 1: 실패 테스트 작성**
+- [x] **Step 1: 실패 테스트 작성**
 
 `crates/xmem-windows/src/process.rs` 테스트 모듈에 추가:
 
@@ -833,12 +833,12 @@ git commit -m "feat(windows): 프로세스 경로/arch/session/메모리/명령�
     }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo check -p xmem-windows --tests`
 Expected: FAIL — `cannot find function process_info / list_processes`
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-windows/src/process.rs`에 추가:
 
@@ -907,12 +907,12 @@ pub fn list_processes() -> Result<Vec<ProcessInfo>> {
 }
 ```
 
-- [ ] **Step 4: 테스트 + clippy**
+- [x] **Step 4: 테스트 + clippy**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo test -p xmem-windows; cargo clippy -p xmem-windows --all-targets -- -D warnings`
 Expected: PASS (Task 3까지 합쳐 windows crate 테스트 22개 안팎), clippy 클린
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add crates/xmem-windows/src/process.rs
@@ -938,7 +938,7 @@ git commit -m "feat(windows): process_info/list_processes 고수준 API"
   - `process::render_list(infos: &[ProcessInfo]) -> String`
   - `process::render_info(info: &ProcessInfo) -> String`
 
-- [ ] **Step 1: 실패 테스트 작성**
+- [x] **Step 1: 실패 테스트 작성**
 
 `crates/xmem-cli/src/commands/process.rs`를 테스트 포함 스켈레톤으로 교체(구현은 다음 Step):
 
@@ -1051,12 +1051,12 @@ mod tests {
     }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo check -p xmem-cli --tests; cargo check -p xmem-core --tests`
 Expected: FAIL — `cannot find function render_list / render_info / success_envelope / variant JsonError`
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `Cargo.toml` workspace dependencies에 추가:
 
@@ -1230,12 +1230,12 @@ pub fn render_info(info: &ProcessInfo) -> String {
 }
 ```
 
-- [ ] **Step 4: 테스트 + clippy**
+- [x] **Step 4: 테스트 + clippy**
 
 Run: `$env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"; cargo test -p xmem-core -p xmem-cli; cargo clippy -p xmem-cli --all-targets -- -D warnings`
 Expected: PASS (cli 기존 8 + 신규 7), clippy 클린
 
-- [ ] **Step 5: 스모크 확인 (Windows 실검증)**
+- [x] **Step 5: 스모크 확인 (Windows 실검증)**
 
 Run:
 ```powershell
@@ -1246,7 +1246,7 @@ cargo run -q -p xmem-cli -- --json process list | ConvertFrom-Json | Select-Obje
 ```
 Expected: 표가 출력되고, 자기 PID 정보에 Created/User/Command Line/Memory가 채워지며, JSON은 파싱되어 프로세스 수가 1 이상.
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add Cargo.toml Cargo.lock crates/xmem-cli/Cargo.toml crates/xmem-core/src/error.rs crates/xmem-cli/src/output.rs crates/xmem-cli/src/commands/process.rs
@@ -1265,15 +1265,15 @@ git commit -m "feat(cli): process list/info 구현과 JSON envelope"
 - Consumes: Task 1~5 전체
 - Produces: 없음 (검증/문서)
 
-- [ ] **Step 1: README Status 갱신**
+- [x] **Step 1: README Status 갱신**
 
 `README.md`의 Status 표에서 M2 행을 `Implemented`로 바꾸고, 구현 범위에 `process list`, `process info`(경로/arch/session/생성시각/사용자/명령줄/메모리/스레드/모듈 수)를 명시한다. 아직 없는 기능(M3~)은 `Planned` 유지.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 `docs/architecture.md`의 dependency 표에서 chrono 도입 시점을 M7 → M2로 수정하고, M2 섹션에 "구현 완료(process list/info)"를 반영한다.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 Run:
 ```powershell
@@ -1285,7 +1285,7 @@ cargo test --workspace
 ```
 Expected: 전부 exit 0, 테스트 전부 green.
 
-- [ ] **Step 4: Windows 실검증 (오류 경로 포함)**
+- [x] **Step 4: Windows 실검증 (오류 경로 포함)**
 
 Run:
 ```powershell
@@ -1300,7 +1300,7 @@ cargo run -q -p xmem-cli -- process list > $null; "exit=$LASTEXITCODE"
 ```
 Expected: lsass(비관리자)는 `access denied` 구조화 오류 + exit=1 (panic 없음), 존재하지 않는 PID는 오류 + exit=1, list 반복 3회 모두 exit=0. WOW64 프로세스가 있으면 `xmem process list`에서 arch가 `x86`으로 보이는지 눈으로 확인한다(예: `Get-Process`로 32-bit 프로세스 하나 지정해 `process info`).
 
-- [ ] **Step 5: 계획서 체크박스 갱신 + 커밋**
+- [x] **Step 5: 계획서 체크박스 갱신 + 커밋**
 
 이 파일의 체크박스를 전부 `- [x]`로 바꾼다.
 
