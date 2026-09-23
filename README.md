@@ -204,6 +204,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - [`docs/experiments.md`](docs/experiments.md) — 실험 방법론과 안전 원칙
 - [`docs/format.md`](docs/format.md) — Snapshot v1 / Minidump / Report / JSON envelope 포맷
 - [`docs/gui-design.md`](docs/gui-design.md) — GUI 설계 스펙 (화면 구조, 디자인 시스템, 권한/취소 규칙)
+- [`docs/future-work.md`](docs/future-work.md) — v0.1.0 기준 기능 문제·부족 목록과 우선순위
 - [`docs/plans/`](docs/plans/) — 마일스톤 실행 계획
 
 ## Roadmap
