@@ -104,6 +104,8 @@ pub struct XMemApp {
     pub list_task: BackgroundTask<Vec<xmem_core::ProcessInfo>>,
     pub process_filter: String,
     pub processes: Vec<xmem_core::ProcessInfo>,
+    pub overview_task: BackgroundTask<xmem_core::ProcessInfo>,
+    pub overview_info: Option<xmem_core::ProcessInfo>,
 }
 
 impl XMemApp {
@@ -128,14 +130,31 @@ impl XMemApp {
             list_task: BackgroundTask::idle(),
             process_filter: String::new(),
             processes: Vec::new(),
+            overview_task: BackgroundTask::idle(),
+            overview_info: None,
         };
         app.refresh_processes();
+        if let Some(pid) = initial_pid {
+            app.select_process(pid);
+        }
         app
     }
 
     pub fn refresh_processes(&mut self) {
         self.list_task =
             BackgroundTask::spawn("프로세스 목록", |_| xmem_windows::list_processes());
+    }
+
+    pub fn select_process(&mut self, pid: u32) {
+        self.selected_pid = Some(pid);
+        self.start_overview(pid);
+    }
+
+    pub fn start_overview(&mut self, pid: u32) {
+        self.overview_info = None;
+        self.overview_task = BackgroundTask::spawn("프로세스 정보", move |_| {
+            xmem_windows::process_info(pid)
+        });
     }
 
     pub fn restart_elevated(&mut self) {
@@ -164,6 +183,11 @@ impl eframe::App for XMemApp {
             && let Some(list) = self.list_task.take_done()
         {
             self.processes = list;
+        }
+        if self.overview_task.poll()
+            && let Some(info) = self.overview_task.take_done()
+        {
+            self.overview_info = Some(info);
         }
         let palette = theme::palette(self.theme);
 
@@ -206,6 +230,17 @@ impl eframe::App for XMemApp {
             crate::views::log::ui(ui, &self.log);
         });
 
+        let narrow = ui.ctx().input(|i| i.viewport_rect().width()) < 900.0;
+        if !narrow {
+            egui::Panel::left(egui::Id::new("processes"))
+                .resizable(true)
+                .default_size(300.0)
+                .size_range(220.0..=360.0)
+                .show(ui, |ui| {
+                    crate::views::process::ui(ui, self);
+                });
+        }
+
         egui::CentralPanel::default().show(ui, |ui| {
             ui.horizontal(|ui| {
                 for tab in Tab::ALL {
@@ -214,14 +249,16 @@ impl eframe::App for XMemApp {
                     }
                 }
             });
+            if narrow {
+                crate::views::process::dropdown(ui, self);
+            }
             ui.separator();
-            ui.label(format!(
-                "선택된 PID: {}",
-                self.selected_pid
-                    .map(|p| p.to_string())
-                    .unwrap_or_else(|| "-".into())
-            ));
-            ui.label(egui::RichText::new("(Task 3~7에서 각 탭 화면이 채워집니다)").weak());
+            match self.tab {
+                Tab::Overview => crate::views::overview::ui(ui, self),
+                _ => {
+                    ui.label(egui::RichText::new("이 탭은 다음 Task에서 채워집니다").weak());
+                }
+            }
         });
     }
 }
