@@ -1,0 +1,14 @@
+[package]
+name = "xmem-pe"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+xmem-core.workspace = true
+goblin.workspace = true
+serde.workspace = true

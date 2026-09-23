@@ -260,6 +260,13 @@ Expected: FAIL — crate가 없어 `error: package ID specification 'xmem-pe' di
 
 - [ ] **Step 3: Write minimal implementation**
 
+> **구현 후 수정 (실측):** goblin 0.10.7은 프리픽스 파싱에서 임포트 디렉터리가 파일 범위를 벗어나면
+> `Malformed entity ... extends beyond file bounds` 하드 에러를 낸다(부분 실패 허용 안 함).
+> 따라서 실제 구현은 **bounds-checked 수동 헤더 파서(`parse_header`) + 전체 파일일 때만 goblin 보강**
+> 구조로 바뀌었다(`parse_pe`는 헤더 파싱 성공이면 Ok, 데이터 디렉터리만 손상돼도 헤더 정보 반환).
+> 테스트 `header_parse_matches_full_parse`가 수동 파서 오프셋을 goblin 전체 파싱과 교차 검증한다.
+> 최종 코드는 `crates/xmem-pe/src/image.rs` 참조.
+
 `crates/xmem-pe/Cargo.toml`:
 
 ```toml
