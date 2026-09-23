@@ -1,7 +1,7 @@
 # XMem GUI 설계 스펙
 
-> 상태: 설계 승인 완료(2026-09-23) → 구현 계획 작성 대기
-> 관련 문서: `docs/architecture.md`(Core Analyzer 스펙), `docs/plans/milestone-13-gui.md`(구현 계획, 예정)
+> 상태: 구현 완료(M13, 2026-09-23)
+> 관련 문서: `docs/architecture.md`(Core Analyzer 스펙), `docs/plans/milestone-13-gui.md`(구현 계획)
 > 원칙: 이 스펙은 "무엇을/왜"를 정의한다. "어떻게"는 구현 계획이 담당한다.
 
 ## 1. 목표

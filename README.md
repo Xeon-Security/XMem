@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **Milestone 12 (완성도)** 완료 — 12개 마일스톤이 모두 완료되었다. `xmem report --pid <PID> --output <FILE>`로 JSON/Markdown 리포트를 생성하고, `memory scan` 통계에 XMem 자신의 RSS가 포함되며, `docs/`에 6종 기술 문서가 추가되었다.
+현재 **Milestone 13 (GUI)** 완료 — `xmem-gui`로 CLI의 분석 기능 전체(프로세스/메모리맵/검색/모듈/스레드/탐지/스냅샷/덤프/리포트)를 GUI에서 사용할 수 있다. 실험 자동화는 CLI 전용으로 유지된다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -44,6 +44,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | `dump analyze <FILE>` (minidump 파싱: os/cpu/arch/pid/modules/threads/regions/findings, 오프라인 Detection, `--json`) | Implemented |
 | Test Target (`lab/targets/xmem-target`) (deterministic 시나리오 normal/pattern/private/private-exec/pe-like/threads/protection/all, Ground Truth JSON report, 회귀 테스트) | Implemented |
 | Experiment 자동화 (`experiment list` / `experiment run <NAME>`) (4개 정의 실험: remote-alloc/protection-flip/pe-staging/remote-thread, spawn한 xmem-target 한정, guard/신원 검증, cleanup, `--json`) | Implemented |
+| GUI (`xmem-gui`) (egui 단일 exe: 프로세스 목록/개요·메모리맵·검색+hex 미리보기·모듈·스레드·탐지·스냅샷·덤프·리포트, 관리자 재시작(runas), 가이드, 로그 패널, 다크/라이트) | Implemented |
 
 세부 설계는 [`docs/architecture.md`](docs/architecture.md), 마일스톤 실행 계획은 [`docs/plans/`](docs/plans/) 참고.
 
@@ -91,6 +92,8 @@ xmem --json experiment run protection-flip              # 실험 결과 JSON
 xmem --json process list          # JSON envelope (schema_version 포함)
 xmem --json memory map --pid <PID>  # 영역 상세 JSON
 xmem --json memory scan --pid <PID> --wide-string pwsh  # UTF-16LE 검색 JSON
+cargo build --release -p xmem-gui                        # GUI 빌드 (egui 단일 exe)
+.\target\release\xmem-gui.exe                            # GUI 실행 (--pid <PID>로 시작 가능)
 ```
 
 ## CLI Usage (계약)
@@ -189,6 +192,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 실험 기능은 XMem이 직접 spawn한 전용 Test Target에만 수행한다(호스트 보호).
 - Test Target은 자기 프로세스의 메모리만 변경하며(x64 Windows 전용), `threads` 시나리오의 스레드는 suspended 상태로 생성되어 실제로 실행되지 않는다. 아티팩트 주소는 실행마다 달라지므로 테스트/스모크는 `--report`의 주소를 사용해야 한다.
 - Experiment는 v1에서 XMem이 spawn한 `xmem-target` 전용이다(임의 PID 불가). `remote-thread`의 원격 스레드는 suspended 상태로 생성되어 실행되지 않으며, 변경 Win32 API 호출은 `xmem-experiments` 경로에서만 일어난다. 테스트에서는 `RunOptions::target_binary`로 바이너리를 지정하며, CLI는 실행 파일 기준 또는 `XMEM_TARGET` 환경 변수로 타깃을 찾는다.
+- GUI는 분석 기능만 제공한다(실험은 CLI 전용). 덤프 생성은 진행 중 취소를 지원하지 않으며, PPL 보호 프로세스는 관리자 권한으로도 열 수 없다. 검색은 진행률을 표시하지 않는다(취소는 가능). GUI는 `asInvoker`로 시작하고 상단 배지의 "관리자로 재시작"(`ShellExecuteW runas`, `--pid` 유지)으로 권한을 올린다.
 
 ## Documentation
 
@@ -199,6 +203,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - [`docs/detection.md`](docs/detection.md) — Evidence 기반 Detection (XMEM-001~005)
 - [`docs/experiments.md`](docs/experiments.md) — 실험 방법론과 안전 원칙
 - [`docs/format.md`](docs/format.md) — Snapshot v1 / Minidump / Report / JSON envelope 포맷
+- [`docs/gui-design.md`](docs/gui-design.md) — GUI 설계 스펙 (화면 구조, 디자인 시스템, 권한/취소 규칙)
 - [`docs/plans/`](docs/plans/) — 마일스톤 실행 계획
 
 ## Roadmap
@@ -217,6 +222,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | M10 | Research Lab (Test Target + Ground Truth) | 완료 |
 | M11 | Experiment 자동화 (TargetGuard, 4개 실험, Baseline→Post 파이프라인) | 완료 |
 | M12 | 완성도 (`report` JSON/Markdown, 자원 모니터링 RSS, 문서 6종, UX) | 완료 |
+| M13 | GUI (`xmem-gui`: egui 단일 exe, 분석 전체 탭, 관리자 재시작, 가이드, 로그) | 완료 |
 
 ## License
 

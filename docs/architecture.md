@@ -56,6 +56,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
 | `xmem-experiments` | Experiment Framework(TargetGuard + 4개 실험 + 파이프라인). 변경 Win32 API 호출은 여기서만, lab target 한정 | M11 (생성됨) |
 | `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member): 자기 프로세스 한정 메모리 아티팩트, Ground Truth JSON report. `xmem-windows`만 의존 | M10 (생성됨) |
+| `xmem-gui` | egui 단일 exe 데스크톱 GUI: CLI와 동일한 crate를 직접 호출(IPC 없음), 분석 탭 + 가이드 + 로그 패널. 실험은 제외(CLI 전용). `unsafe` 금지 | M13 (생성됨) |
 
 ## 4. Dependency 정책
 
@@ -75,6 +76,8 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `blake3` | M7 | region 내용 해시 | 도입됨(M7) |
 | `minidump` 0.27 | M9 | dump analyze 파싱(SystemInfo/Module/Thread/MemoryInfo/Misc 스트림, 메모리 범위) | 도입됨(M9). `MinidumpMemoryInfoList::iter()`는 `&MinidumpMemoryInfo`를 반환(주의). memmap2는 이 crate의 전이 의존으로 들어옴 |
 | `memmap2` | M9+ | MemoryImage 소스 | 필요 시점 도입 |
+| `eframe` / `egui` / `egui_extras` 0.36.2 | M13 | GUI(창/위젯/표) | `xmem-gui` 전용. 0.36은 `eframe::App::ui(&mut Ui, ...)`(구 `update` 없음), `egui::Panel` 통합 API |
+| `rfd` 0.17.2 | M13 | 네이티브 파일 대화상자 | `xmem-gui` 전용 |
 
 미도입(의도적): `tokio`(비동기 불필요), `winapi`(windows-rs로 단일화), 테이블 포매팅 crate(수동 정렬로 충분).
 
@@ -237,6 +240,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M9 | `MiniDumpWriteDump`(dbghelp), `CreateFileW` (feature `Win32_System_Kernel` 추가) | 구현됨. 기본 `MiniDumpNormal \| MiniDumpWithFullMemoryInfo`, `--full`은 `MiniDumpWithFullMemory \| FullMemoryInfo` + commit 바이트·16 MiB 디스크 사전 검사. temp → `MDMP` 검증 → atomic rename |
 | M10 | `VirtualAlloc`, `VirtualProtect`, `VirtualFree`, `CreateThread`, `GetThreadId` | 구현됨(`xmem-windows::selfmem`). lab target 전용, 자기 프로세스 한정. 외부 프로세스 조작(`VirtualAllocEx` 등)은 M11 `xmem-experiments` |
 | M11 | `VirtualAllocEx`, `VirtualProtectEx`, `WriteProcessMemory`, `CreateRemoteThread`, `FlushInstructionCache` | 구현됨(`xmem-windows::remotemem` + `threads::create_remote_thread`). 호출은 `xmem-experiments`만, lab target 한정 |
+| M13 | `ShellExecuteW`(`runas`), `OpenProcessToken`+`GetTokenInformation(TokenElevation)` (feature `Win32_UI_Shell`/`Win32_UI_WindowsAndMessaging` 추가) | 구현됨(`xmem-windows::elevate`). GUI는 `asInvoker`로 시작, "관리자로 재시작"은 `--pid`를 유지해 재실행. UAC 취소 시 원래 창 유지 |
 
 ## 12. CLI 계약
 
@@ -283,12 +287,14 @@ xmem experiment list | run <NAME>
 | M10 Research Lab(`lab/targets/xmem-target` deterministic 시나리오, Ground Truth 회귀 테스트, `xmem-windows::selfmem`) | Done |
 | M11 Experiment Automation(`xmem-experiments` TargetGuard/4개 실험/파이프라인, `experiment list`/`experiment run`, e2e 검증) | Done |
 | M12 완성도(`report` JSON/Markdown, `ScanStats.rss_bytes`, 문서 6종, UX) | Done |
-| M13+ | 계획 없음 (스펙 M1~M12 완료) |
+| M13 GUI(`xmem-gui` egui 단일 exe, 분석 탭 전체, 관리자 재시작, 가이드, 로그 패널, 다크/라이트) | Done |
+| M14+ | 계획 없음 (M13까지 완료) |
 
 ## 15. Non-Goals
 
 - Kernel driver, physical memory, DMA, MSR, kernel patching/modification
-- 비동기 런타임, GUI, 네트워크 기능
+- 비동기 런타임, 네트워크 기능
+- GUI에서의 Experiment 실행(실험은 CLI 전용 유지)
 - 탐지를 악성 확정으로 표현하는 것
 
 ## 16. Risk Register

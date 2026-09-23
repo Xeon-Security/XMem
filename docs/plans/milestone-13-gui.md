@@ -1,6 +1,6 @@
 # XMem GUI (Milestone 13) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** CLI 전용이던 XMem 분석 기능 전체(프로세스→탐지→스냅샷→덤프→리포트)를 egui 기반 단일 exe GUI로 제공하고, 처음 쓰는 사용자를 가이드·실패 사유 안내·로그 패널로 안내한다.
 
@@ -46,11 +46,11 @@
   - `pub fn is_elevated() -> xmem_core::Result<bool>`
   - `pub fn runas(file: &str, parameters: &str) -> xmem_core::Result<()>`
 
-- [ ] **Step 1: Cargo feature 추가**
+- [x] **Step 1: Cargo feature 추가**
 
 `crates/xmem-windows/Cargo.toml`의 windows features에 `"Win32_UI_Shell"` 추가 (`"Win32_System_Threading"` 다음, 알파벳 순서).
 
-- [ ] **Step 2: 실패 테스트 작성**
+- [x] **Step 2: 실패 테스트 작성**
 
 `crates/xmem-windows/src/elevate.rs` 생성:
 
@@ -87,12 +87,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: red 확인**
+- [x] **Step 3: red 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `cannot find function is_elevated` / `runas` (E0425 ×2)
 
-- [ ] **Step 4: 구현**
+- [x] **Step 4: 구현**
 
 테스트 모듈 위에 추가:
 
@@ -141,11 +141,11 @@ pub fn runas(file: &str, parameters: &str) -> Result<()> {
 
 `lib.rs`에 `pub mod elevate;` (disk 다음) + 재수출 `pub use elevate::{is_elevated, runas};`
 
-- [ ] **Step 5: green + 게이트**
+- [x] **Step 5: green + 게이트**
 
 Run: `cargo test -p xmem-windows` → 64/64 (기존 62 + 2), `cargo fmt --all`, `cargo clippy -q -p xmem-windows --all-targets -- -D warnings`
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add crates/xmem-windows && git commit -m "feat(windows): 관리자 판별과 runas 실행"
@@ -175,7 +175,7 @@ git add crates/xmem-windows && git commit -m "feat(windows): 관리자 판별과
   - `log::{LogBuffer, LogEntry, LogLevel}`
   - `app::{XMemApp, Tab, OpenFailure, classify_open_failure, restart_params}`
 
-- [ ] **Step 1: Cargo 등록**
+- [x] **Step 1: Cargo 등록**
 
 루트 `Cargo.toml`: members에 `"crates/xmem-gui",` 추가(xmem-cli 다음), workspace.deps에 `xmem-gui = { path = "crates/xmem-gui" }` 추가.
 
@@ -211,7 +211,7 @@ egui_extras = "0.36.2"
 rfd = "0.17.2"
 ```
 
-- [ ] **Step 2: theme.rs 작성(테스트 포함)**
+- [x] **Step 2: theme.rs 작성(테스트 포함)**
 
 ```rust
 //! 무채색 팔레트 + 강조색 3종. 스펙 §5의 토큰 그대로.
@@ -348,7 +348,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: config.rs 작성(테스트 포함)**
+- [x] **Step 3: config.rs 작성(테스트 포함)**
 
 ```rust
 //! `%APPDATA%\XMem\gui.json` 설정 저장/로드.
@@ -452,7 +452,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: task.rs 작성(테스트 포함)**
+- [x] **Step 4: task.rs 작성(테스트 포함)**
 
 ```rust
 //! 백그라운드 태스크: 스레드 + 취소 플래그 + mpsc. UI는 poll만 한다.
@@ -623,7 +623,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 5: log.rs 작성(테스트 포함)**
+- [x] **Step 5: log.rs 작성(테스트 포함)**
 
 ```rust
 //! 오류 로그 ring buffer (최근 200건).
@@ -708,7 +708,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 6: app.rs + main.rs + views/mod.rs 작성(테스트 포함)**
+- [x] **Step 6: app.rs + main.rs + views/mod.rs 작성(테스트 포함)**
 
 `views/mod.rs`:
 
@@ -1079,13 +1079,13 @@ mod tests {
 }
 ```
 
-- [ ] **Step 7: 빌드·테스트·스모크**
+- [x] **Step 7: 빌드·테스트·스모크**
 
 Run: `cargo test -p xmem-gui` → theme 3 + config 3 + task 4 + log 2 + app 3 + main 2 = 17 green
 Run: `cargo run -p xmem-gui` → 창이 뜨고 상단 바/탭/로그 패널이 보이는지 확인(수동), 프로세스 목록 task는 아직 표시 안 함
 Run: `cargo fmt --all`, `cargo clippy -q --workspace --all-targets -- -D warnings`
 
-- [ ] **Step 8: 커밋**
+- [x] **Step 8: 커밋**
 
 ```bash
 git add Cargo.toml Cargo.lock crates/xmem-gui && git commit -m "feat(gui): 앱 셸·테마·설정·태스크 기반"
@@ -1110,7 +1110,7 @@ git add Cargo.toml Cargo.lock crates/xmem-gui && git commit -m "feat(gui): 앱 �
   - `overview::ui(ui, app: &mut XMemApp)` — 개요 탭 + 열기 실패 배너
   - `XMemApp::open_selected(&mut self)` / `overview_task: BackgroundTask<ProcessInfo>`
 
-- [ ] **Step 1: filter 테스트 작성**
+- [x] **Step 1: filter 테스트 작성**
 
 `views/process.rs` 생성(테스트 먼저):
 
@@ -1163,12 +1163,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-gui --tests`
 Expected: FAIL — `todo!()`는 컴파일되므로 **테스트 실행에서 실패**: `cargo test -p xmem-gui filter` → panicked at `not yet implemented`
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 ```rust
 pub fn filter_processes(list: &[ProcessInfo], query: &str) -> Vec<usize> {
@@ -1373,7 +1373,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 4: app.rs 배선**
+- [x] **Step 4: app.rs 배선**
 
 `XMemApp`에 필드 추가:
 
@@ -1444,13 +1444,13 @@ match self.tab {
 }
 ```
 
-- [ ] **Step 5: 테스트 + 스모크**
+- [x] **Step 5: 테스트 + 스모크**
 
 Run: `cargo test -p xmem-gui` → 17 + 2(filter 1 + info_rows 1) = 19 green
 Run: `cargo run -p xmem-gui` → 목록 로드·검색·선택 → 개요 표시(수동). 관리자 아닐 때 lsass 선택 → "관리자로 재시작" 배너 확인.
 Run: `cargo fmt --all`, `cargo clippy -q --workspace --all-targets -- -D warnings`
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add crates/xmem-gui && git commit -m "feat(gui): 프로세스 목록과 개요 탭"
@@ -1473,7 +1473,7 @@ git add crates/xmem-gui && git commit -m "feat(gui): 프로세스 목록과 개�
   - `map::ui`, `modules::ui`, `threads::ui`
   - `XMemApp` 필드: `map_task: BackgroundTask<RegionMap>`, `map: Option<RegionMap>`, `map_filters: RegionFilters`, `map_sort: MapSort`, `modules_task/modules`, `threads_task/threads`
 
-- [ ] **Step 1: map.rs 테스트 먼저 작성**
+- [x] **Step 1: map.rs 테스트 먼저 작성**
 
 ```rust
 //! 메모리맵 탭.
@@ -1558,7 +1558,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: red 확인 → 구현**
+- [x] **Step 2: red 확인 → 구현**
 
 Run: `cargo test -p xmem-gui map` → FAIL(`todo!`)
 
@@ -1633,7 +1633,7 @@ pub fn select_and_sort(regions: &[MemoryRegion], filters: &RegionFilters, sort: 
 }
 ```
 
-- [ ] **Step 3: map::ui + modules::ui + threads::ui**
+- [x] **Step 3: map::ui + modules::ui + threads::ui**
 
 `map::ui(ui, app)` — 툴바(새로고침/필터 체크박스/정렬 ComboBox) + 요약 행 + `truncated` 경고 + 표:
 
@@ -1750,7 +1750,7 @@ pub mod process;
 pub mod threads;
 ```
 
-- [ ] **Step 4: app.rs 배선**
+- [x] **Step 4: app.rs 배선**
 
 필드/초기화/폴링 추가:
 
@@ -1787,13 +1787,13 @@ match self.tab {
 }
 ```
 
-- [ ] **Step 5: 테스트 + 스모크**
+- [x] **Step 5: 테스트 + 스모크**
 
 Run: `cargo test -p xmem-gui` → 19 + 3 = 22 green
 Run: `cargo run -p xmem-gui` → 자기 PID 선택 → 메모리맵(수천 영역, 필터/정렬), 모듈 156개, 스레드 표시(수동)
 Run: `cargo fmt --all`, `cargo clippy -q --workspace --all-targets -- -D warnings`
 
-- [ ] **Step 6: 커밋**
+- [x] **Step 6: 커밋**
 
 ```bash
 git add crates/xmem-gui && git commit -m "feat(gui): 메모리맵·모듈·스레드 탭"
@@ -1813,7 +1813,7 @@ git add crates/xmem-gui && git commit -m "feat(gui): 메모리맵·모듈·스�
   - `scan::{hex_dump(bytes: &[u8], base: u64) -> String, preview_range(address: u64, region_size: u64) -> (u64, usize), build_options(ui_state) -> Result<ScanOptions>}`
   - `scan::ui`, `XMemApp::{scan_task, scan_report, start_scan, scan_pattern_text, scan_kind, scan_preview}`
 
-- [ ] **Step 1: 테스트 먼저**
+- [x] **Step 1: 테스트 먼저**
 
 ```rust
 //! 검색 탭: needle 입력 + 필터 + 결과 표 + 주소 미리보기.
@@ -1859,7 +1859,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: red → 구현**
+- [x] **Step 2: red → 구현**
 
 ```rust
 pub fn hex_dump(bytes: &[u8], base: u64) -> String {
@@ -1894,7 +1894,7 @@ pub fn preview_range(address: u64, region_base: u64, region_size: u64) -> (u64, 
 }
 ```
 
-- [ ] **Step 3: scan::ui 구현**
+- [x] **Step 3: scan::ui 구현**
 
 UI 상태 → 옵션:
 
@@ -1963,13 +1963,13 @@ if len > 0
 
 취소: `app.scan_task.cancel()` → `scan()`이 `Cancelled` 반환 → TaskState::Cancelled → "취소됨(부분 결과 N건)" 표기.
 
-- [ ] **Step 4: app.rs 배선 + 테스트 + 스모크**
+- [x] **Step 4: app.rs 배선 + 테스트 + 스모크**
 
 Run: `cargo test -p xmem-gui` → 22 + 2 = 24 green
 Run: `cargo run -p xmem-gui` → 자기 PID → 검색 `pwsh`(ASCII) → 결과 클릭 → hex 미리보기, 취소 동작(수동)
 Run: `cargo fmt --all`, `cargo clippy -q --workspace --all-targets -- -D warnings`
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add crates/xmem-gui && git commit -m "feat(gui): 메모리 검색과 주소 미리보기"
@@ -1990,7 +1990,7 @@ git add crates/xmem-gui && git commit -m "feat(gui): 메모리 검색과 주소 
   - `detect::ui(ui, app)` + `XMemApp::{detect_task, findings, start_detect}`
   - `snapshot::{create_snapshot_file(pid, path, cancel) -> Result<u64>, ui(ui, app)}` + `XMemApp::{snapshot_create_task, snapshot_diff_task, snapshot_output, snapshot_before, snapshot_after, snapshot_diff}`
 
-- [ ] **Step 1: create_snapshot_file 테스트 먼저**
+- [x] **Step 1: create_snapshot_file 테스트 먼저**
 
 `snapshot.rs`:
 
@@ -2029,7 +2029,7 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: red → 구현**
+- [x] **Step 2: red → 구현**
 
 Run: `cargo test -p xmem-gui snapshot` → FAIL(`todo!`)
 
@@ -2050,7 +2050,7 @@ pub fn create_snapshot_file(pid: u32, output: &Path, cancel: &AtomicBool) -> Res
 }
 ```
 
-- [ ] **Step 3: detect::ui + snapshot::ui**
+- [x] **Step 3: detect::ui + snapshot::ui**
 
 `detect::ui`: 스피너/취소 + findings 수 요약 + "0건 ≠ 안전" 문구 + 목록(severity 색 배지 + rule/name + confidence dots) + 선택 상세(evidence observed 표, heuristic, interpretation). severity 색은 `theme::severity_color`.
 
@@ -2058,13 +2058,13 @@ pub fn create_snapshot_file(pid: u32, output: &Path, cancel: &AtomicBool) -> Res
 - 생성: 출력 경로 `TextEdit` + "찾아보기"(rfd save_file, 기본 파일명 `output_file_name("snapshot", pid, "xmem", Local::now())`, 기본 디렉터리 `default_output_dir()`) + "생성" 버튼 + 스피너/취소 + 완료 시 로그+요약.
 - diff: before/after 경로 각각 `TextEdit` + rfd `pick_file` + "비교" 버튼 + 요약 행(`regions: +N -N ~N | content ~N | modules ... | threads ... | detections ...`) + 변화 목록(CLI `render_diff`와 동일 라인 포맷: `+`/`-`/`~`).
 
-- [ ] **Step 4: app.rs 배선 + 테스트 + 스모크**
+- [x] **Step 4: app.rs 배선 + 테스트 + 스모크**
 
 Run: `cargo test -p xmem-gui` → 24 + 1 = 25 green
 Run: `cargo run -p xmem-gui` → 자기 PID 탐지(100여 findings), 스냅샷 2회 생성 → diff(수동)
 Run: `cargo fmt --all`, `cargo clippy -q --workspace --all-targets -- -D warnings`
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 git add crates/xmem-gui && git commit -m "feat(gui): 탐지와 스냅샷 탭"
@@ -2087,7 +2087,7 @@ git add crates/xmem-gui && git commit -m "feat(gui): 탐지와 스냅샷 탭"
   - `report::{build_report_data(pid) -> Result<ReportData>, ui(ui, app)}`
   - `guide::{guide_steps() -> Vec<(&'static str, &'static str)>, SAFETY_LINES: [&'static str; 4], ui(ui, app)}`
 
-- [ ] **Step 1: 테스트 먼저(3종)**
+- [x] **Step 1: 테스트 먼저(3종)**
 
 ```rust
 // dump.rs
@@ -2144,7 +2144,7 @@ fn report_data_of_self_has_regions_and_summary() {
 }
 ```
 
-- [ ] **Step 2: red → 구현**
+- [x] **Step 2: red → 구현**
 
 ```rust
 // dump.rs
@@ -2184,13 +2184,13 @@ pub fn build_report_data(pid: u32) -> Result<xmem_forensics::ReportData> {
 
 `report::ui`: 형식 라디오(JSON/Markdown) + 경로(기본 `output_file_name("report", pid, "json"|"md", now)`) + "저장" → `build_report_data` → `write_report`(백그라운드) + 완료 시 크기 로그.
 
-- [ ] **Step 3: app.rs 배선 + 테스트 + 스모크**
+- [x] **Step 3: app.rs 배선 + 테스트 + 스모크**
 
 Run: `cargo test -p xmem-gui` → 25 + 4 = 29 green
 Run: `cargo run -p xmem-gui` → 덤프 생성/분석, 리포트 json/md 저장, 가이드 5단계(수동)
 Run: `cargo fmt --all`, `cargo clippy -q --workspace --all-targets -- -D warnings`
 
-- [ ] **Step 4: 커밋**
+- [x] **Step 4: 커밋**
 
 ```bash
 git add crates/xmem-gui && git commit -m "feat(gui): 덤프·리포트·가이드 탭"
@@ -2207,7 +2207,7 @@ git add crates/xmem-gui && git commit -m "feat(gui): 덤프·리포트·가이�
 - Consumes: 전체
 - Produces: 최종 문서·게이트
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 문구 → "Milestone 13 (GUI) 완료. `xmem-gui`로 분석 기능 전체를 GUI에서 사용할 수 있다."
 - Status 표에 `GUI (xmem-gui)` 행 Implemented: 프로세스 목록/개요·메모리맵·검색(+hex 미리보기)·모듈·스레드·탐지·스냅샷·덤프·리포트, 관리자 재시작, 가이드, 로그 패널, 다크/라이트.
@@ -2215,18 +2215,18 @@ git add crates/xmem-gui && git commit -m "feat(gui): 덤프·리포트·가이�
 - Limitations에 GUI 항목: 실험 없음(CLI 전용), 덤프 생성 취소 불가, PPL은 관리자도 불가, 검색 진행률 미표시.
 - Roadmap M13 완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - crate 표에 `crates/xmem-gui` 행 추가(책임: egui GUI, 기존 crate 직접 호출, unsafe 없음 / M13 생성됨).
 - dependency 표: eframe/egui_extras/rfd 0.36/0.17 도입(M13, xmem-gui 전용), windows feature `Win32_UI_Shell` 추가(M13).
 - Windows API M13 행: `ShellExecuteW(runas)`, `GetTokenInformation(TokenElevation)` — 구현됨(xmem-windows::elevate).
 - §14 Status: M13 Done + "M14+ | 계획 없음".
 
-- [ ] **Step 3: gui-design.md 상태 갱신**
+- [x] **Step 3: gui-design.md 상태 갱신**
 
 `> 상태: 설계 승인 완료(2026-09-23) → 구현 계획 작성 대기` → `> 상태: 구현 완료(M13, 2026-09-23)` + 계획 링크.
 
-- [ ] **Step 4: 전체 게이트**
+- [x] **Step 4: 전체 게이트**
 
 Run:
 ```
@@ -2237,15 +2237,15 @@ cargo test --workspace 2>&1 | Out-File -Encoding utf8 "$env:TEMP\opencode\xmem-m
 ```
 Expected: 전부 통과. 테스트 총계 = 기존 230 + windows 2 + gui 29 = **261** (로그에서 확인).
 
-- [ ] **Step 5: GUI 스모크(수동, 실측 기록)**
+- [x] **Step 5: GUI 스모크(수동, 실측 기록)**
 
 Run: `cargo build --release -p xmem-gui` 후 `.\target\release\xmem-gui.exe`
 확인 항목: ① 창 부팅(한글 폰트 정상) ② 목록 로드 ③ 자기 PID 선택 → 개요/맵/모듈/스레드/검색/탐지/스냅샷/덤프/리포트/가이드 각 탭 ④ 관리자 배지 ⑤ 로그 패널 ⑥ 창 폭 900px 미만 드롭다운 전환 ⑦ 종료 시 `%APPDATA%\XMem\gui.json` 생성 확인.
 Run: `.\target\release\xmem-gui.exe --pid <자기PID>` → 개요에 해당 PID 표시.
 
-- [ ] **Step 6: 체크박스 + 커밋**
+- [x] **Step 6: 체크박스 + 커밋**
 
-이 계획서의 `- [ ]` → `- [x]` 치환 후:
+이 계획서의 `- [x]` → `- [x]` 치환 후:
 
 ```bash
 git add README.md docs/architecture.md docs/gui-design.md docs/plans/milestone-13-gui.md
