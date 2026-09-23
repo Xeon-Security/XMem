@@ -9,6 +9,7 @@ pub mod handle;
 pub mod memory;
 pub mod process;
 pub mod read;
+pub mod selfmem;
 pub mod threads;
 pub mod token;
 pub mod toolhelp;
@@ -21,6 +22,10 @@ pub use handle::OwnedHandle;
 pub use process::{
     current_pid, is_alive, list_processes, open_for_dump, open_for_query, open_for_read,
     open_process, process_info,
+};
+pub use selfmem::{
+    PrivateRegion, SELF_PAGE_RW, SELF_PAGE_RWX, SELF_PAGE_RX, alloc_executable,
+    spawn_suspended_thread, thread_id,
 };
 pub use threads::{
     RawThreadEntry, list_raw_threads, open_thread, open_thread_for_query, thread_priority,
