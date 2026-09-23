@@ -1,6 +1,6 @@
 # M5 Module / Thread Analysis Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem modules --pid`와 `xmem threads --pid`를 구현한다. 로드된 모듈을 열거하고, 스레드 시작 주소를 메모리 영역/모듈과 상관관계 분석해 구조화된 Evidence로 노출한다.
 
@@ -44,7 +44,7 @@
   - `pub fn list_raw_modules(pid: u32) -> Result<Vec<RawModuleEntry>>`
   - `pub fn count_modules(pid: u32) -> Result<u32>` — `list_raw_modules` 기반으로 리팩터(동작 동일).
 
-- [ ] **Step 1: 테스트 먼저 (red)**
+- [x] **Step 1: 테스트 먼저 (red)**
 
 `crates/xmem-windows/src/toolhelp.rs`의 기존 `#[cfg(test)] mod tests`에 추가:
 
@@ -80,12 +80,12 @@
     }
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `RawModuleEntry`/`list_raw_modules` 없음(E0422/E0425).
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-windows/src/toolhelp.rs`에 추가(기존 `count_modules`는 삭제하고 아래로 교체):
 
@@ -142,12 +142,12 @@ pub fn count_modules(pid: u32) -> Result<u32> {
 pub use toolhelp::{RawModuleEntry, count_modules, list_raw_modules};
 ```
 
-- [ ] **Step 4: green 확인**
+- [x] **Step 4: green 확인**
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 기존 42 + 3 = 45. `count_modules_matches_list_len`가 리팩터 동등성을 보증한다.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 cargo fmt --all
@@ -175,7 +175,7 @@ git commit -m "feat(windows): Toolhelp 모듈 열거"
   - `pub fn thread_priority(handle: &OwnedHandle) -> Option<i32>`
   - `pub fn thread_start_address(handle: &OwnedHandle) -> Option<u64>`
 
-- [ ] **Step 1: 테스트 먼저 (red)**
+- [x] **Step 1: 테스트 먼저 (red)**
 
 `crates/xmem-windows/src/threads.rs`:
 
@@ -236,12 +236,12 @@ mod tests {
 
 `crates/xmem-windows/src/lib.rs`에 `pub mod threads;` 추가.
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `list_raw_threads`/`open_thread_for_query` 등 없음(E0425). `GetCurrentThreadId`가 Threading에 없으면 E0432 — 이 경우 `windows::Win32::System::Threading::GetCurrentThreadId`를 grep으로 확인하고, 없으면 테스트에서 `list_raw_threads(current_pid())` 첫 항목의 tid를 사용한다.
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-windows/src/toolhelp.rs`에서 `fn snapshot`과 `fn is_no_more_files`를 `pub(crate) fn`으로 변경(본문 동일).
 
@@ -335,12 +335,12 @@ pub use threads::{
 };
 ```
 
-- [ ] **Step 4: green 확인**
+- [x] **Step 4: green 확인**
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 45 + 3 = 48.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 cargo fmt --all
@@ -363,7 +363,7 @@ git commit -m "feat(windows): Toolhelp 스레드 열거와 시작 주소 조회"
   - `LiveProcess::threads(&self) -> Result<Vec<ThreadInfo>>` — `start_region_base`/`start_module` 상관관계 포함.
   - `MemorySource::modules()/threads()`가 위를 반환.
 
-- [ ] **Step 1: 테스트 먼저 (red)**
+- [x] **Step 1: 테스트 먼저 (red)**
 
 `crates/xmem-memory/src/live.rs` 테스트 모듈에서 `unimplemented_methods_are_explicit`를 **삭제**하고 추가:
 
@@ -400,7 +400,7 @@ git commit -m "feat(windows): Toolhelp 스레드 열거와 시작 주소 조회"
     }
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-memory --tests`
 Expected: FAIL — `modules`/`threads`가 `Unimplemented`를 반환하므로 테스트는 컴파일되지만 **실행 시 실패**한다(`cargo test`로 확인). 컴파일 오류가 아니라 실행 실패가 red다.
@@ -408,7 +408,7 @@ Expected: FAIL — `modules`/`threads`가 `Unimplemented`를 반환하므로 테
 Run: `cargo test -p xmem-memory`
 Expected: FAIL — `modules_of_self_are_populated` 등 3개 실패(Unimplemented).
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-memory/src/live.rs` import를 다음으로 교체:
 
@@ -499,12 +499,12 @@ fn contains_module(module: &ModuleInfo, address: u64) -> bool {
     }
 ```
 
-- [ ] **Step 4: green 확인**
+- [x] **Step 4: green 확인**
 
 Run: `cargo test -p xmem-memory`
 Expected: PASS — 기존 17 − 1(unimplemented 삭제) + 3 = 19.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 cargo fmt --all
@@ -527,7 +527,7 @@ git commit -m "feat(memory): LiveProcess 모듈/스레드와 시작 주소 상�
 - Consumes: `xmem_memory::LiveProcess`, `crate::output::{emit_json, resolve_mode, success_envelope, OutputMode}`, `crate::commands::render::{human_size, truncate, truncate_tail, opt_hex, opt_num}`.
 - Produces: `modules::run(&PidArg, &GlobalArgs)`, `threads::run(&PidArg, &GlobalArgs)` — Human 표 + JSON envelope.
 
-- [ ] **Step 1: 테스트 먼저 (red)**
+- [x] **Step 1: 테스트 먼저 (red)**
 
 `crates/xmem-cli/src/commands/render.rs` 테스트에 추가:
 
@@ -660,12 +660,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: red 확인**
+- [x] **Step 2: red 확인**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — `opt_hex`/`render_modules`/`json_payload`/`render_threads` 없음(E0425/E0422).
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 `crates/xmem-cli/src/commands/render.rs`에 추가:
 
@@ -803,12 +803,12 @@ fn json_payload(info: &ProcessInfo, threads: &[ThreadInfo]) -> serde_json::Value
 
 주의: `resolve_mode`/`success_envelope`/`emit_json`의 실제 모듈 경로는 `crates/xmem-cli/src/output.rs`다. `crate::output::` 경로가 컴파일 오류면 memory.rs의 기존 import를 확인해 동일하게 맞춘다.
 
-- [ ] **Step 4: green 확인**
+- [x] **Step 4: green 확인**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 기존 32 + 5 = 37.
 
-- [ ] **Step 5: 커밋**
+- [x] **Step 5: 커밋**
 
 ```bash
 cargo fmt --all
@@ -826,7 +826,7 @@ git commit -m "feat(cli): modules/threads 명령과 주소 상관관계 출력"
 - Modify: `docs/architecture.md`
 - Modify: `docs/plans/milestone-05-modules-threads.md` (체크박스)
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 문구: "현재 **Milestone 5 (Module / Thread)** 완료. 모듈 열거와 스레드 시작 주소 상관관계 분석을 지원한다."
 - Status 표에서 `modules` / `threads` 행을 분리해 Implemented로:
@@ -836,13 +836,13 @@ git commit -m "feat(cli): modules/threads 명령과 주소 상관관계 출력"
 - Limitations: "M5 기준 process/memory/modules/threads 구현"으로 갱신, `GetThreadTimes`(스레드 시간 통계) 미포함 명시, 모듈별 arch는 프로세스 arch 상속(모듈별 정확 arch는 PE 분석 M6), `threads`의 priority는 동적 우선순위이며 조회 실패 시 `-`.
 - Roadmap M5 = 완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - Status 표: M5 Module / Thread (modules/threads, 시작 주소 상관관계) Done, M6~M12 Planned.
 - Windows API 표 M5 행: 구현됨(`Module32FirstW/NextW`, `Thread32First/Next`, `OpenThread`, `GetThreadPriority`, `NtQueryInformationThread(ThreadQuerySetWin32StartAddress)`; `GetThreadTimes`는 후속).
 - crate 책임 표: `xmem-memory` 행에 "모듈/스레드 상관관계" 추가.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```bash
 cargo fmt --all -- --check
@@ -853,7 +853,7 @@ cargo test --workspace
 
 Expected: 전부 exit 0; 테스트 합계 123 + 3(windows) + 2(memory 순증) + 5(cli) = **133**: core 32 + windows 48 + memory 19 + cli 37.
 
-- [ ] **Step 4: Windows 실검증**
+- [x] **Step 4: Windows 실검증**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -876,9 +876,9 @@ cargo run -q -p xmem-cli -- modules --pid 4294967294
 3. lsass → `error: access denied: ...` exit 1; bogus PID → `error: process ... has exited` exit 1.
 4. 반복 3회 모두 exit 0, 출력 구조 동일.
 
-- [ ] **Step 5: 체크박스 갱신 + 커밋**
+- [x] **Step 5: 체크박스 갱신 + 커밋**
 
-이 계획서의 모든 `- [ ]`를 `- [x]`로 바꾸고:
+이 계획서의 모든 `- [x]`를 `- [x]`로 바꾸고:
 
 ```bash
 git add README.md docs/architecture.md docs/plans/milestone-05-modules-threads.md

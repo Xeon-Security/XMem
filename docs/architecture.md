@@ -50,7 +50,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-core` | 데이터 모델, 에러, Evidence/Finding, Guard, MemorySource trait, Pattern 파서/매처, 버전 상수 | M1 |
 | `xmem-windows` | Win32 FFI, RAII Handle, Win32→XmemError 매핑 | M1 |
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
-| `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner | M3 (생성됨; scan 엔진 M4) |
+| `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner, 모듈/스레드 상관관계 | M3 (생성됨; scan 엔진 M4, 모듈/스레드 M5) |
 | `xmem-pe` | goblin 기반 PE 파싱, 메모리 PE artifact 탐지 | M6 |
 | `xmem-forensics` | Snapshot 포맷/직렬화, Diff, Report(JSON/Markdown), MemoryImage 소스 | M7 |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 |
@@ -215,7 +215,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M2 | `CreateToolhelp32Snapshot`, `Process32FirstW/NextW`, `OpenProcess`, `QueryFullProcessImageNameW`, `GetProcessTimes`, `IsWow64Process2`, `ProcessIdToSessionId`, `GetProcessMemoryInfo`, `OpenProcessToken`+`GetTokenInformation(TokenUser)`+`LookupAccountSidW`, `NtQueryInformationProcess`+PEB read (CommandLine) | 서명은 구현 시 windows-rs 문서로 검증. PEB는 WOW64/보호 프로세스에서 실패 가능 → `None` degrade |
 | M3 | `VirtualQueryEx` (주소 전진 루프, `ERROR_INVALID_PARAMETER`로 종료), `GetNativeSystemInfo`, `GetMappedFileNameW` | 구현됨(`xmem-windows` feature `Win32_System_Memory`). region 상태 변화/레이스는 정상 경로로 처리 |
 | M4 | `ReadProcessMemory` chunked(기본 1 MiB) | 구현됨(`xmem-windows` feature `Win32_System_Diagnostics_Debug`). `ERROR_PARTIAL_COPY(299)`→PartialRead, `ERROR_ACCESS_DENIED(5)`, `ERROR_NOACCESS(998)`/`ERROR_INVALID_ADDRESS(487)` 매핑 |
-| M5 | `TH32CS_SNAPMODULE(_32)`, `Module32FirstW/NextW`, `EnumProcessModulesEx`(fallback), `Thread32First/Next`, `OpenThread`, `GetThreadTimes`, `GetThreadPriority`, `NtQueryInformationThread(ThreadQuerySetWin32StartAddress)` | StartAddress는 반문서화 → 실패 시 skip |
+| M5 | `TH32CS_SNAPMODULE(_32)`, `Module32FirstW/NextW`, `Thread32First/Next`, `OpenThread`, `GetThreadPriority`, `NtQueryInformationThread(ThreadQuerySetWin32StartAddress)` | 구현됨. StartAddress는 반문서화 → 실패 시 `None` degrade. `GetThreadTimes`/`EnumProcessModulesEx` fallback은 후속 |
 | M6 | 신규 없음 | goblin + 메모리 헤더 read |
 | M7 | 신규 없음 | 파일 I/O |
 | M9 | `MiniDumpWriteDump`(dbghelp) | 기본은 metadata dump, `--full`은 사전 크기/디스크 검사 후 |
@@ -258,7 +258,8 @@ xmem experiment list | run <NAME>
 | M2 Process(`process list`/`process info`) | Done |
 | M3 Virtual Memory(`memory map`, `LiveProcess` MemorySource) | Done |
 | M4 Memory Scanner(`memory scan`, Pattern 파서/매처, chunked 병렬 scan, Ctrl+C) | Done |
-| M5~M12 | Planned |
+| M5 Module / Thread(`modules`/`threads`, 시작 주소 → region/module 상관관계) | Done |
+| M6~M12 | Planned |
 
 ## 15. Non-Goals
 
