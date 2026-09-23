@@ -1218,6 +1218,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "xmem-experiments"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tracing",
+ "xmem-core",
+ "xmem-detection",
+ "xmem-forensics",
+ "xmem-memory",
+ "xmem-windows",
+]
+
+[[package]]
 name = "xmem-forensics"
 version = "0.1.0"
 dependencies = [

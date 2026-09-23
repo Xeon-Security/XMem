@@ -13,8 +13,9 @@ use windows::Win32::System::RemoteDesktop::ProcessIdToSessionId;
 use windows::Win32::System::SystemInformation::IMAGE_FILE_MACHINE_UNKNOWN;
 use windows::Win32::System::Threading::{
     GetCurrentProcessId, GetExitCodeProcess, GetProcessTimes, IsWow64Process2, OpenProcess,
-    PROCESS_ACCESS_RIGHTS, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION,
-    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_READ, QueryFullProcessImageNameW,
+    PROCESS_ACCESS_RIGHTS, PROCESS_CREATE_THREAD, PROCESS_NAME_WIN32, PROCESS_QUERY_INFORMATION,
+    PROCESS_QUERY_LIMITED_INFORMATION, PROCESS_VM_OPERATION, PROCESS_VM_READ, PROCESS_VM_WRITE,
+    QueryFullProcessImageNameW,
 };
 use windows::core::PWSTR;
 use xmem_core::{MemoryStats, ProcessArch, ProcessInfo, Result, XmemError};
@@ -72,6 +73,17 @@ pub fn open_for_dump(pid: u32) -> Result<OwnedHandle> {
         }
         Err(e) => Err(e),
     }
+}
+
+/// 실험용 핸들(원격 메모리 조작 | 스레드 생성). XMem이 spawn한 lab target 전용.
+pub fn open_for_experiment(pid: u32) -> Result<OwnedHandle> {
+    open_process(
+        pid,
+        PROCESS_CREATE_THREAD
+            | PROCESS_VM_OPERATION
+            | PROCESS_VM_WRITE
+            | PROCESS_QUERY_LIMITED_INFORMATION,
+    )
 }
 
 pub fn process_image_path(handle: &OwnedHandle) -> Result<String> {
