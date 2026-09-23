@@ -17,3 +17,4 @@ pub use process::{
     current_pid, is_alive, list_processes, open_for_query, open_for_read, open_process,
     process_info,
 };
+pub use toolhelp::{RawModuleEntry, count_modules, list_raw_modules};
