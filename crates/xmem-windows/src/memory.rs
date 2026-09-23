@@ -153,6 +153,7 @@ pub fn region_from_raw(raw: &RawRegion, mapped_file: Option<String>) -> Option<M
     Some(MemoryRegion {
         base: raw.base,
         size: raw.size,
+        allocation_base: (raw.allocation_base != 0).then_some(raw.allocation_base),
         state,
         protection,
         allocation_protection,

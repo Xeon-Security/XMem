@@ -8,7 +8,7 @@ use windows::Win32::System::Diagnostics::ToolHelp::{
     TH32CS_SNAPTHREAD, THREADENTRY32, Thread32First, Thread32Next,
 };
 use windows::Win32::System::Threading::{
-    CreateRemoteThread, GetThreadPriority, LPTHREAD_START_ROUTINE, OpenThread,
+    CreateRemoteThread, GetThreadPriority, GetThreadTimes, LPTHREAD_START_ROUTINE, OpenThread,
     THREAD_ACCESS_RIGHTS, THREAD_CREATE_SUSPENDED, THREAD_QUERY_INFORMATION,
     THREAD_QUERY_LIMITED_INFORMATION,
 };
@@ -119,6 +119,44 @@ pub fn create_remote_thread(
     OwnedHandle::new(handle).ok_or(XmemError::InvalidHandle { handle: 0 })
 }
 
+/// GetThreadTimes로 얻은 스레드 시간(FILETIME 100ns 단위).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ThreadTimes {
+    pub creation: u64,
+    pub exit: u64,
+    pub kernel_100ns: u64,
+    pub user_100ns: u64,
+}
+
+fn filetime_to_u64(time: windows::Win32::Foundation::FILETIME) -> u64 {
+    ((time.dwHighDateTime as u64) << 32) | time.dwLowDateTime as u64
+}
+
+/// 스레드 생성/종료 시각과 kernel/user 시간을 조회한다.
+pub fn thread_times(thread: &OwnedHandle) -> Result<ThreadTimes> {
+    let mut creation = windows::Win32::Foundation::FILETIME::default();
+    let mut exit = windows::Win32::Foundation::FILETIME::default();
+    let mut kernel = windows::Win32::Foundation::FILETIME::default();
+    let mut user = windows::Win32::Foundation::FILETIME::default();
+    // SAFETY: thread는 유효한 핸들이고 네 FILETIME 모두 유효한 포인터다.
+    unsafe {
+        GetThreadTimes(
+            thread.raw(),
+            &mut creation,
+            &mut exit,
+            &mut kernel,
+            &mut user,
+        )
+    }
+    .map_err(|e| error_from_win32("GetThreadTimes", &e))?;
+    Ok(ThreadTimes {
+        creation: filetime_to_u64(creation),
+        exit: filetime_to_u64(exit),
+        kernel_100ns: filetime_to_u64(kernel),
+        user_100ns: filetime_to_u64(user),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -138,6 +176,29 @@ mod tests {
         let handle = open_thread_for_query(tid).unwrap();
         assert!(thread_priority(&handle).is_some());
         assert!(thread_start_address(&handle).is_some());
+    }
+
+    #[test]
+    fn thread_times_of_current_thread_are_reported() {
+        let tid = unsafe { GetCurrentThreadId() };
+        let handle = open_thread_for_query(tid).unwrap();
+        let times = thread_times(&handle).unwrap();
+        assert!(times.creation > 0);
+        assert_eq!(times.exit, 0, "실행 중 스레드의 exit time은 0이어야 합니다");
+        // 스레드 CPU 시간은 시스템 타이머 틱(기본 ~15.6ms) 단위로 갱신되므로
+        // 갓 시작한 테스트 스레드는 0으로 보일 수 있다. 틱이 오를 때까지 짧게 소비한다.
+        let mut total = times.user_100ns + times.kernel_100ns;
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        while total == 0 && std::time::Instant::now() < deadline {
+            let mut spin: u64 = 0;
+            for i in 0..200_000u64 {
+                spin = spin.wrapping_add(i);
+            }
+            std::hint::black_box(spin);
+            let ticked = thread_times(&handle).unwrap();
+            total = ticked.user_100ns + ticked.kernel_100ns;
+        }
+        assert!(total > 0, "스레드 CPU 시간이 2초 안에 갱신되지 않았습니다");
     }
 
     #[test]

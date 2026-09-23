@@ -65,6 +65,7 @@ mod tests {
             regions: vec![MemoryRegion {
                 base: 0x1000,
                 size: 0x1000,
+                allocation_base: Some(0x1000),
                 state: MemoryState::Commit,
                 protection: Protection::new(0x40, true, true, true),
                 allocation_protection: None,

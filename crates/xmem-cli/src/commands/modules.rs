@@ -203,6 +203,7 @@ mod tests {
             image_base: 0x0001_4000_0000,
             entry_point: 0x0001_4000_1234,
             size_of_image: 0x0002_0000,
+            time_date_stamp: 0,
             subsystem: 3,
             characteristics: 0x0022,
             sections: Vec::new(),

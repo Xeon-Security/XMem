@@ -1,8 +1,13 @@
+use std::path::Path;
+
 use serde::Serialize;
 use xmem_core::{ProcessArch, RegionClass, Result, XmemError};
 
 /// 메모리 PE 프로브 시 읽는 헤더 prefix 크기.
 pub const PE_HEADER_PREFIX: usize = 4096;
+
+/// 파일 전체 파싱 상한. 초과 시 헤더 prefix만 파싱한다.
+pub const MAX_FILE_PARSE_BYTES: u64 = 64 * 1024 * 1024;
 
 const IMAGE_SCN_MEM_EXECUTE: u32 = 0x2000_0000;
 const IMAGE_SCN_MEM_READ: u32 = 0x4000_0000;
@@ -60,6 +65,8 @@ pub struct PeInfo {
     pub size_of_image: u32,
     pub subsystem: u16,
     pub characteristics: u16,
+    /// COFF 헤더의 TimeDateStamp(Unix epoch 초). 링커가 기록한다.
+    pub time_date_stamp: u32,
     pub sections: Vec<PeSection>,
     pub import_count: usize,
     pub import_library_count: usize,
@@ -72,6 +79,7 @@ pub struct PeInfo {
 struct HeaderFields {
     machine: u16,
     characteristics: u16,
+    time_date_stamp: u32,
     is_64: bool,
     image_base: u64,
     entry_point: u64,
@@ -145,6 +153,8 @@ fn parse_header(bytes: &[u8]) -> Result<HeaderFields> {
         read_u16(bytes, coff + 16).ok_or_else(|| invalid("COFF 헤더가 잘렸습니다"))? as usize;
     let characteristics =
         read_u16(bytes, coff + 18).ok_or_else(|| invalid("COFF 헤더가 잘렸습니다"))?;
+    let time_date_stamp =
+        read_u32(bytes, coff + 4).ok_or_else(|| invalid("COFF 헤더가 잘렸습니다"))?;
     let optional = coff + 20;
     let magic = read_u16(bytes, optional).ok_or_else(|| invalid("optional 헤더가 잘렸습니다"))?;
     let is_64 = match magic {
@@ -196,6 +206,7 @@ fn parse_header(bytes: &[u8]) -> Result<HeaderFields> {
     Ok(HeaderFields {
         machine,
         characteristics,
+        time_date_stamp,
         is_64,
         image_base,
         entry_point: image_base.saturating_add(u64::from(entry_rva)),
@@ -221,6 +232,7 @@ pub fn parse_pe(bytes: &[u8]) -> Result<PeInfo> {
         size_of_image: header.size_of_image,
         subsystem: header.subsystem,
         characteristics: header.characteristics,
+        time_date_stamp: header.time_date_stamp,
         sections: header.sections,
         import_count: 0,
         import_library_count: 0,
@@ -247,6 +259,22 @@ pub fn parse_pe(bytes: &[u8]) -> Result<PeInfo> {
         info.tls_callback_count = pe.tls_data.as_ref().map_or(0, |tls| tls.callbacks.len());
     }
     Ok(info)
+}
+
+/// 디스크의 PE 파일을 파싱한다. 전체 파일을 읽어 임포트/익스포트/relocation/TLS까지 채운다.
+///
+/// `MAX_FILE_PARSE_BYTES`를 넘는 대형 파일은 헤더 prefix만 파싱한다(임포트 등은 0).
+pub fn parse_pe_file(path: &Path) -> Result<PeInfo> {
+    let metadata = std::fs::metadata(path).map_err(XmemError::Io)?;
+    if metadata.len() > MAX_FILE_PARSE_BYTES {
+        let mut file = std::fs::File::open(path).map_err(XmemError::Io)?;
+        let mut buf = vec![0u8; PE_HEADER_PREFIX];
+        let read = std::io::Read::read(&mut file, &mut buf).map_err(XmemError::Io)?;
+        buf.truncate(read);
+        return parse_pe(&buf);
+    }
+    let bytes = std::fs::read(path).map_err(XmemError::Io)?;
+    parse_pe(&bytes)
 }
 
 /// 메모리 영역 분류와 PE 헤더 바이트로 PE artifact를 분류한다.
@@ -310,6 +338,25 @@ mod tests {
         assert!(!pe.sections.is_empty());
         assert!(pe.size_of_image > 0);
         assert_eq!(pe.import_count, 0);
+        assert!(pe.time_date_stamp > 0, "COFF 타임스탬프");
+    }
+
+    #[test]
+    fn parse_pe_file_of_own_exe_reads_imports_and_timestamp() {
+        let path = std::env::current_exe().unwrap();
+        let pe = parse_pe_file(&path).unwrap();
+        assert!(pe.import_count > 0);
+        assert!(!pe.libraries.is_empty());
+        assert!(pe.time_date_stamp > 0);
+        assert!(!pe.sections.is_empty());
+        let header_only = parse_pe(&own_exe_bytes()[..PE_HEADER_PREFIX]).unwrap();
+        assert_eq!(pe.time_date_stamp, header_only.time_date_stamp);
+    }
+
+    #[test]
+    fn parse_pe_file_rejects_missing_file() {
+        let path = Path::new(r"C:\xmem-does-not-exist\xmem.exe");
+        assert!(matches!(parse_pe_file(path), Err(XmemError::Io(_))));
     }
 
     #[test]

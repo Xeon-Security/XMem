@@ -169,6 +169,7 @@ mod tests {
             size_of_image: 0x2000,
             subsystem: 3,
             characteristics: 0x22,
+            time_date_stamp: 0,
             sections: Vec::new(),
             import_count: 0,
             import_library_count: 0,

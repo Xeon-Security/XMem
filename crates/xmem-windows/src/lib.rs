@@ -34,7 +34,7 @@ pub use selfmem::{
     spawn_suspended_thread, thread_id,
 };
 pub use threads::{
-    RawThreadEntry, create_remote_thread, list_raw_threads, open_thread, open_thread_for_query,
-    thread_priority, thread_start_address,
+    RawThreadEntry, ThreadTimes, create_remote_thread, list_raw_threads, open_thread,
+    open_thread_for_query, thread_priority, thread_start_address, thread_times,
 };
 pub use toolhelp::{RawModuleEntry, count_modules, list_raw_modules};

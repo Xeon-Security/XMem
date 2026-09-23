@@ -86,6 +86,9 @@ pub enum Heuristic {
 pub struct MemoryRegion {
     pub base: u64,
     pub size: u64,
+    /// VirtualQueryEx의 AllocationBase. Free 영역 등 할당이 없으면 None.
+    #[serde(default)]
+    pub allocation_base: Option<u64>,
     pub state: MemoryState,
     pub protection: Protection,
     pub allocation_protection: Option<Protection>,
@@ -204,5 +207,25 @@ mod tests {
             Protection::new(0x01, false, false, false).to_string(),
             "--- (0x01)"
         );
+    }
+
+    #[test]
+    fn allocation_base_deserializes_when_missing() {
+        let old = r#"{
+            "base": 4096, "size": 4096, "state": "commit",
+            "protection": {"raw": 4, "readable": true, "writable": true, "executable": false},
+            "allocation_protection": null, "region_type": "private",
+            "readable": true, "writable": true, "executable": false,
+            "classification": "private", "heuristics": [], "mapped_file": null
+        }"#;
+        let region: MemoryRegion = serde_json::from_str(old).unwrap();
+        assert_eq!(region.allocation_base, None, "구 스냅샷은 None으로 복원");
+
+        let with_alloc = old.replace(
+            "\"base\": 4096,",
+            "\"base\": 4096, \"allocation_base\": 8192,",
+        );
+        let region: MemoryRegion = serde_json::from_str(&with_alloc).unwrap();
+        assert_eq!(region.allocation_base, Some(8192));
     }
 }

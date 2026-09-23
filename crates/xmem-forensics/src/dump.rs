@@ -277,6 +277,7 @@ fn region_from_info(
     Some(MemoryRegion {
         base: raw.base_address,
         size: raw.region_size,
+        allocation_base: (raw.allocation_base != 0).then_some(raw.allocation_base),
         state,
         protection,
         allocation_protection: if raw.allocation_protection != 0 {

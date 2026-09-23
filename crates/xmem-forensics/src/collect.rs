@@ -228,6 +228,7 @@ mod tests {
         MemoryRegion {
             base,
             size,
+            allocation_base: Some(base),
             state: MemoryState::Commit,
             protection: Protection::new(
                 if executable { 0x40 } else { 0x04 },

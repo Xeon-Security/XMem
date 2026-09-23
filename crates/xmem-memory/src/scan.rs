@@ -327,6 +327,7 @@ mod tests {
         MemoryRegion {
             base,
             size,
+            allocation_base: Some(base),
             state,
             protection: p,
             allocation_protection: None,

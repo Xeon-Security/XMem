@@ -356,6 +356,7 @@ mod tests {
             regions: vec![xmem_core::MemoryRegion {
                 base: region_base,
                 size: 0x1000,
+                allocation_base: Some(region_base),
                 state: MemoryState::Commit,
                 protection: Protection::new(protection_raw, true, true, protection_raw == 0x40),
                 allocation_protection: None,

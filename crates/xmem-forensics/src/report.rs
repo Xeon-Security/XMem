@@ -308,6 +308,7 @@ mod tests {
         MemoryRegion {
             base,
             size,
+            allocation_base: Some(base),
             state: if class == RegionClass::Free {
                 MemoryState::Free
             } else {

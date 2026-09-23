@@ -352,6 +352,7 @@ mod tests {
         MemoryRegion {
             base,
             size: 0x1000,
+            allocation_base: Some(base),
             state: MemoryState::Commit,
             protection: Protection::new(protection_raw, true, true, protection_raw & 0x10 != 0),
             allocation_protection: None,
@@ -375,6 +376,7 @@ mod tests {
         MemoryRegion {
             base,
             size: 0x1000,
+            allocation_base: Some(base),
             state: MemoryState::Commit,
             protection: Protection::new(protection_raw, true, true, protection_raw & 0x10 != 0),
             allocation_protection: None,

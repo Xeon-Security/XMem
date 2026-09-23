@@ -4,5 +4,6 @@
 pub mod image;
 
 pub use image::{
-    MemoryPeClass, PE_HEADER_PREFIX, PeInfo, PeSection, classify_memory_pe, looks_like_pe, parse_pe,
+    MAX_FILE_PARSE_BYTES, MemoryPeClass, PE_HEADER_PREFIX, PeInfo, PeSection, classify_memory_pe,
+    looks_like_pe, parse_pe, parse_pe_file,
 };

@@ -98,7 +98,7 @@ fn heur_list(region: &MemoryRegion) -> String {
 fn render_map(map: &RegionMap) -> String {
     let mut out = String::new();
     out.push_str(
-        "BASE               SIZE       STATE       TYPE        PROTECTION     CLASS      HEURISTICS     MAPPED FILE\n",
+        "BASE               ALLOC              SIZE       STATE       TYPE        PROTECTION     CLASS      HEURISTICS     MAPPED FILE\n",
     );
     for r in &map.regions {
         let ty = match r.region_type {
@@ -109,9 +109,14 @@ fn render_map(map: &RegionMap) -> String {
             Some(p) => truncate_tail(p, 48),
             None => "-".to_string(),
         };
+        let alloc = match r.allocation_base {
+            Some(a) => format!("{a:#018x}"),
+            None => "-".to_string(),
+        };
         out.push_str(&format!(
-            "0x{:016x} {:>10} {:11} {:11} {:14} {:10} {:14} {}\n",
+            "0x{:016x} {:<18} {:>10} {:11} {:11} {:14} {:10} {:14} {}\n",
             r.base,
+            alloc,
             human_size(r.size),
             r.state.to_string(),
             ty,
@@ -424,6 +429,11 @@ mod tests {
         MemoryRegion {
             base,
             size: 0x1000,
+            allocation_base: if state == MemoryState::Commit {
+                Some(base)
+            } else {
+                None
+            },
             state,
             protection: p,
             allocation_protection: None,
@@ -463,11 +473,33 @@ mod tests {
     fn render_map_has_header_rows_and_summary() {
         let out = render_map(&sample_map());
         assert!(out.contains("BASE"));
+        assert!(out.contains("ALLOC"));
         assert!(out.contains("0x0000000000001000"));
         assert!(out.contains("MEM_PRIVATE"));
         assert!(out.contains("exec-private,wx"));
         assert!(out.contains("4 regions:"));
         assert!(!out.contains("truncated"));
+    }
+
+    #[test]
+    fn render_map_shows_allocation_base_or_dash() {
+        let out = render_map(&sample_map());
+        let row = out
+            .lines()
+            .find(|line| line.starts_with("0x0000000000001000"))
+            .expect("0x1000 행이 있어야 합니다");
+        assert!(
+            row.contains("0x0000000000001000"),
+            "할당 기준 주소 표시: {row}"
+        );
+        let free_row = out
+            .lines()
+            .find(|line| line.contains("MEM_FREE"))
+            .expect("free 행이 있어야 합니다");
+        assert!(
+            free_row.contains(" - "),
+            "free 행의 alloc은 '-': {free_row}"
+        );
     }
 
     #[test]
