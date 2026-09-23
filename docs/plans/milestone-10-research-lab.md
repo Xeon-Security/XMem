@@ -842,7 +842,7 @@ fn all_scenario_matches_ground_truth() {
     assert_eq!(region.classification, RegionClass::Private);
     assert!(region.writable && !region.executable);
 
-    let needle = ScanPattern::ascii(pattern["ascii"].as_str().unwrap());
+    let needle = ScanPattern::ascii(pattern["ascii"].as_str().unwrap()).unwrap();
     let cancel = AtomicBool::new(false);
     let scan_report = scan(&live, &needle, &ScanOptions::default(), &cancel).unwrap();
     assert!(
