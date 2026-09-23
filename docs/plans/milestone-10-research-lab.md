@@ -1,6 +1,6 @@
 # M10 Research Lab (Test Target + Ground Truth) 구현 계획
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `lab/targets/xmem-target`에 deterministic한 전용 Test Target을 만들고, 그 Ground Truth를 XMem 라이브 분석(detect/scan)으로 검증하는 회귀 테스트를 추가한다.
 
@@ -57,7 +57,7 @@
 - `GetThreadId(HANDLE) -> u32` (Result 아님)
 - 상수: `MEM_COMMIT`/`MEM_RESERVE: VIRTUAL_ALLOCATION_TYPE(4096/8192)`, `MEM_RELEASE: VIRTUAL_FREE_TYPE(32768)`, `PAGE_READWRITE/EXECUTE_READ/EXECUTE_READWRITE: PAGE_PROTECTION_FLAGS(4/32/64)`, `THREAD_CREATE_SUSPENDED: THREAD_CREATION_FLAGS(4)` (CREATE_SUSPENDED는 PROCESS_CREATION_FLAGS라 사용 금지).
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `crates/xmem-windows/src/selfmem.rs` 생성(테스트만):
 
@@ -116,12 +116,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: 실패 확인**
+- [x] **Step 2: 실패 확인**
 
 Run: `cargo check -p xmem-windows --tests`
 Expected: FAIL — `PrivateRegion`/`alloc_executable`/`spawn_suspended_thread`/`thread_id`/`SELF_PAGE_*` 미정의
 
-- [ ] **Step 3: 구현**
+- [x] **Step 3: 구현**
 
 테스트 모듈 위에 추가:
 
@@ -259,18 +259,18 @@ pub fn thread_id(handle: &OwnedHandle) -> u32 {
 }
 ```
 
-- [ ] **Step 4: lib.rs 등록**
+- [x] **Step 4: lib.rs 등록**
 
 `crates/xmem-windows/src/lib.rs`:
 - `pub mod selfmem;` 추가(read 다음).
 - 재수출: `pub use selfmem::{PrivateRegion, SELF_PAGE_RW, SELF_PAGE_RX, SELF_PAGE_RWX, alloc_executable, spawn_suspended_thread, thread_id};`
 
-- [ ] **Step 5: 테스트 통과 확인**
+- [x] **Step 5: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-windows`
 Expected: PASS — 기존 53 + 신규 4 = 57
 
-- [ ] **Step 6: fmt/clippy/커밋**
+- [x] **Step 6: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -298,7 +298,7 @@ git commit -m "feat(windows): 자기 프로세스 메모리 primitive (lab targe
   - `scenarios::fake_pe_bytes() -> Vec<u8>`, `scenarios::PATTERN_ASCII/PATTERN_WIDE/PATTERN_BYTES/WIDE_OFFSET/BYTES_OFFSET`
   - report JSON: `{ "scenario", "pid", "artifacts": { <name>: { "base", "size", ... } } }`
 
-- [ ] **Step 1: Cargo.toml 작성**
+- [x] **Step 1: Cargo.toml 작성**
 
 루트 `Cargo.toml` members에 `"lab/targets/xmem-target",` 추가(xmem-cli 다음).
 
@@ -326,7 +326,7 @@ xmem-detection.workspace = true
 xmem-pe.workspace = true
 ```
 
-- [ ] **Step 2: 실패하는 테스트 작성 (scenarios.rs)**
+- [x] **Step 2: 실패하는 테스트 작성 (scenarios.rs)**
 
 `lab/targets/xmem-target/src/scenarios.rs` 생성(테스트만):
 
@@ -371,12 +371,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 3: 실패 확인**
+- [x] **Step 3: 실패 확인**
 
 Run: `cargo check -p xmem-target --tests`
 Expected: FAIL — `fake_pe_bytes`/`setup` 미정의
 
-- [ ] **Step 4: scenarios.rs 구현**
+- [x] **Step 4: scenarios.rs 구현**
 
 테스트 모듈 위에 추가:
 
@@ -601,7 +601,7 @@ pub fn fake_pe_bytes() -> Vec<u8> {
 }
 ```
 
-- [ ] **Step 5: 실패하는 테스트 작성 (main.rs)**
+- [x] **Step 5: 실패하는 테스트 작성 (main.rs)**
 
 `lab/targets/xmem-target/src/main.rs` 생성(테스트만):
 
@@ -730,12 +730,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 6: 테스트 통과 확인**
+- [x] **Step 6: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-target`
 Expected: PASS — 4 (scenarios 2 + main 2)
 
-- [ ] **Step 7: 스모크 (수동 실행)**
+- [x] **Step 7: 스모크 (수동 실행)**
 
 ```powershell
 cargo build -q -p xmem-target
@@ -748,7 +748,7 @@ Stop-Process -Id $p.Id -Force
 
 기록: report의 pid/각 base/tid가 출력되는지.
 
-- [ ] **Step 8: fmt/clippy/커밋**
+- [x] **Step 8: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -769,7 +769,7 @@ git commit -m "feat(lab): deterministic Test Target (xmem-target)"
 - Consumes: Task 2의 bin/report, `xmem_memory::{LiveProcess, ScanOptions, scan}`, `xmem_detection::detect_source`, `xmem_core::{MemorySource, ScanPattern, RegionClass}`.
 - Produces: 회귀 fixture (`cargo test --workspace`에 포함).
 
-- [ ] **Step 1: 실패하는 테스트 작성**
+- [x] **Step 1: 실패하는 테스트 작성**
 
 `lab/targets/xmem-target/tests/ground_truth.rs` 생성:
 
@@ -888,14 +888,14 @@ fn all_scenario_matches_ground_truth() {
 }
 ```
 
-- [ ] **Step 2: 테스트 통과 확인**
+- [x] **Step 2: 테스트 통과 확인**
 
 Run: `cargo test -p xmem-target`
 Expected: PASS — 기존 4 + 신규 1 = 5
 
 실패 시 진단 순서: report의 base가 실제 region인지(`xmem memory map --pid <target-pid>`), XMEM-002는 4 KiB 프로브 범위 안에 fake PE가 있는지, XMEM-004는 start address가 private executable로 잡히는지.
 
-- [ ] **Step 3: fmt/clippy/커밋**
+- [x] **Step 3: fmt/clippy/커밋**
 
 ```powershell
 cargo fmt --all
@@ -913,7 +913,7 @@ git commit -m "test(lab): Ground Truth 회귀 테스트"
 - Modify: `docs/architecture.md`
 - Modify: `docs/plans/milestone-10-research-lab.md` (체크박스)
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 문구: "현재 **Milestone 10 (Research Lab)** 완료. ..." (M9 문구 교체).
 - Status 표의 "Test Target + 실험 프레임워크 | Planned (M10~M11)" 행을 두 행으로 교체:
@@ -929,13 +929,13 @@ git commit -m "test(lab): Ground Truth 회귀 테스트"
 - Limitations: "M9 기준" → "M10 기준", M10 bullet 추가(타깃은 자기 프로세스만 변경, x64 Windows 전용, thread 실험은 suspended 스레드라 실행되지 않음, 주소는 실행마다 달라짐 — 테스트는 report의 주소를 사용).
 - Roadmap: M10 → 완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - crate 표에 `xmem-target` 행 추가(`lab/targets/xmem-target`, M10 (생성됨), "research fixture; xmem-windows만 의존, 자기 프로세스 메모리만 변경").
 - Windows API 표 M10 행 추가: `VirtualAlloc`/`VirtualProtect`/`VirtualFree`/`CreateThread`/`GetThreadId` (feature `Win32_System_Memory` 기존 + `Win32_System_Threading` 기존) — "구현됨(`xmem-windows::selfmem`). lab target 전용, 자기 프로세스 한정. 외부 프로세스 조작(VirtualAllocEx 등)은 M11 `xmem-experiments`."
 - §14 Status 표: "M10 Research Lab(Test Target + Ground Truth 회귀 테스트) | Done" + "M11~M12 | Planned".
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```powershell
 cargo fmt --all -- --check
@@ -946,7 +946,7 @@ cargo test --workspace
 
 Expected: 전부 exit 0. 테스트 합계 **212** = cli 55 + core 34 + detection 8 + forensics 24 + memory 21 + pe 9 + windows 57 + target 4 + ground_truth 1.
 
-- [ ] **Step 4: Windows 스모크 (타깃 + CLI 교차 검증)**
+- [x] **Step 4: Windows 스모크 (타깃 + CLI 교차 검증)**
 
 ```powershell
 $dir = Join-Path $env:TEMP "xmem-m10"; New-Item -ItemType Directory -Force -Path $dir | Out-Null
@@ -969,9 +969,9 @@ Remove-Item -Recurse -Force $dir
 
 기록: report의 pattern/private-exec/pe-like base와 detect finding의 region base 일치, thread tid 일치, scan 매치 주소 = pattern base.
 
-- [ ] **Step 5: 계획서 체크박스 + 커밋**
+- [x] **Step 5: 계획서 체크박스 + 커밋**
 
-`docs/plans/milestone-10-research-lab.md`의 모든 `- [ ]` → `- [x]` (replaceAll).
+`docs/plans/milestone-10-research-lab.md`의 모든 `- [x]` → `- [x]` (replaceAll).
 
 ```powershell
 git add README.md docs/architecture.md docs/plans/milestone-10-research-lab.md

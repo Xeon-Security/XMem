@@ -55,7 +55,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Minidump 분석(MinidumpSource), Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Minidump M9, Report/MemoryImage는 후속) |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
 | `xmem-experiments` | 실험 프레임워크, lab target 오케스트레이션, Guard 강제 | M11 |
-| `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member) | M10 |
+| `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member): 자기 프로세스 한정 메모리 아티팩트, Ground Truth JSON report. `xmem-windows`만 의존 | M10 (생성됨) |
 
 ## 4. Dependency 정책
 
@@ -233,6 +233,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M6 | 신규 없음 | 기존 `ReadProcessMemory` 재사용(영역/모듈 헤더 prefix 4 KiB). 파싱 실패는 `InvalidPe`/`None` degrade |
 | M7 | `GetDiskFreeSpaceExW` (feature `Win32_Storage_FileSystem`) | 구현됨. snapshot 생성 전 예상 크기 + 16 MiB 여유 검사 |
 | M9 | `MiniDumpWriteDump`(dbghelp), `CreateFileW` (feature `Win32_System_Kernel` 추가) | 구현됨. 기본 `MiniDumpNormal \| MiniDumpWithFullMemoryInfo`, `--full`은 `MiniDumpWithFullMemory \| FullMemoryInfo` + commit 바이트·16 MiB 디스크 사전 검사. temp → `MDMP` 검증 → atomic rename |
+| M10 | `VirtualAlloc`, `VirtualProtect`, `VirtualFree`, `CreateThread`, `GetThreadId` | 구현됨(`xmem-windows::selfmem`). lab target 전용, 자기 프로세스 한정. 외부 프로세스 조작(`VirtualAllocEx` 등)은 M11 `xmem-experiments` |
 | M11 | `VirtualAllocEx`, `VirtualProtectEx`, `WriteProcessMemory`, `CreateRemoteThread`, `FlushInstructionCache` | **xmem-experiments 전용, lab target 한정** |
 
 ## 12. CLI 계약
@@ -277,7 +278,8 @@ xmem experiment list | run <NAME>
 | M7 Snapshot(`xmem-forensics` 포맷 v1, `snapshot create`/`snapshot diff`, collect 해싱, Disk 사전 검사) | Done |
 | M8 Detection(`xmem-detection` Rule 엔진, XMEM-001~005, `detect`, Snapshot findings/detection diff) | Done |
 | M9 Minidump(`dump create`/`dump analyze`, `MinidumpSource` MemorySource, 오프라인 Detection) | Done |
-| M10~M12 | Planned |
+| M10 Research Lab(`lab/targets/xmem-target` deterministic 시나리오, Ground Truth 회귀 테스트, `xmem-windows::selfmem`) | Done |
+| M11~M12 | Planned |
 
 ## 15. Non-Goals
 
