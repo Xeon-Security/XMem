@@ -210,6 +210,12 @@ fn get_process_memory_info(handle: &OwnedHandle) -> Result<MemoryStats> {
     })
 }
 
+/// 현재 프로세스의 작업 세트 크기(RSS). peak RSS 계측의 기반 값이다.
+pub fn current_rss_bytes() -> Result<u64> {
+    let handle = open_for_query(current_pid())?;
+    Ok(memory_counters(&handle)?.working_set)
+}
+
 /// NtQueryInformationProcess(ProcessCommandLineInformation)으로 명령줄을 읽는다.
 pub fn process_command_line(handle: &OwnedHandle) -> Result<String> {
     let mut len = 0u32;
@@ -495,6 +501,12 @@ mod tests {
                 | XmemError::WindowsApi { .. }
                 | XmemError::ProcessExited { .. }
         ));
+    }
+
+    #[test]
+    fn current_rss_bytes_is_positive() {
+        let rss = current_rss_bytes().unwrap();
+        assert!(rss > 0);
     }
 
     #[test]

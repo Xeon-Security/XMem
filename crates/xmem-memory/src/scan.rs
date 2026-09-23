@@ -81,6 +81,7 @@ pub struct ScanStats {
     pub matches: usize,
     pub threads: usize,
     pub elapsed_ms: u64,
+    pub rss_bytes: u64,
 }
 
 /// 스캔 결과 보고서.
@@ -286,6 +287,7 @@ pub fn scan<S: MemorySource + Sync>(
         matches: matches.len(),
         threads,
         elapsed_ms: started.elapsed().as_millis() as u64,
+        rss_bytes: xmem_windows::current_rss_bytes().unwrap_or(0),
     };
     Ok(ScanReport {
         matches,

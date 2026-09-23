@@ -364,7 +364,7 @@ fn render_scan(
         ));
     }
     out.push_str(&format!(
-        "{} matches; regions {}/{} scanned ({} skipped); bytes {}; read_failures {}; partial {}; elapsed {} ms\n",
+        "{} matches; regions {}/{} scanned ({} skipped); bytes {}; read_failures {}; partial {}; elapsed {} ms; rss {}\n",
         report.matches.len(),
         report.stats.regions_scanned,
         report.stats.regions_total,
@@ -373,6 +373,7 @@ fn render_scan(
         report.stats.read_failures,
         report.stats.partial_reads,
         report.stats.elapsed_ms,
+        human_size(report.stats.rss_bytes),
     ));
     if report.truncated {
         out.push_str("warning: result cap reached (use --max-results 0 for unlimited)\n");
@@ -589,6 +590,7 @@ mod tests {
                 matches: matches.len(),
                 threads: 2,
                 elapsed_ms: 7,
+                rss_bytes: 0,
             },
             matches,
             cancelled: false,
