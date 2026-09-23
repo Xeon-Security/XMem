@@ -36,6 +36,20 @@ impl Protection {
             executable,
         }
     }
+
+    /// Win32 PAGE_* 보호 비트를 해석한다(하위 8비트). GUARD/NOCACHE 등은 raw에 보존된다.
+    pub fn from_win32(raw: u32) -> Self {
+        let base = raw & 0xff;
+        let (readable, writable, executable) = match base {
+            0x02 => (true, false, false),
+            0x04 | 0x08 => (true, true, false),
+            0x10 => (false, false, true),
+            0x20 => (true, false, true),
+            0x40 | 0x80 => (true, true, true),
+            _ => (false, false, false),
+        };
+        Self::new(raw, readable, writable, executable)
+    }
 }
 
 impl fmt::Display for Protection {
@@ -154,6 +168,30 @@ mod tests {
             Heuristic::PrivateExecutablePeLike.to_string(),
             "private_executable_pe_like"
         );
+    }
+
+    #[test]
+    fn protection_from_win32_decodes_flags() {
+        let cases = [
+            (0x01u32, false, false, false),
+            (0x02, true, false, false),
+            (0x04, true, true, false),
+            (0x08, true, true, false),
+            (0x10, false, false, true),
+            (0x20, true, false, true),
+            (0x40, true, true, true),
+            (0x80, true, true, true),
+        ];
+        for (raw, r, w, x) in cases {
+            let p = Protection::from_win32(raw);
+            assert_eq!(
+                (p.readable, p.writable, p.executable),
+                (r, w, x),
+                "raw={raw:#x}"
+            );
+        }
+        let guarded = Protection::from_win32(0x140);
+        assert_eq!(guarded.raw, 0x140, "guard 비트는 raw에 보존");
     }
 
     #[test]

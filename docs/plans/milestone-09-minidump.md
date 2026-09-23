@@ -374,21 +374,26 @@ Expected: PASS — core 34, windows 53
 ```rust
 //! Minidump 파일 파싱과 MemorySource 구현.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use minidump::Module as _;
 use minidump::{
     Minidump, MinidumpMemoryInfoList, MinidumpMiscInfo, MinidumpModule, MinidumpModuleList,
-    MinidumpSystemInfo, MinidumpThreadList, UnifiedMemoryInfo, system_info::Cpu,
+    MinidumpSystemInfo, MinidumpThreadList, system_info::Cpu,
 };
 use xmem_core::{
     MemoryRegion, MemorySource, MemoryState, MemoryType, ModuleInfo, ProcessArch, ProcessInfo,
     Protection, ReadOutcome, Result, ThreadInfo, XmemError, classify, heuristics,
 };
 
+// 구현 후 수정(실측): `MinidumpMemoryInfoList::iter()`는 `UnifiedMemoryInfo`가 아니라
+// `&MinidumpMemoryInfo<'_>`를 직접 돌려준다(UnifiedMemoryInfoList와 혼동 주의).
+// `info.raw`는 Copy가 아니므로 `&info.raw`로 빌려 쓴다.
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::path::PathBuf;
     use xmem_windows::{current_pid, open_for_dump, write_minidump_file};
 
     fn self_dump(name: &str) -> PathBuf {
@@ -419,7 +424,9 @@ mod tests {
         let source = MinidumpSource::open(&path).unwrap();
         let raw = Minidump::read_path(&path).unwrap();
         let memory = raw.get_memory().unwrap();
-        let first = memory.iter().next().unwrap();
+        // 구현 후 수정(실측): MiniDumpNormal의 앞쪽 range는 4바이트(스레드 컨텍스트)이므로
+        // 16바이트 이상인 첫 range를 고른다.
+        let first = memory.iter().find(|r| r.bytes().len() >= 16).unwrap();
         let base = first.base_address();
 
         let mut buf = [0u8; 16];
@@ -540,10 +547,7 @@ impl MinidumpSource {
             .get_stream::<MinidumpMemoryInfoList>()
             .map(|list| {
                 list.iter()
-                    .filter_map(|entry| match entry {
-                        UnifiedMemoryInfo::Info(info) => region_from_info(info, &modules),
-                        UnifiedMemoryInfo::Map(_) => None,
-                    })
+                    .filter_map(|info| region_from_info(info, &modules))
                     .collect()
             })
             .unwrap_or_default();
@@ -704,7 +708,7 @@ fn region_from_info(
     info: &minidump::MinidumpMemoryInfo<'_>,
     modules: &[ModuleInfo],
 ) -> Option<MemoryRegion> {
-    let raw = info.raw;
+    let raw = &info.raw;
     let state = match raw.state {
         0x1000 => MemoryState::Commit,
         0x2000 => MemoryState::Reserve,

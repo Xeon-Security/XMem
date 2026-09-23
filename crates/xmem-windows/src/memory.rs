@@ -4,8 +4,7 @@ use std::mem::size_of;
 use windows::Win32::Foundation::ERROR_INVALID_PARAMETER;
 use windows::Win32::System::Memory::{
     MEM_COMMIT, MEM_FREE, MEM_IMAGE, MEM_MAPPED, MEM_PRIVATE, MEM_RESERVE,
-    MEMORY_BASIC_INFORMATION, PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE,
-    PAGE_EXECUTE_WRITECOPY, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY, VirtualQueryEx,
+    MEMORY_BASIC_INFORMATION, VirtualQueryEx,
 };
 use windows::Win32::System::ProcessStatus::GetMappedFileNameW;
 use windows::Win32::System::SystemInformation::{GetNativeSystemInfo, SYSTEM_INFO};
@@ -37,22 +36,7 @@ pub struct RegionWalk {
 
 /// PAGE_* 값을 R/W/X 플래그로 디코드한다. guard/nocache는 raw에 보존된다.
 pub fn protection_from_raw(raw: u32) -> Protection {
-    let base = raw & 0xff;
-    let (readable, writable, executable) =
-        if base == PAGE_EXECUTE_READWRITE.0 || base == PAGE_EXECUTE_WRITECOPY.0 {
-            (true, true, true)
-        } else if base == PAGE_EXECUTE_READ.0 {
-            (true, false, true)
-        } else if base == PAGE_EXECUTE.0 {
-            (false, false, true)
-        } else if base == PAGE_READWRITE.0 || base == PAGE_WRITECOPY.0 {
-            (true, true, false)
-        } else if base == PAGE_READONLY.0 {
-            (true, false, false)
-        } else {
-            (false, false, false)
-        };
-    Protection::new(raw, readable, writable, executable)
+    Protection::from_win32(raw)
 }
 
 pub fn memory_state(raw: u32) -> Option<MemoryState> {
@@ -185,7 +169,10 @@ pub fn region_from_raw(raw: &RawRegion, mapped_file: Option<String>) -> Option<M
 #[cfg(test)]
 mod tests {
     use super::*;
-    use windows::Win32::System::Memory::PAGE_NOACCESS;
+    use windows::Win32::System::Memory::{
+        PAGE_EXECUTE, PAGE_EXECUTE_READ, PAGE_EXECUTE_READWRITE, PAGE_EXECUTE_WRITECOPY,
+        PAGE_NOACCESS, PAGE_READONLY, PAGE_READWRITE, PAGE_WRITECOPY,
+    };
     use xmem_core::RegionClass;
 
     fn raw_region(state: u32, protect: u32, region_type: u32) -> RawRegion {

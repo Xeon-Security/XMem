@@ -13,6 +13,10 @@ xmem-core.workspace = true
 xmem-detection.workspace = true
 blake3.workspace = true
 chrono.workspace = true
+minidump.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 tracing.workspace = true
+
+[dev-dependencies]
+xmem-windows.workspace = true
