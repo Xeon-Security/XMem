@@ -1,0 +1,28 @@
+[package]
+name = "xmem-gui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "xmem-gui"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+[dependencies]
+xmem-core.workspace = true
+xmem-memory.workspace = true
+xmem-detection.workspace = true
+xmem-forensics.workspace = true
+xmem-windows.workspace = true
+chrono.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true
+eframe = "0.36.2"
+egui = "0.36.2"
+egui_extras = "0.36.2"
+rfd = "0.17.2"
