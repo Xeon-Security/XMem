@@ -4,6 +4,7 @@ pub mod dump;
 pub mod guide;
 pub mod log;
 pub mod map;
+pub mod module;
 pub mod modules;
 pub mod overview;
 pub mod process;

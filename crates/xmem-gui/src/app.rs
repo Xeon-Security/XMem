@@ -7,6 +7,7 @@ use crate::log::{LogBuffer, LogLevel};
 use crate::task::BackgroundTask;
 use crate::theme::{self, ThemeMode};
 use crate::views::map::MapSort;
+use crate::views::module::ModuleDetail;
 use crate::views::modules::ModuleBundle;
 use crate::views::region::RegionDetail;
 
@@ -118,6 +119,9 @@ pub struct XMemApp {
     pub region_detail_task: BackgroundTask<(u64, RegionDetail)>,
     pub modules_task: BackgroundTask<(u32, ModuleBundle)>,
     pub modules_bundle: Option<ModuleBundle>,
+    pub module_selected: Option<u64>,
+    pub module_detail: Option<ModuleDetail>,
+    pub module_detail_task: BackgroundTask<(u64, ModuleDetail)>,
     pub modules_pe: bool,
     pub threads_task: BackgroundTask<(u32, Vec<xmem_core::ThreadInfo>)>,
     pub threads: Option<Vec<xmem_core::ThreadInfo>>,
@@ -189,6 +193,9 @@ impl XMemApp {
             region_detail_task: BackgroundTask::idle(),
             modules_task: BackgroundTask::idle(),
             modules_bundle: None,
+            module_selected: None,
+            module_detail: None,
+            module_detail_task: BackgroundTask::idle(),
             modules_pe: false,
             threads_task: BackgroundTask::idle(),
             threads: None,
@@ -272,6 +279,8 @@ impl XMemApp {
         self.map_selected = None;
         self.region_detail = None;
         self.modules_bundle = None;
+        self.module_selected = None;
+        self.module_detail = None;
         self.threads = None;
         self.scan_report = None;
         self.scan_state.selected_match = None;
@@ -311,8 +320,20 @@ impl XMemApp {
         });
     }
 
+    pub fn select_module(&mut self, pid: u32, module: xmem_core::ModuleInfo) {
+        let base = module.base;
+        self.module_selected = Some(base);
+        self.module_detail = None;
+        self.module_detail_task = BackgroundTask::spawn("모듈 상세", move |_| {
+            let detail = crate::views::module::collect_module_detail(pid, module);
+            Ok((base, detail))
+        });
+    }
+
     pub fn start_modules(&mut self, pid: u32) {
         self.modules_bundle = None;
+        self.module_selected = None;
+        self.module_detail = None;
         let with_pe = self.modules_pe;
         self.modules_task = BackgroundTask::spawn("모듈", move |_| {
             let live = xmem_memory::LiveProcess::open(pid)?;
@@ -536,6 +557,12 @@ impl eframe::App for XMemApp {
             && Some(task_pid) == self.selected_pid
         {
             self.modules_bundle = Some(bundle);
+        }
+        if self.module_detail_task.poll()
+            && let Some((base, detail)) = self.module_detail_task.take_done()
+            && Some(base) == self.module_selected
+        {
+            self.module_detail = Some(detail);
         }
         if self.threads_task.poll()
             && let Some((task_pid, threads)) = self.threads_task.take_done()

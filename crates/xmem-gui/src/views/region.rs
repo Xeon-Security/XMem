@@ -572,6 +572,15 @@ pub fn format_timestamp(timestamp: u32) -> String {
     }
 }
 
+/// 경로에서 파일명만 남긴다 (표시용).
+pub fn short_path(path: &str) -> String {
+    path.rsplit(['\\', '/'])
+        .next()
+        .filter(|name| !name.is_empty())
+        .unwrap_or("-")
+        .to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

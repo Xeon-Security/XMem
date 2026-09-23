@@ -72,15 +72,25 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         _ => {}
     }
+    if app.module_selected.is_some() {
+        egui::Panel::bottom(egui::Id::new("module_detail"))
+            .resizable(true)
+            .default_size(320.0)
+            .size_range(140.0..=900.0)
+            .show(ui, |ui| crate::views::module::panel(ui, app));
+    }
     let Some(bundle) = app.modules_bundle.as_ref() else {
         ui.label(egui::RichText::new("모듈을 불러오는 중...").weak());
         return;
     };
     ui.label(egui::RichText::new(format!("{}개 모듈", bundle.modules.len())).weak());
     let show_pe = bundle.pe.is_some();
+    let selected_base = app.module_selected;
+    let mut clicked_module: Option<ModuleInfo> = None;
     let mut builder = egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)
+        .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(140.0))
         .column(egui_extras::Column::exact(80.0));
     if show_pe {
@@ -116,6 +126,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             body.rows(20.0, bundle.modules.len(), |mut row| {
                 let index = row.index();
                 let module = &bundle.modules[index];
+                row.set_selected(selected_base == Some(module.base));
                 row.col(|ui| {
                     ui.label(opt_hex(Some(module.base)));
                 });
@@ -150,8 +161,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 row.col(|ui| {
                     ui.label(egui::RichText::new(module.path.as_deref().unwrap_or("-")).weak());
                 });
+                if row.response().clicked() {
+                    clicked_module = Some(module.clone());
+                }
             });
         });
+    if let Some(module) = clicked_module {
+        app.select_module(pid, module);
+    }
 }
 
 #[cfg(test)]
