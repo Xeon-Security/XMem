@@ -1,6 +1,6 @@
 # M6 — PE Analysis Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** `xmem-pe` crate로 PE 구조를 파싱하고, 메모리의 private executable 영역에서 PE artifact를 탐지해 `private_executable_pe_like`/`executable_anonymous` heuristic을 활성화하며, `xmem modules --pid <PID> --pe`로 모듈 PE 요약을 출력한다.
 
@@ -43,7 +43,7 @@
 - Consumes: 없음 (기존 `ProcessArch` enum).
 - Produces: `ProcessArch::from_machine(machine: u16) -> ProcessArch` — PE/COFF `IMAGE_FILE_MACHINE_*` 값(0x8664/0x014c/0xaa64)을 매핑, 그 외 `Unknown`. xmem-pe와 xmem-windows가 공유한다.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 `crates/xmem-core/src/model/process.rs`의 기존 `#[cfg(test)] mod tests`에 추가:
 
@@ -58,12 +58,12 @@
     }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo check -p xmem-core --tests`
 Expected: FAIL — E0599 `no function or associated item named 'from_machine'`.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `crates/xmem-core/src/model/process.rs`에서 `ProcessArch` enum 정의 아래에 추가:
 
@@ -89,12 +89,12 @@ pub fn map_image_file_machine(machine: u16) -> ProcessArch {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-core -p xmem-windows`
 Expected: PASS — core 33 (32 + 1), windows 48 (변경 없음).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -124,7 +124,7 @@ git commit -m "refactor(core): ProcessArch machine 매핑을 코어로 승격"
   - `xmem_pe::parse_pe(bytes: &[u8]) -> Result<PeInfo>`
   - `xmem_pe::classify_memory_pe(region_class: RegionClass, bytes: &[u8]) -> MemoryPeClass`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-pe/src/image.rs` 생성(테스트만, 구현은 Step 3):
 
@@ -253,12 +253,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-pe --tests`
 Expected: FAIL — crate가 없어 `error: package ID specification 'xmem-pe' did not match` (또는 workspace 등록 전이면 매니페스트 없음). workspace 등록(Step 3) 후에는 E0425/E0433로 red가 보인다.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 > **구현 후 수정 (실측):** goblin 0.10.7은 프리픽스 파싱에서 임포트 디렉터리가 파일 범위를 벗어나면
 > `Malformed entity ... extends beyond file bounds` 하드 에러를 낸다(부분 실패 허용 안 함).
@@ -477,12 +477,12 @@ pub fn classify_memory_pe(region_class: RegionClass, bytes: &[u8]) -> MemoryPeCl
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-pe`
 Expected: PASS — 8/8.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -503,7 +503,7 @@ git commit -m "feat(pe): PE 파서와 메모리 PE artifact 분류"
 - Consumes: `xmem_pe::{PE_HEADER_PREFIX, MemoryPeClass, classify_memory_pe}`, 기존 `LiveProcess::read`, `xmem_core::Heuristic`.
 - Produces: `LiveProcess::region_map()`가 private executable 커밋 영역에 대해 `private_executable_pe_like`/`executable_anonymous` heuristic을 채운다. 새 public API 없음(내부 통합).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-memory/src/live.rs` 테스트 모듈에 추가:
 
@@ -544,12 +544,12 @@ git commit -m "feat(pe): PE 파서와 메모리 PE artifact 분류"
 
 테스트 모듈 import에 `use xmem_core::{Heuristic, RegionClass};`가 없으면 추가한다(이미 있으면 유지).
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo test -p xmem-memory`
 Expected: FAIL — E0425 `cannot find function pe_probe_heuristics` (컴파일 오류).
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `crates/xmem-memory/Cargo.toml` deps에 추가:
 
@@ -636,12 +636,12 @@ fn pe_probe_heuristics(class: MemoryPeClass) -> Option<Heuristic> {
 
 import에 `MemoryState`가 없으면 추가한다(`xmem_core::{Heuristic, MemoryRegion, MemorySource, MemoryState, ModuleInfo, ...}`).
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-memory`
 Expected: PASS — 19 + 2 = 21.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -665,7 +665,7 @@ git commit -m "feat(memory): private executable 영역 PE 프로브 heuristic"
   - `cli::ModulesArgs { pid: PidArg, pe: bool }`, `Command::Modules(ModulesArgs)`.
   - `xmem modules --pid <PID> --pe` 사람 출력에 `MACHINE ENTRY SECTIONS` 컬럼, JSON 모듈 객체에 `"pe"` 필드(파싱 실패 시 `null`).
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-cli/src/cli.rs` 테스트 모듈에 추가:
 
@@ -745,12 +745,12 @@ git commit -m "feat(memory): private executable 영역 PE 프로브 heuristic"
     }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — E0422/E0425 `ModulesArgs`, `pe`, `xmem_pe` 등.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `crates/xmem-cli/Cargo.toml` deps에 추가:
 
@@ -918,12 +918,12 @@ fn json_payload(
 
 (기존 테스트의 `render_modules(&info, &modules)` 호출은 `render_modules(&info, &modules, None)`, `json_payload(&info, &modules)`는 `json_payload(&info, &modules, None)`으로 수정한다.)
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 37 + 4 = 41 (기존 2 테스트는 시그니처 수정, 신규 4: cli 2 + modules 2).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -945,7 +945,7 @@ git commit -m "feat(cli): modules --pe 모듈 PE 요약"
 - Consumes: Task 1~4 결과.
 - Produces: 문서 상태 갱신 + 검증 기록. 코드 변경 없음.
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 문구를 "Milestone 6 (PE Analysis) 완료"로 갱신.
 - Status 표에 `modules --pe`(모듈 메모리 헤더 PE 요약: arch/entry/sections, `--json`) 행 추가, `memory map` 행에 `private_executable_pe_like`/`executable_anonymous` heuristic 활성화 명기.
@@ -953,7 +953,7 @@ git commit -m "feat(cli): modules --pe 모듈 PE 요약"
 - Limitations 갱신: `--pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시, 디스크 파일 전체 파싱은 후속; `--pe`는 VM_READ 필요(권한 없으면 `-` degrade); `Malformed` PE는 pe-like로 취급.
 - Roadmap M6 = 완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - crate 표에 `xmem-pe` 행(책임: PE 파서/메모리 PE 분류, 생성열 "M6 (생성됨)", 의존: core + goblin).
 - dependency 표에 `goblin 0.10` 행 추가(도입 M6, features `std,pe32,pe64`, 사용 이유: 검증된 PE 파서).
@@ -961,7 +961,7 @@ git commit -m "feat(cli): modules --pe 모듈 PE 요약"
 - Data Model에 `PeInfo`/`PeSection`/`MemoryPeClass`, heuristic `private_executable_pe_like`/`executable_anonymous` 활성화(M6) 명기.
 - Status 표 M6 Done, M7~M12 Planned.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```bash
 cargo fmt --all -- --check
@@ -972,7 +972,7 @@ cargo test --workspace
 
 Expected: 전부 exit 0. 테스트 합계 = core 33 + windows 48 + xmem-pe 8 + memory 21 + cli 41 = **151**.
 
-- [ ] **Step 4: Windows 실검증 (스모크)**
+- [x] **Step 4: Windows 실검증 (스모크)**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -991,9 +991,9 @@ cargo run -q -p xmem-cli -- modules --pid $PID --pe > $null; Write-Output "exit=
 4. bogus PID는 `process ... has exited` exit 1.
 5. 3회 반복 실행 시 모두 exit 0, panic/leak 없음.
 
-- [ ] **Step 5: 체크박스 갱신 + 커밋**
+- [x] **Step 5: 체크박스 갱신 + 커밋**
 
-`docs/plans/milestone-06-pe-analysis.md`의 `- [ ]`를 전부 `- [x]`로 바꾸고:
+`docs/plans/milestone-06-pe-analysis.md`의 `- [x]`를 전부 `- [x]`로 바꾸고:
 
 ```bash
 git add README.md docs/architecture.md docs/plans/milestone-06-pe-analysis.md

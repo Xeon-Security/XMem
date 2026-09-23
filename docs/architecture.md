@@ -51,7 +51,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-windows` | Win32 FFI, RAII Handle, Win32→XmemError 매핑 | M1 |
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
 | `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner, 모듈/스레드 상관관계 | M3 (생성됨; scan 엔진 M4, 모듈/스레드 M5) |
-| `xmem-pe` | goblin 기반 PE 파싱, 메모리 PE artifact 탐지 | M6 |
+| `xmem-pe` | PE 파싱(bounds-checked 헤더 파서 + 전체 파일 goblin 보강), 메모리 PE artifact 분류 | M6 (생성됨) |
 | `xmem-forensics` | Snapshot 포맷/직렬화, Diff, Report(JSON/Markdown), MemoryImage 소스 | M7 |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 |
 | `xmem-experiments` | 실험 프레임워크, lab target 오케스트레이션, Guard 강제 | M11 |
@@ -71,7 +71,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `uuid` | M7 | ID | |
 | `rayon` 1 | M4 | region 단위 bounded 병렬 스캔 | 도입됨(M4). thread pool 크기 고정 |
 | `ctrlc` 3 | M4 | Ctrl+C cooperative cancel | 도입됨(M4) |
-| `goblin` | M6 | PE 파싱 | |
+| `goblin` 0.10 | M6 | PE 파싱(전체 파일일 때 imports/exports/relocations/TLS 보강) | `default-features = false`, features `std,pe32,pe64`. 헤더 prefix는 bounds-checked 수동 파서 사용(프리픽스에서 goblin은 하드 에러) |
 | `blake3` | M7 | region 내용 해시 | |
 | `minidump` | M9 | dump analyze | |
 | `memmap2` | M7+ | MemoryImage 소스 | 필요 시점 도입 |
@@ -109,6 +109,8 @@ pub struct MemoryRegion {
 ```
 
 `Protection`은 raw `u32` 위에 읽기/쓰기/실행 플래그와 `Display`("RWX" 등)를 제공하는 뉴타입이다. raw flag만 출력하지 않는다.
+
+PE 분석(M6)은 `xmem-pe`의 `PeInfo`/`PeSection`/`MemoryPeClass`를 사용한다. `parse_pe`는 헤더를 bounds-checked로 먼저 파싱하고(4 KiB 프리픽스에서도 유효), 전체 파일이면 goblin으로 imports/exports/relocations/TLS를 보강한다. `MemoryPeClass`(None/NormalLoadedModule/MappedImage/PrivatePeLike/Malformed/Unknown)는 region 분류와 헤더 바이트로 결정되며, private executable 영역 프로브 결과가 `private_executable_pe_like`/`executable_anonymous` heuristic으로 반영된다.
 
 ## 6. Evidence 모델 (사실과 해석의 분리)
 
@@ -216,7 +218,7 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 | M3 | `VirtualQueryEx` (주소 전진 루프, `ERROR_INVALID_PARAMETER`로 종료), `GetNativeSystemInfo`, `GetMappedFileNameW` | 구현됨(`xmem-windows` feature `Win32_System_Memory`). region 상태 변화/레이스는 정상 경로로 처리 |
 | M4 | `ReadProcessMemory` chunked(기본 1 MiB) | 구현됨(`xmem-windows` feature `Win32_System_Diagnostics_Debug`). `ERROR_PARTIAL_COPY(299)`→PartialRead, `ERROR_ACCESS_DENIED(5)`, `ERROR_NOACCESS(998)`/`ERROR_INVALID_ADDRESS(487)` 매핑 |
 | M5 | `TH32CS_SNAPMODULE(_32)`, `Module32FirstW/NextW`, `Thread32First/Next`, `OpenThread`, `GetThreadPriority`, `NtQueryInformationThread(ThreadQuerySetWin32StartAddress)` | 구현됨. StartAddress는 반문서화 → 실패 시 `None` degrade. `GetThreadTimes`/`EnumProcessModulesEx` fallback은 후속 |
-| M6 | 신규 없음 | goblin + 메모리 헤더 read |
+| M6 | 신규 없음 | 기존 `ReadProcessMemory` 재사용(영역/모듈 헤더 prefix 4 KiB). 파싱 실패는 `InvalidPe`/`None` degrade |
 | M7 | 신규 없음 | 파일 I/O |
 | M9 | `MiniDumpWriteDump`(dbghelp) | 기본은 metadata dump, `--full`은 사전 크기/디스크 검사 후 |
 | M11 | `VirtualAllocEx`, `VirtualProtectEx`, `WriteProcessMemory`, `CreateRemoteThread`, `FlushInstructionCache` | **xmem-experiments 전용, lab target 한정** |
@@ -259,7 +261,8 @@ xmem experiment list | run <NAME>
 | M3 Virtual Memory(`memory map`, `LiveProcess` MemorySource) | Done |
 | M4 Memory Scanner(`memory scan`, Pattern 파서/매처, chunked 병렬 scan, Ctrl+C) | Done |
 | M5 Module / Thread(`modules`/`threads`, 시작 주소 → region/module 상관관계) | Done |
-| M6~M12 | Planned |
+| M6 PE Analysis(`xmem-pe` 파서/메모리 PE 분류, `modules --pe`, heuristic 활성화) | Done |
+| M7~M12 | Planned |
 
 ## 15. Non-Goals
 

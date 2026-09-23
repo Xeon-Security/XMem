@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **Milestone 5 (Module / Thread)** 완료. 모듈 열거와 스레드 시작 주소 상관관계 분석을 지원한다.
+현재 **Milestone 6 (PE Analysis)** 완료. PE 구조 파싱, 메모리 PE artifact 탐지, 모듈 PE 요약을 지원한다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -30,11 +30,12 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | Windows 추상화 (Win32 오류 매핑, RAII `OwnedHandle`, 프로세스 primitive) | Implemented |
 | CLI 골격 (전체 명령 트리, `--json`, 로깅 분리, exit code 계약) | Implemented |
 | `process list` / `process info` (경로, arch, session, 생성시각, 사용자, 명령줄, 메모리, 스레드/모듈 수) | Implemented |
-| `memory map` (VirtualQueryEx, MEM_* state/type, PAGE_* 보호 속성, R/W/X, class, heuristic, mapped file, `--json`) | Implemented |
+| `memory map` (VirtualQueryEx, MEM_* state/type, PAGE_* 보호 속성, R/W/X, class, PE 프로브 heuristic 포함, mapped file, `--json`) | Implemented |
 | `memory scan` (패턴/ASCII/UTF-16, 필터, chunked 병렬, 취소, `--json`) | Implemented |
 | `modules --pid` (Toolhelp 모듈 열거: base/size/path/arch, `--json`) | Implemented |
 | `threads --pid` (TID, priority, start address → region/module 상관관계, `--json`) | Implemented |
-| PE 분석 | Planned (M6) |
+| `modules --pid --pe` (모듈 메모리 헤더 PE 요약: machine/entry/sections, `--json`) | Implemented |
+| PE 분석 (`xmem-pe`: 파서/메모리 PE 분류, `memory map` heuristic 활성화) | Implemented |
 | Snapshot 생성/Diff | Planned (M7) |
 | Detection Engine (XMEM-001~005) | Planned (M8) |
 | Minidump 생성/분석 | Planned (M9) |
@@ -69,6 +70,7 @@ xmem memory map --pid <PID>       # 가상 메모리 영역 맵 (분류/heuristi
 xmem memory scan --pid <PID> --string pwsh --max-results 3      # ASCII 문자열 검색
 xmem memory scan --pid <PID> --pattern "4D 5A" --executable-only  # 실행 영역에서 PE 시그니처
 xmem modules --pid <PID>          # 로드된 모듈 (base/size/path)
+xmem modules --pid <PID> --pe     # 모듈별 PE 요약 (machine/entry/sections)
 xmem threads --pid <PID>          # 스레드 + 시작 주소 → region/module 상관관계
 xmem --json process list          # JSON envelope (schema_version 포함)
 xmem --json memory map --pid <PID>  # 영역 상세 JSON
@@ -140,13 +142,13 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Limitations
 
 - **User-mode 전용**: Kernel driver, 물리 메모리 접근, 커널 패칭은 범위 밖(Non-Goal).
-- M5 기준 `process list` / `process info` / `memory map` / `memory scan` / `modules` / `threads`만 구현되어 있다. 나머지 분석 명령은 스텁(오류 반환)이며 마일스톤에 따라 추가된다.
+- M6 기준 `process list` / `process info` / `memory map` / `memory scan` / `modules` / `threads`만 구현되어 있다. 나머지 분석 명령은 스텁(오류 반환)이며 마일스톤에 따라 추가된다.
 - `memory map`의 mapped file 경로는 NT 디바이스 경로(`\Device\...`)로 표시된다(드라이브 문자 변환 미구현).
 - `memory scan`은 guard(no-access) 및 non-readable 영역을 사전 스킵하며(카운트됨), 결과는 기본 1024개 상한(초과 시 `truncated: true` 보고, `--max-results 0`으로 해제).
 - committed > 4 GiB 대형 프로세스는 기본적으로 executable/private 영역만 스캔한다(`--all`로 해제, `policy_restricted`로 보고).
 - 문자열 검색은 대소문자를 구분하며, 패턴 매처는 naive 구현이다(벤치마크 후 최적화 예정).
-- `executable_anonymous` / `private_executable_pe_like` heuristic은 M6(PE 분석) 예정이다.
-- `modules`의 모듈별 arch는 프로세스 arch를 상속한다(모듈별 정확한 arch는 PE 분석 M6).
+- `executable_anonymous` / `private_executable_pe_like` heuristic은 private executable 영역의 헤더 prefix(4 KiB)를 읽어 판정한다(읽기 실패/부분 읽기에서는 heuristic을 추가하지 않는다).
+- `modules --pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시되며, VM_READ 권한이 없거나 파싱에 실패한 모듈은 `-`로 표시된다(Malformed PE는 pe-like로 취급). `modules` 기본 출력의 모듈별 arch는 프로세스 arch를 상속한다.
 - `threads`의 priority는 동적 우선순위(조회 실패 시 `-`)이며, 스레드 시간 통계(`GetThreadTimes`)와 Wait 상태는 후속 마일스톤이다.
 - region 목록은 `MAX_REGIONS`(1,048,576) 상한을 가지며, 초과 시 `truncated: true`로 보고된다.
 - 비관리자 권한으로 실행 가능하지만, 일부 시스템 프로세스는 접근이 제한된다(설계상 정상 동작).
@@ -161,7 +163,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | M3 | Virtual Memory (`memory map`) | 완료 |
 | M4 | Memory Scanner (패턴 엔진, chunked read, 필터) | 완료 |
 | M5 | Module / Thread + 주소 상관관계 | 완료 |
-| M6 | PE 분석 | 예정 |
+| M6 | PE 분석 (`xmem-pe`, 메모리 PE artifact 탐지, `modules --pe`) | 완료 |
 | M7 | Snapshot 생성 / Diff | 예정 |
 | M8 | Detection Engine | 예정 |
 | M9 | Minidump 생성 / 분석 | 예정 |
