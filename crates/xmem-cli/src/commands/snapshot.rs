@@ -144,7 +144,7 @@ pub(crate) fn render_diff(diff: &SnapshotDiff) -> String {
     ));
     let summary = &diff.summary;
     out.push_str(&format!(
-        "regions: +{} -{} ~{} | content ~{} | modules: +{} -{} ~{} | threads: +{} -{} ~{}\n",
+        "regions: +{} -{} ~{} | content ~{} | modules: +{} -{} ~{} | threads: +{} -{} ~{} | detections: +{} -{} ~{}\n",
         summary.regions_added,
         summary.regions_removed,
         summary.regions_changed,
@@ -155,6 +155,9 @@ pub(crate) fn render_diff(diff: &SnapshotDiff) -> String {
         summary.threads_added,
         summary.threads_removed,
         summary.threads_changed,
+        summary.detections_added,
+        summary.detections_removed,
+        summary.detections_changed,
     ));
     for region in &diff.regions_added {
         out.push_str(&format!(
@@ -214,6 +217,25 @@ pub(crate) fn render_diff(diff: &SnapshotDiff) -> String {
         out.push_str(&format!(
             "~ thread tid {} {}\n",
             change.after.tid,
+            change.changes.join(", ")
+        ));
+    }
+    for finding in &diff.detections_added {
+        out.push_str(&format!(
+            "+ detection {} {}\n",
+            finding.rule_id, finding.name
+        ));
+    }
+    for finding in &diff.detections_removed {
+        out.push_str(&format!(
+            "- detection {} {}\n",
+            finding.rule_id, finding.name
+        ));
+    }
+    for change in &diff.detections_changed {
+        out.push_str(&format!(
+            "~ detection {} {}\n",
+            change.after.rule_id,
             change.changes.join(", ")
         ));
     }
@@ -283,6 +305,25 @@ mod tests {
         assert_eq!(payload["summary"]["regions_added"], 1);
         assert_eq!(payload["summary"]["regions_removed"], 1);
         assert!(payload["regions_added"].is_array());
+    }
+
+    #[test]
+    fn render_diff_includes_detection_lines() {
+        let before = sample_envelope_for_diff(0x1000, 0x40, 100);
+        let mut after = sample_envelope_for_diff(0x1000, 0x40, 100);
+        after.findings.push(xmem_core::Finding {
+            rule_id: "XMEM-001".to_string(),
+            name: "Executable Private Memory".to_string(),
+            severity: xmem_core::Severity::Medium,
+            confidence: xmem_core::Confidence::High,
+            evidence: vec![xmem_core::Evidence::new("region").with_region_base(0x1000)],
+            heuristic: "private memory with executable protection".to_string(),
+            interpretation: "Potentially suspicious memory region".to_string(),
+        });
+        let result = xmem_forensics::diff(&before, &after);
+        let text = render_diff(&result);
+        assert!(text.contains("+ detection XMEM-001"));
+        assert!(text.contains("detections:"));
     }
 
     fn sample_envelope_for_diff(

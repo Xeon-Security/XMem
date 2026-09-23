@@ -936,6 +936,7 @@ dependencies = [
  "tracing",
  "tracing-subscriber",
  "xmem-core",
+ "xmem-detection",
  "xmem-forensics",
  "xmem-memory",
  "xmem-pe",
