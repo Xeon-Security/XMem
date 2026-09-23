@@ -5,6 +5,7 @@ members = [
     "crates/xmem-windows",
     "crates/xmem-memory",
     "crates/xmem-pe",
+    "crates/xmem-forensics",
     "crates/xmem-cli",
 ]
 
@@ -20,8 +21,10 @@ xmem-core = { path = "crates/xmem-core" }
 xmem-windows = { path = "crates/xmem-windows" }
 xmem-memory = { path = "crates/xmem-memory" }
 xmem-pe = { path = "crates/xmem-pe" }
+xmem-forensics = { path = "crates/xmem-forensics" }
 anyhow = "1"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
+blake3 = "1.8"
+chrono = { version = "0.4", default-features = false, features = ["std", "serde", "clock"] }
 clap = { version = "4", features = ["derive"] }
 ctrlc = "3"
 goblin = { version = "0.10", default-features = false, features = ["std", "pe32", "pe64"] }
