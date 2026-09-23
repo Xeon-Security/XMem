@@ -3,7 +3,12 @@
 
 pub mod error;
 pub mod evidence;
+pub mod guard;
+pub mod model;
+pub mod source;
 pub mod version;
 
 pub use error::{Result, XmemError};
+pub use evidence::{Confidence, Evidence, Finding, Severity};
+pub use model::*;
 pub use version::{JSON_SCHEMA_VERSION, SNAPSHOT_FORMAT_VERSION, VERSION};

@@ -1,4 +1,72 @@
 //! Evidence model: 관찰(Observed)→Evidence→Heuristic→Confidence→Interpretation.
+use std::collections::BTreeMap;
+
+use serde::{Deserialize, Serialize};
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Severity {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Confidence {
+    Low,
+    Medium,
+    High,
+}
+
+/// 관찰된 사실 하나. 해석은 `Finding`의 heuristic/interpretation에만 존재한다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Evidence {
+    pub kind: String,
+    pub address: Option<u64>,
+    pub region_base: Option<u64>,
+    pub observed: BTreeMap<String, String>,
+}
+
+impl Evidence {
+    pub fn new(kind: impl Into<String>) -> Self {
+        Self {
+            kind: kind.into(),
+            address: None,
+            region_base: None,
+            observed: BTreeMap::new(),
+        }
+    }
+
+    pub fn with_address(mut self, address: u64) -> Self {
+        self.address = Some(address);
+        self
+    }
+
+    pub fn with_region_base(mut self, base: u64) -> Self {
+        self.region_base = Some(base);
+        self
+    }
+
+    pub fn observe(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.observed.insert(key.into(), value.into());
+        self
+    }
+}
+
+/// Detection 결과. 악성 확정 표현은 금지하며 interpretation은 잠재성 수준으로 제한한다.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Finding {
+    pub rule_id: String,
+    pub name: String,
+    pub severity: Severity,
+    pub confidence: Confidence,
+    pub evidence: Vec<Evidence>,
+    pub heuristic: String,
+    pub interpretation: String,
+}
 
 #[cfg(test)]
 mod tests {
