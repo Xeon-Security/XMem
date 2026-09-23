@@ -62,6 +62,18 @@ pub fn open_for_read(pid: u32) -> Result<OwnedHandle> {
     open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ)
 }
 
+/// 덤프 생성용 핸들(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ).
+/// QUERY_INFORMATION이 거부되면 QUERY_LIMITED로 재시도한다(제한 덤프만 가능할 수 있음).
+pub fn open_for_dump(pid: u32) -> Result<OwnedHandle> {
+    match open_process(pid, PROCESS_QUERY_INFORMATION | PROCESS_VM_READ) {
+        Ok(handle) => Ok(handle),
+        Err(XmemError::AccessDenied { .. }) => {
+            open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ)
+        }
+        Err(e) => Err(e),
+    }
+}
+
 pub fn process_image_path(handle: &OwnedHandle) -> Result<String> {
     let mut buf = vec![0u16; 32 * 1024];
     let mut len = buf.len() as u32;
@@ -341,6 +353,12 @@ mod tests {
             err,
             xmem_core::XmemError::WindowsApi { .. } | xmem_core::XmemError::AccessDenied { .. }
         ));
+    }
+
+    #[test]
+    fn open_for_dump_self_succeeds() {
+        let handle = open_for_dump(current_pid()).expect("open_for_dump");
+        assert!(!handle.raw().is_invalid());
     }
 
     #[test]

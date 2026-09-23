@@ -3,6 +3,7 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod disk;
+pub mod dump;
 pub mod error;
 pub mod handle;
 pub mod memory;
@@ -14,11 +15,12 @@ pub mod toolhelp;
 pub mod util;
 
 pub use disk::free_space_bytes;
+pub use dump::{create_file_for_write, validate_minidump, write_minidump, write_minidump_file};
 pub use error::{error_from_win32, last_win32_error, map_win32, win32_code_from_hresult};
 pub use handle::OwnedHandle;
 pub use process::{
-    current_pid, is_alive, list_processes, open_for_query, open_for_read, open_process,
-    process_info,
+    current_pid, is_alive, list_processes, open_for_dump, open_for_query, open_for_read,
+    open_process, process_info,
 };
 pub use threads::{
     RawThreadEntry, list_raw_threads, open_thread, open_thread_for_query, thread_priority,
