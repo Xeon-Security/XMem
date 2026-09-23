@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **Milestone 7 (Snapshot)** 완료. PE 분석에 이어 Snapshot 생성(메타데이터 + 선택 영역 blake3 해시)과 Snapshot 간 Diff를 지원한다.
+현재 **Milestone 8 (Detection Engine)** 완료. Snapshot Diff에 이어 Rule 기반 Detection(XMEM-001~005)과 Snapshot 간 Detection 변화 분석을 지원한다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -36,9 +36,9 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | `threads --pid` (TID, priority, start address → region/module 상관관계, `--json`) | Implemented |
 | `modules --pid --pe` (모듈 메모리 헤더 PE 요약: machine/entry/sections, `--json`) | Implemented |
 | PE 분석 (`xmem-pe`: 파서/메모리 PE 분류, `memory map` heuristic 활성화) | Implemented |
-| `snapshot create` (포맷 v1, 메타데이터 + 영역 blake3, 디스크 사전 검사, atomic rename, `--json`) | Implemented |
-| `snapshot diff` (region/module/thread/protection/content 변화, `--json`) | Implemented |
-| Detection Engine (XMEM-001~005) | Planned (M8) |
+| `snapshot create` (포맷 v1, 메타데이터 + 영역 blake3 + findings, 디스크 사전 검사, atomic rename, `--json`) | Implemented |
+| `snapshot diff` (region/module/thread/protection/content/detection 변화, `--json`) | Implemented |
+| `detect --pid` (Rule 기반 XMEM-001~005, Observed/Evidence/Heuristic/Confidence 분리, `--json`) | Implemented |
 | Minidump 생성/분석 | Planned (M9) |
 | Test Target + 실험 프레임워크 | Planned (M10~M11) |
 
@@ -74,7 +74,8 @@ xmem modules --pid <PID>          # 로드된 모듈 (base/size/path)
 xmem modules --pid <PID> --pe     # 모듈별 PE 요약 (machine/entry/sections)
 xmem threads --pid <PID>          # 스레드 + 시작 주소 → region/module 상관관계
 xmem snapshot create --pid <PID> --output before.xmem   # Baseline 스냅샷 (XMEM 포맷 v1)
-xmem snapshot diff before.xmem after.xmem               # 변화 분석 (region/module/thread/content)
+xmem snapshot diff before.xmem after.xmem               # 변화 분석 (region/module/thread/content/detection)
+xmem detect --pid <PID>                                 # Detection Rule 실행 (findings + evidence)
 xmem --json process list          # JSON envelope (schema_version 포함)
 xmem --json memory map --pid <PID>  # 영역 상세 JSON
 xmem --json memory scan --pid <PID> --wide-string pwsh  # UTF-16LE 검색 JSON
@@ -124,7 +125,9 @@ xmem experiment run <NAME>
 
 `snapshot create`는 XMEM 포맷 v1(`magic "XMEM" | format_version | flags | payload_len | JSON`)로 저장하며, committed + readable 영역을 executable/private 우선으로 최대 64 MiB까지 blake3 해싱한다(예산 초과 영역은 `partial: true`). 파일은 temp → 재파싱 검증 → atomic rename으로 기록되고, 생성 전 가용 디스크 공간(예상 크기 + 16 MiB)을 검사한다.
 
-`snapshot diff`는 region(base 키), module(name 키), thread(tid 키), content hash(base 키)를 매칭해 Added/Removed/Changed를 보고한다. 양쪽 모두 해시가 있는 영역만 content 변화로 보고된다.
+`snapshot diff`는 region(base 키), module(name 키), thread(tid 키), content hash(base 키), finding(rule + 위치 키)을 매칭해 Added/Removed/Changed를 보고한다. 양쪽 모두 해시가 있는 영역만 content 변화로 보고된다.
+
+`detect`는 Rule을 `xmem-detection` 크레이트에만 두고 CLI에는 하드코딩하지 않는다. 모든 finding은 Observed Fact → Evidence → Heuristic → Confidence → Interpretation 구조이며 악성 확정 표현을 쓰지 않는다. **finding 0건이 안전을 증명하지 않는다** — 출력에 이 문구가 포함된다.
 
 Exit code: `0` 성공, `1` 실행 오류, `2` 사용법 오류, `3` 정책 거부(보호 프로세스 등), `130` 취소(Ctrl+C).
 
@@ -149,7 +152,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 ## Limitations
 
 - **User-mode 전용**: Kernel driver, 물리 메모리 접근, 커널 패칭은 범위 밖(Non-Goal).
-- M7 기준 `process list` / `process info` / `memory map` / `memory scan` / `modules` / `threads` / `snapshot create` / `snapshot diff`만 구현되어 있다. 나머지 분석 명령은 스텁(오류 반환)이며 마일스톤에 따라 추가된다.
+- M8 기준 `process list` / `process info` / `memory map` / `memory scan` / `modules` / `threads` / `snapshot create` / `snapshot diff` / `detect`만 구현되어 있다. 나머지 분석 명령은 스텁(오류 반환)이며 마일스톤에 따라 추가된다.
 - `memory map`의 mapped file 경로는 NT 디바이스 경로(`\Device\...`)로 표시된다(드라이브 문자 변환 미구현).
 - `memory scan`은 guard(no-access) 및 non-readable 영역을 사전 스킵하며(카운트됨), 결과는 기본 1024개 상한(초과 시 `truncated: true` 보고, `--max-results 0`으로 해제).
 - committed > 4 GiB 대형 프로세스는 기본적으로 executable/private 영역만 스캔한다(`--all`로 해제, `policy_restricted`로 보고).
@@ -157,7 +160,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 - `executable_anonymous` / `private_executable_pe_like` heuristic은 private executable 영역의 헤더 prefix(4 KiB)를 읽어 판정한다(읽기 실패/부분 읽기에서는 heuristic을 추가하지 않는다).
 - `modules --pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시되며, VM_READ 권한이 없거나 파싱에 실패한 모듈은 `-`로 표시된다(Malformed PE는 pe-like로 취급). `modules` 기본 출력의 모듈별 arch는 프로세스 arch를 상속한다.
 - `threads`의 priority는 동적 우선순위(조회 실패 시 `-`)이며, 스레드 시간 통계(`GetThreadTimes`)와 Wait 상태는 후속 마일스톤이다.
-- Snapshot 해싱은 기본 64 MiB 예산이며, 해시가 없는 영역은 content diff로 보고되지 않는다. `SnapshotSource`의 메모리 내용 read는 M9(MemoryImage)에서 지원 예정이다. Detection finding은 Snapshot에 저장되지만 diff 연동은 M8에서 추가된다.
+- Snapshot 해싱은 기본 64 MiB 예산이며, 해시가 없는 영역은 content diff로 보고되지 않는다. `SnapshotSource`의 메모리 내용 read는 M9(MemoryImage)에서 지원 예정이다.
+- `detect`의 finding은 관찰 기반 heuristic이며 **악성 판정이 아니다**. XMEM-002는 `memory map`의 4 KiB 헤더 프로브 결과에 의존하고, XMEM-003은 모듈 목록 밖 executable 영역을 보고하므로 JIT·.NET R2R 이미지 등 정상 소프트웨어에서도 발생한다. 모듈 조회가 실패하면 XMEM-003/004는 침묵한다(skip).
 - region 목록은 `MAX_REGIONS`(1,048,576) 상한을 가지며, 초과 시 `truncated: true`로 보고된다.
 - 비관리자 권한으로 실행 가능하지만, 일부 시스템 프로세스는 접근이 제한된다(설계상 정상 동작).
 - 실험 기능은 XMem이 직접 spawn한 전용 Test Target에만 수행한다(호스트 보호).
@@ -173,7 +177,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | M5 | Module / Thread + 주소 상관관계 | 완료 |
 | M6 | PE 분석 (`xmem-pe`, 메모리 PE artifact 탐지, `modules --pe`) | 완료 |
 | M7 | Snapshot 생성 / Diff | 완료 |
-| M8 | Detection Engine | 예정 |
+| M8 | Detection Engine (XMEM-001~005, `detect`, Snapshot findings/diff) | 완료 |
 | M9 | Minidump 생성 / 분석 | 예정 |
 | M10 | Research Lab (Test Target + Ground Truth) | 예정 |
 | M11 | Experiment 자동화 | 예정 |

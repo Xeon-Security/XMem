@@ -53,7 +53,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner, 모듈/스레드 상관관계 | M3 (생성됨; scan 엔진 M4, 모듈/스레드 M5) |
 | `xmem-pe` | PE 파싱(bounds-checked 헤더 파서 + 전체 파일 goblin 보강), 메모리 PE artifact 분류 | M6 (생성됨) |
 | `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Report/MemoryImage는 M9/M12) |
-| `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 |
+| `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
 | `xmem-experiments` | 실험 프레임워크, lab target 오케스트레이션, Guard 강제 | M11 |
 | `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member) | M10 |
 
@@ -196,9 +196,9 @@ pub struct AcquisitionMeta {
 - 쓰기: 임시파일 → 검증(재파싱 + 길이 확인) → atomic rename. 불완전 파일을 정상 Snapshot으로 남기지 않는다.
 - `format_version`으로 migration 지점을 명시한다.
 - 해싱 정책(M7): committed + readable 영역만, executable → private 우선 정렬, `hash_budget_bytes`(기본 64 MiB)·`MAX_HASH_REGIONS`(8192) 상한, 1 MiB chunk 재사용 버퍼. 예산/읽기 실패로 일부만 해싱한 영역은 `partial: true`로 정직하게 보고한다.
-- Diff(M7): region은 base, module은 name, thread는 tid, content hash는 base로 매칭. 양쪽 해시가 모두 있는 영역만 content 변화로 보고. `findings` diff(Detection Appeared/Disappeared)는 M8에서 추가.
+- Diff(M7): region은 base, module은 name, thread는 tid, content hash는 base로 매칭. 양쪽 해시가 모두 있는 영역만 content 변화로 보고. findings diff(Detection Appeared/Disappeared/Changed)는 M8에서 추가됨(`detections_added`/`detections_removed`/`detections_changed`, 매칭 키 = rule_id + region_base + address).
 
-## 9. Detection Rules (M8 구현 예정)
+## 9. Detection Rules (M8 구현됨)
 
 | Rule | 조건(관찰) | Severity | Confidence | 비고 |
 |---|---|---|---|---|
@@ -209,6 +209,8 @@ pub struct AcquisitionMeta {
 | XMEM-005 Memory Protection Anomaly | RWX/EXECUTE_WRITECOPY (private=Medium→High, image=Low) | Medium | High | 사실 기반 |
 
 Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
+
+구현 노트(M8): `xmem-detection`은 `xmem-core`에만 의존하고(외부 dependency 추가 없음), `DetectionContext`로 수집된 관찰 데이터만 받아 평가한다. XMEM-001/002/005는 heuristic/보호 속성만으로 동작하고, XMEM-003/004는 모듈 목록이 비어 있으면 침묵한다(불완전 데이터로 오판하지 않음). findings는 (rule_id, region_base, address)로 정렬해 결정적으로 출력한다. Snapshot `collect`는 findings를 저장하고, `xmem-forensics`가 `xmem-detection`에 의존한다.
 
 ## 10. Experiment Framework (M11 구현 예정)
 
@@ -271,7 +273,8 @@ xmem experiment list | run <NAME>
 | M5 Module / Thread(`modules`/`threads`, 시작 주소 → region/module 상관관계) | Done |
 | M6 PE Analysis(`xmem-pe` 파서/메모리 PE 분류, `modules --pe`, heuristic 활성화) | Done |
 | M7 Snapshot(`xmem-forensics` 포맷 v1, `snapshot create`/`snapshot diff`, collect 해싱, Disk 사전 검사) | Done |
-| M8~M12 | Planned |
+| M8 Detection(`xmem-detection` Rule 엔진, XMEM-001~005, `detect`, Snapshot findings/detection diff) | Done |
+| M9~M12 | Planned |
 
 ## 15. Non-Goals
 

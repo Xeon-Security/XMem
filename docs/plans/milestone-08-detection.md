@@ -1,6 +1,6 @@
 # M8 — Detection Engine Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Rule 기반 Detection Engine(`xmem-detection`)을 만들고, `xmem detect --pid <PID>`를 구현하며, Snapshot의 `findings`를 채우고 Snapshot Diff가 Detection Appeared/Disappeared/Changed를 보고하도록 한다.
 
@@ -50,7 +50,7 @@
   - `default_rules() -> Vec<Box<dyn Rule>>`, `detect(&DetectionContext<'_>) -> Vec<Finding>`
   - `detect_source<S: MemorySource>(source: &S) -> Result<Vec<Finding>>`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-detection/src/rules.rs` 생성(테스트 모듈만):
 
@@ -308,12 +308,12 @@ mod tests {
 }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-detection --tests`
 Expected: FAIL — crate 미등록 매니페스트 오류, 등록 후 E0425/E0422/E0433 다수.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 루트 `Cargo.toml`: members에 `"crates/xmem-detection"` 추가, workspace.deps에 `xmem-detection = { path = "crates/xmem-detection" }` 추가.
 
@@ -627,12 +627,12 @@ pub fn detect_source<S: MemorySource>(source: &S) -> Result<Vec<Finding>> {
 }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-detection`
 Expected: PASS — 8 (rules 7 + source 1).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -658,7 +658,7 @@ git commit -m "feat(detection): Rule 엔진과 XMEM-001~005"
   - `SnapshotDiff`에 `detections_added: Vec<Finding>`, `detections_removed: Vec<Finding>`, `detections_changed: Vec<FindingChange>` 추가; `DiffSummary`에 `detections_added/removed/changed: usize` 추가.
   - `FindingChange { before: Finding, after: Finding, changes: Vec<String> }` (changes: "severity: medium -> high", "confidence: ...", "name: ...").
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-forensics/src/collect.rs` 테스트 모듈에 추가:
 
@@ -724,12 +724,12 @@ git commit -m "feat(detection): Rule 엔진과 XMEM-001~005"
     }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-forensics --tests`
 Expected: FAIL — E0609 `no field detections_added`, E0433 `xmem_detection`, E0425 등.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 루트 `Cargo.toml` workspace.deps에 `xmem-detection = { path = "crates/xmem-detection" }`(Task 1에서 추가됨) 확인.
 
@@ -875,12 +875,12 @@ pub use diff::{
 };
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-forensics`
 Expected: PASS — 20 (기존 17 + collect 1 + diff 2).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -906,7 +906,7 @@ git commit -m "feat(forensics): Snapshot findings와 detection diff"
   - `detect_json_payload(&ProcessInfo, &[Finding]) -> Value`
   - `render_diff`가 `+ detection`/`- detection`/`~ detection` 라인과 요약에 detections 카운트를 포함.
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 `crates/xmem-cli/src/commands/detect.rs`에 테스트 모듈 추가(구현은 Step 3):
 
@@ -1008,12 +1008,12 @@ mod tests {
     }
 ```
 
-- [ ] **Step 2: Run tests to verify they fail**
+- [x] **Step 2: Run tests to verify they fail**
 
 Run: `cargo check -p xmem-cli --tests`
 Expected: FAIL — E0425 `render_findings`/`detect_json_payload`, E0609 `findings` 관련 등.
 
-- [ ] **Step 3: Write minimal implementation**
+- [x] **Step 3: Write minimal implementation**
 
 `crates/xmem-cli/Cargo.toml` deps에 추가:
 
@@ -1146,12 +1146,12 @@ fn confidence_text(confidence: xmem_core::Confidence) -> &'static str {
     }
 ```
 
-- [ ] **Step 4: Run tests to verify they pass**
+- [x] **Step 4: Run tests to verify they pass**
 
 Run: `cargo test -p xmem-cli`
 Expected: PASS — 45 + 5 = 50.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 cargo fmt --all
@@ -1173,7 +1173,7 @@ git commit -m "feat(cli): detect 명령과 detection diff 렌더"
 - Consumes: Task 1~3 결과.
 - Produces: 문서 상태 갱신 + 검증 기록. 코드 변경 없음.
 
-- [ ] **Step 1: README 갱신**
+- [x] **Step 1: README 갱신**
 
 - Status 문구 "Milestone 8 (Detection Engine) 완료".
 - Status 표: `detect --pid` 행 Implemented(Rule 기반, Evidence 분리, `--json`); `snapshot create` 행에 "findings 포함" 추가; `snapshot diff` 행에 "detections 변화" 추가.
@@ -1182,7 +1182,7 @@ git commit -m "feat(cli): detect 명령과 detection diff 렌더"
 - Limitations: XMEM-002는 4 KiB 헤더 probe heuristic 기반(imports/exports 미검증), JIT/정상 소프트웨어 오탐 가능, modules 조회 실패 시 003/004 skip.
 - Roadmap M8 완료.
 
-- [ ] **Step 2: architecture.md 갱신**
+- [x] **Step 2: architecture.md 갱신**
 
 - §9 제목 "(M8 구현됨)" + 구현 노트: `xmem-detection` crate, `DetectionContext`(관찰 데이터만), heuristics 기반 판정, modules 비면 003/004 skip, findings 정렬 규칙.
 - §8의 "`findings` diff(Detection Appeared/Disappeared)는 M8에서 추가" → "M8에서 추가됨(`detections_added/removed/changed`)".
@@ -1190,7 +1190,7 @@ git commit -m "feat(cli): detect 명령과 detection diff 렌더"
 - crate 표 `xmem-detection` → "M8 (생성됨; Rule trait + XMEM-001~005)".
 - Status 표 M8 Done, M9~M12 Planned.
 
-- [ ] **Step 3: 전체 게이트**
+- [x] **Step 3: 전체 게이트**
 
 ```bash
 cargo fmt --all -- --check
@@ -1201,7 +1201,7 @@ cargo test --workspace
 
 Expected: 전부 exit 0. 테스트 합계 = core 33 + windows 50 + pe 9 + memory 21 + detection 8 + forensics 20 + cli 50 = **191** (실측으로 확정).
 
-- [ ] **Step 4: Windows 실검증 (스모크)**
+- [x] **Step 4: Windows 실검증 (스모크)**
 
 ```powershell
 $env:PATH = "$env:USERPROFILE\.cargo\bin;$env:PATH"
@@ -1225,9 +1225,9 @@ Remove-Item -Recurse -Force $tmp
 4. lsass(비관리자) → access denied + exit 1, bogus PID → exited + exit 1.
 5. `detect` 반복 3회 모두 exit 0, panic 없음. temp 정리.
 
-- [ ] **Step 5: 체크박스 갱신 + 커밋**
+- [x] **Step 5: 체크박스 갱신 + 커밋**
 
-`docs/plans/milestone-08-detection.md`의 `- [ ]`를 전부 `- [x]`로 바꾸고:
+`docs/plans/milestone-08-detection.md`의 `- [x]`를 전부 `- [x]`로 바꾸고:
 
 ```bash
 git add README.md docs/architecture.md docs/plans/milestone-08-detection.md
