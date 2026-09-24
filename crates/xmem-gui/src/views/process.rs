@@ -63,64 +63,64 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     ui.separator();
     let row_height = 20.0;
     crate::views::truncate_cells(ui);
-    egui::ScrollArea::horizontal()
-        .id_salt("process_table_hscroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            ui.set_min_width(520.0);
-            egui_extras::TableBuilder::new(ui)
-                .min_scrolled_height(0.0)
-                .striped(true)
-                .sense(egui::Sense::click())
-                .column(egui_extras::Column::exact(56.0))
-                .column(egui_extras::Column::initial(150.0).clip(true))
-                .column(egui_extras::Column::remainder().clip(true))
-                .header(18.0, |mut header| {
-                    header.col(|ui| {
-                        ui.strong("PID");
-                    });
-                    header.col(|ui| {
-                        ui.strong("이름");
-                    });
-                    header.col(|ui| {
-                        ui.strong("경로");
-                    });
-                })
-                .body(|body| {
-                    body.rows(row_height, filtered.len(), |mut row| {
-                        let index = filtered[row.index()];
-                        let pid = app.processes[index].pid;
-                        row.set_selected(app.selected_pid == Some(pid));
-                        let mut row_clicked = false;
-                        row.col(|ui| {
-                            row_clicked |=
-                                crate::views::table_cell(ui, egui::RichText::new(pid.to_string()));
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(app.processes[index].name.as_str()),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(
-                                    app.processes[index].image_path.as_deref().unwrap_or("-"),
-                                )
-                                .weak(),
-                            );
-                        });
-                        if row_clicked {
-                            app.select_process(pid);
-                        }
-                    });
+    egui_extras::TableBuilder::new(ui)
+        .min_scrolled_height(0.0)
+        .striped(true)
+        .sense(egui::Sense::click())
+        .column(egui_extras::Column::exact(56.0))
+        .column(egui_extras::Column::initial(150.0).clip(true))
+        .column(egui_extras::Column::remainder().clip(true))
+        .header(18.0, |mut header| {
+            header.col(|ui| {
+                ui.strong("PID");
+            });
+            header.col(|ui| {
+                ui.strong("이름");
+            });
+            header.col(|ui| {
+                ui.strong("경로");
+            });
+        })
+        .body(|body| {
+            body.rows(row_height, filtered.len(), |mut row| {
+                let index = filtered[row.index()];
+                let pid = app.processes[index].pid;
+                row.set_selected(app.selected_pid == Some(pid));
+                let mut row_clicked = false;
+                row.col(|ui| {
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(pid.to_string()));
                 });
+                row.col(|ui| {
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(app.processes[index].name.as_str()),
+                    );
+                });
+                row.col(|ui| {
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(
+                            app.processes[index].image_path.as_deref().unwrap_or("-"),
+                        )
+                        .weak(),
+                    );
+                });
+                if row_clicked {
+                    app.select_process(pid);
+                }
+            });
         });
 }
 
 /// 좁은 창(<900px)에서 쓰는 프로세스 드롭다운.
 pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
+    // 좁은 레이아웃에서도 필터를 보이게 한다 — 숨은 필터 때문에 목록이 비어 보이는 것을 막는다.
+    ui.add(
+        egui::TextEdit::singleline(&mut app.process_filter)
+            .hint_text("이름 또는 PID 검색")
+            .desired_width(f32::INFINITY),
+    );
     let selected_text = app
         .selected_pid
         .and_then(|pid| app.processes.iter().find(|p| p.pid == pid))
@@ -147,6 +147,15 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
                     ui.label(egui::RichText::new("상위 200개만 표시 (필터를 사용하세요)").weak());
                 }
             });
+        if ui
+            .add_enabled(
+                !app.list_task.is_running(),
+                egui::Button::new("새로고침").small(),
+            )
+            .clicked()
+        {
+            app.refresh_processes();
+        }
         if app.list_task.is_running() {
             ui.spinner();
         }

@@ -195,6 +195,123 @@ impl PeArchText for PeInfo {
 
 pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
     let colors = crate::theme::palette(app.theme);
+
+    let mut close = false;
+    let mut copy: Option<String> = None;
+    let mut goto_map = false;
+
+    // 헤더는 상태와 무관하게 항상 그린다 — 로딩/실패 중에도 닫을 수 있도록.
+    let header_module = app
+        .module_detail
+        .as_ref()
+        .map(|detail| detail.module.clone())
+        .or_else(|| {
+            let base = app.module_selected?;
+            app.modules_bundle
+                .as_ref()?
+                .modules
+                .iter()
+                .find(|module| module.base == base)
+                .cloned()
+        });
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("닫기").clicked() {
+                close = true;
+            }
+            if ui
+                .add_enabled(header_module.is_some(), egui::Button::new("맵에서 보기"))
+                .clicked()
+            {
+                goto_map = true;
+            }
+            if ui
+                .add_enabled(app.module_detail.is_some(), egui::Button::new("요약 복사"))
+                .clicked()
+                && let Some(detail) = app.module_detail.as_ref()
+            {
+                copy = Some(module_summary_text(detail));
+            }
+            if app.module_detail_task.is_running() {
+                ui.spinner();
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                match &header_module {
+                    Some(module) => {
+                        ui.add(
+                            egui::Label::new(egui::RichText::new(module.name.as_str()).strong())
+                                .truncate(),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "{} · {} · {}",
+                                    opt_hex(Some(module.base)),
+                                    human_size(module.size),
+                                    module
+                                        .path
+                                        .as_deref()
+                                        .map(crate::views::region::short_path)
+                                        .unwrap_or_else(|| "-".to_string())
+                                ))
+                                .weak(),
+                            )
+                            .truncate(),
+                        );
+                    }
+                    None => {
+                        ui.strong("모듈 상세");
+                    }
+                }
+            });
+        });
+    });
+
+    if close {
+        app.module_selected = None;
+        app.module_detail = None;
+    }
+    if let Some(text) = copy {
+        ui.ctx().copy_text(text);
+        app.log.push(
+            crate::log::LogLevel::Info,
+            "모듈 요약을 클립보드에 복사했습니다",
+        );
+    }
+    if goto_map && let Some(pid) = app.selected_pid {
+        let region = header_module.as_ref().and_then(|module| {
+            app.map.as_ref().and_then(|map| {
+                map.regions
+                    .iter()
+                    .find(|region| {
+                        module.base >= region.base
+                            && module.base < region.base.saturating_add(region.size)
+                    })
+                    .cloned()
+            })
+        });
+        match region {
+            Some(region) => {
+                app.tab = crate::app::Tab::Map;
+                app.select_region(pid, region);
+            }
+            None => {
+                if app.map.is_none() {
+                    app.start_map(pid);
+                    app.log.push(
+                        crate::log::LogLevel::Warn,
+                        "맵을 불러오는 중입니다. 잠시 후 다시 시도하세요",
+                    );
+                } else {
+                    app.log.push(
+                        crate::log::LogLevel::Warn,
+                        "이 모듈을 포함하는 메모리 영역을 찾지 못했습니다",
+                    );
+                }
+            }
+        }
+    }
+
     match app.module_detail_task.state() {
         TaskState::Running => {
             ui.horizontal(|ui| {
@@ -217,39 +334,8 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new("모듈을 클릭하면 상세 정보가 표시됩니다").weak());
         return;
     };
-    let pid = app.selected_pid;
     let module = detail.module.clone();
 
-    let mut close = false;
-    let mut copy: Option<String> = None;
-    let mut goto_map = false;
-    ui.horizontal(|ui| {
-        ui.strong(&module.name);
-        ui.label(
-            egui::RichText::new(format!(
-                "{} · {} · {}",
-                opt_hex(Some(module.base)),
-                human_size(module.size),
-                module
-                    .path
-                    .as_deref()
-                    .map(crate::views::region::short_path)
-                    .unwrap_or_else(|| "-".to_string())
-            ))
-            .weak(),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("닫기").clicked() {
-                close = true;
-            }
-            if ui.button("맵에서 보기").clicked() {
-                goto_map = true;
-            }
-            if ui.button("요약 복사").clicked() {
-                copy = Some(module_summary_text(detail));
-            }
-        });
-    });
     for note in &detail.notes {
         ui.label(egui::RichText::new(note).color(colors.warn));
     }
@@ -384,49 +470,6 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                     }
                 });
         });
-
-    if close {
-        app.module_selected = None;
-        app.module_detail = None;
-    }
-    if let Some(text) = copy {
-        ui.ctx().copy_text(text);
-        app.log.push(
-            crate::log::LogLevel::Info,
-            "모듈 요약을 클립보드에 복사했습니다",
-        );
-    }
-    if goto_map && let Some(pid) = pid {
-        let region = app.map.as_ref().and_then(|map| {
-            map.regions
-                .iter()
-                .find(|region| {
-                    module.base >= region.base
-                        && module.base < region.base.saturating_add(region.size)
-                })
-                .cloned()
-        });
-        match region {
-            Some(region) => {
-                app.tab = crate::app::Tab::Map;
-                app.select_region(pid, region);
-            }
-            None => {
-                if app.map.is_none() {
-                    app.start_map(pid);
-                    app.log.push(
-                        crate::log::LogLevel::Warn,
-                        "맵을 불러오는 중입니다. 잠시 후 다시 시도하세요",
-                    );
-                } else {
-                    app.log.push(
-                        crate::log::LogLevel::Warn,
-                        "이 모듈을 포함하는 메모리 영역을 찾지 못했습니다",
-                    );
-                }
-            }
-        }
-    }
 }
 
 pub fn module_summary_text(detail: &ModuleDetail) -> String {

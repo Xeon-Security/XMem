@@ -67,9 +67,12 @@ pub fn table_cell(ui: &mut egui::Ui, text: egui::RichText) -> bool {
     // 이렇게 하지 않으면 좌측 목록 행의 밴드가 중앙 패널까지 걸쳐, 맵을 클릭했는데
     // 프로세스 선택이 바뀌는 문제가 생긴다.
     let band = ui.max_rect().intersect(ui.clip_rect());
-    let clicked = ui.input(|i| {
-        i.pointer.primary_clicked() && i.pointer.latest_pos().is_some_and(|pos| band.contains(pos))
-    });
+    // 콤보박스 팝업 등 다른 레이어가 표 위에 떠 있으면 그 클릭은 행 클릭이 아니다.
+    // 최상위 레이어(egui 0.36 `Context::layer_id_at`)가 이 위젯의 레이어일 때만 인정한다.
+    let pos = ui.input(|i| i.pointer.latest_pos());
+    let on_table_layer = pos
+        .is_some_and(|pos| band.contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()));
+    let clicked = on_table_layer && ui.input(|i| i.pointer.primary_clicked());
     // 포커스 위젯은 추가적인 것이다. egui_extras 셀은 히트테스트가 불안정해
     // 마우스 클릭은 위 입력 판정을 그대로 신뢰하고, 이 위젯은 Enter 활성화만 담당한다.
     let resp = ui.interact(band, ui.id().with("cell_focus"), egui::Sense::click());

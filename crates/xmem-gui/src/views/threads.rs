@@ -26,8 +26,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     });
     match app.threads_task.state() {
         TaskState::Failed(err) => {
-            let failure = crate::app::classify_open_failure(err, app.is_elevated, pid);
-            failure_banner(ui, app, &failure);
+            let failure = crate::app::classify_open_failure(
+                err,
+                app.is_elevated,
+                app.threads_task.pid().unwrap_or(pid),
+            );
+            failure_banner(ui, app, &failure, |app| app.start_threads(pid));
             return;
         }
         TaskState::Cancelled => {

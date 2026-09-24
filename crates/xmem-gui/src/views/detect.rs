@@ -52,8 +52,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
     });
     if let TaskState::Failed(err) = app.detect_task.state() {
-        let failure = crate::app::classify_open_failure(err, app.is_elevated, pid);
-        failure_banner(ui, app, &failure);
+        let failure = crate::app::classify_open_failure(
+            err,
+            app.is_elevated,
+            app.detect_task.pid().unwrap_or(pid),
+        );
+        failure_banner(ui, app, &failure, |app| app.start_detect(pid));
         return;
     }
     let colors = palette(app.theme);

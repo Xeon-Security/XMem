@@ -74,8 +74,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     });
     match app.modules_task.state() {
         TaskState::Failed(err) => {
-            let failure = crate::app::classify_open_failure(err, app.is_elevated, pid);
-            failure_banner(ui, app, &failure);
+            let failure = crate::app::classify_open_failure(
+                err,
+                app.is_elevated,
+                app.modules_task.pid().unwrap_or(pid),
+            );
+            failure_banner(ui, app, &failure, |app| app.start_modules(pid));
             return;
         }
         TaskState::Cancelled => {

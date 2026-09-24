@@ -175,6 +175,122 @@ pub fn collect_thread_detail(pid: u32, thread: ThreadInfo) -> ThreadDetail {
 
 pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
     let colors = crate::theme::palette(app.theme);
+
+    let mut close = false;
+    let mut copy: Option<String> = None;
+    let mut goto_map = false;
+
+    // 헤더는 상태와 무관하게 항상 그린다 — 로딩/실패 중에도 닫을 수 있도록.
+    let header_thread = app
+        .thread_detail
+        .as_ref()
+        .map(|detail| detail.thread.clone())
+        .or_else(|| {
+            let tid = app.thread_selected?;
+            app.threads
+                .as_ref()?
+                .iter()
+                .find(|thread| thread.tid == tid)
+                .cloned()
+        });
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.button("닫기").clicked() {
+                close = true;
+            }
+            if ui
+                .add_enabled(
+                    app.thread_detail.is_some(),
+                    egui::Button::new("맵에서 보기"),
+                )
+                .clicked()
+            {
+                goto_map = true;
+            }
+            if ui
+                .add_enabled(app.thread_detail.is_some(), egui::Button::new("요약 복사"))
+                .clicked()
+                && let Some(detail) = app.thread_detail.as_ref()
+            {
+                copy = Some(thread_summary_text(detail));
+            }
+            if app.thread_detail_task.is_running() {
+                ui.spinner();
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                match &header_thread {
+                    Some(thread) => {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("TID {}", thread.tid)).strong(),
+                            )
+                            .truncate(),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "{} · {} · {}",
+                                    thread
+                                        .priority
+                                        .map(|priority| format!(
+                                            "우선순위 {priority} ({})",
+                                            priority_label(priority)
+                                        ))
+                                        .unwrap_or_else(|| "우선순위 -".to_string()),
+                                    opt_hex(thread.start_address),
+                                    thread.start_module.as_deref().unwrap_or("-")
+                                ))
+                                .weak(),
+                            )
+                            .truncate(),
+                        );
+                    }
+                    None => {
+                        ui.strong("스레드 상세");
+                    }
+                }
+            });
+        });
+    });
+
+    if close {
+        app.thread_selected = None;
+        app.thread_detail = None;
+    }
+    if let Some(text) = copy {
+        ui.ctx().copy_text(text);
+        app.log.push(
+            crate::log::LogLevel::Info,
+            "스레드 요약을 클립보드에 복사했습니다",
+        );
+    }
+    if goto_map && let Some(pid) = app.selected_pid {
+        let start_region = app
+            .thread_detail
+            .as_ref()
+            .and_then(|detail| detail.start_region.clone());
+        match start_region {
+            Some(region) => {
+                app.tab = crate::app::Tab::Map;
+                app.select_region(pid, region);
+            }
+            None => {
+                if app.map.is_none() {
+                    app.start_map(pid);
+                    app.log.push(
+                        crate::log::LogLevel::Warn,
+                        "맵을 불러오는 중입니다. 잠시 후 다시 시도하세요",
+                    );
+                } else {
+                    app.log.push(
+                        crate::log::LogLevel::Warn,
+                        "이 스레드의 시작 영역을 맵에서 찾지 못했습니다",
+                    );
+                }
+            }
+        }
+    }
+
     match app.thread_detail_task.state() {
         TaskState::Running => {
             ui.horizontal(|ui| {
@@ -197,39 +313,8 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new("스레드를 클릭하면 상세 정보가 표시됩니다").weak());
         return;
     };
-    let pid = app.selected_pid;
     let thread = detail.thread.clone();
-    let start_region = detail.start_region.clone();
 
-    let mut close = false;
-    let mut copy: Option<String> = None;
-    let mut goto_map = false;
-    ui.horizontal(|ui| {
-        ui.strong(format!("TID {}", thread.tid));
-        ui.label(
-            egui::RichText::new(format!(
-                "{} · {} · {}",
-                thread
-                    .priority
-                    .map(|priority| format!("우선순위 {priority} ({})", priority_label(priority)))
-                    .unwrap_or_else(|| "우선순위 -".to_string()),
-                opt_hex(thread.start_address),
-                thread.start_module.as_deref().unwrap_or("-")
-            ))
-            .weak(),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.button("닫기").clicked() {
-                close = true;
-            }
-            if ui.button("맵에서 보기").clicked() {
-                goto_map = true;
-            }
-            if ui.button("요약 복사").clicked() {
-                copy = Some(thread_summary_text(detail));
-            }
-        });
-    });
     for note in &detail.notes {
         ui.label(egui::RichText::new(note).color(colors.warn));
     }
@@ -360,40 +445,6 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                     }
                 });
         });
-
-    if close {
-        app.thread_selected = None;
-        app.thread_detail = None;
-    }
-    if let Some(text) = copy {
-        ui.ctx().copy_text(text);
-        app.log.push(
-            crate::log::LogLevel::Info,
-            "스레드 요약을 클립보드에 복사했습니다",
-        );
-    }
-    if goto_map && let Some(pid) = pid {
-        match start_region {
-            Some(region) => {
-                app.tab = crate::app::Tab::Map;
-                app.select_region(pid, region);
-            }
-            None => {
-                if app.map.is_none() {
-                    app.start_map(pid);
-                    app.log.push(
-                        crate::log::LogLevel::Warn,
-                        "맵을 불러오는 중입니다. 잠시 후 다시 시도하세요",
-                    );
-                } else {
-                    app.log.push(
-                        crate::log::LogLevel::Warn,
-                        "이 스레드의 시작 영역을 맵에서 찾지 못했습니다",
-                    );
-                }
-            }
-        }
-    }
 }
 
 #[cfg(test)]

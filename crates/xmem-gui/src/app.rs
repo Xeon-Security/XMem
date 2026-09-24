@@ -141,6 +141,7 @@ pub struct XMemApp {
     pub findings: Option<Vec<xmem_core::Finding>>,
     pub detect_selected: Option<usize>,
     pub snapshot_output: String,
+    pub snapshot_output_pid: Option<u32>,
     pub snapshot_before: String,
     pub snapshot_after: String,
     pub snapshot_create_task: BackgroundTask<(u32, (String, u64))>,
@@ -148,6 +149,7 @@ pub struct XMemApp {
     pub snapshot_diff_task: BackgroundTask<xmem_forensics::SnapshotDiff>,
     pub snapshot_diff: Option<xmem_forensics::SnapshotDiff>,
     pub dump_output: String,
+    pub dump_output_pid: Option<u32>,
     pub dump_full: bool,
     pub dump_full_warning: Option<String>,
     pub dump_create_task: BackgroundTask<(u32, (String, u64))>,
@@ -165,6 +167,7 @@ pub struct XMemApp {
     )>,
     pub report_markdown: bool,
     pub report_output: String,
+    pub report_output_pid: Option<u32>,
     pub report_task: BackgroundTask<(u32, (String, u64))>,
     pub report_saved: Option<(String, u64)>,
     pub guide_query: String,
@@ -192,7 +195,7 @@ impl XMemApp {
             config,
             is_elevated: elevated,
             tab,
-            selected_pid: initial_pid,
+            selected_pid: None,
             log,
             list_task: BackgroundTask::idle(),
             process_filter: String::new(),
@@ -227,6 +230,7 @@ impl XMemApp {
             findings: None,
             detect_selected: None,
             snapshot_output: String::new(),
+            snapshot_output_pid: None,
             snapshot_before: String::new(),
             snapshot_after: String::new(),
             snapshot_create_task: BackgroundTask::idle(),
@@ -234,6 +238,7 @@ impl XMemApp {
             snapshot_diff_task: BackgroundTask::idle(),
             snapshot_diff: None,
             dump_output: String::new(),
+            dump_output_pid: None,
             dump_full: false,
             dump_full_warning: None,
             dump_create_task: BackgroundTask::idle(),
@@ -243,6 +248,7 @@ impl XMemApp {
             dump_analysis: None,
             report_markdown: false,
             report_output: String::new(),
+            report_output_pid: None,
             report_task: BackgroundTask::idle(),
             report_saved: None,
             guide_query: String::new(),
@@ -295,21 +301,25 @@ impl XMemApp {
     }
 
     pub fn select_process(&mut self, pid: u32) {
+        // 같은 프로세스를 다시 클릭해도 진행 중 태스크/상세 패널을 날리지 않는다.
+        if self.selected_pid == Some(pid) {
+            return;
+        }
         self.selected_pid = Some(pid);
-        // 이전 프로세스의 진행 중 태스크를 취소한다 — 새 프로세스의 자동 로딩을 막지 않도록.
-        self.map_task.cancel();
-        self.region_detail_task.cancel();
-        self.region_page_task.cancel();
-        self.modules_task.cancel();
-        self.module_detail_task.cancel();
-        self.threads_task.cancel();
-        self.thread_detail_task.cancel();
-        self.scan_task.cancel();
-        self.scan_preview_task.cancel();
-        self.detect_task.cancel();
-        self.snapshot_create_task.cancel();
-        self.dump_create_task.cancel();
-        self.report_task.cancel();
+        // 이전 프로세스의 진행 중 태스크를 취소하고 Idle로 되돌린다 — 새 프로세스의 자동 로딩을 막지 않도록.
+        self.map_task.reset();
+        self.region_detail_task.reset();
+        self.region_page_task.reset();
+        self.modules_task.reset();
+        self.module_detail_task.reset();
+        self.threads_task.reset();
+        self.thread_detail_task.reset();
+        self.scan_task.reset();
+        self.scan_preview_task.reset();
+        self.detect_task.reset();
+        self.snapshot_create_task.reset();
+        self.dump_create_task.reset();
+        self.report_task.reset();
         self.start_overview(pid);
         self.map = None;
         self.map_selected = None;
@@ -338,18 +348,25 @@ impl XMemApp {
         self.overview_info = None;
         self.overview_task = BackgroundTask::spawn("프로세스 정보", move |_| {
             Ok((pid, xmem_windows::process_info(pid)?))
-        });
+        })
+        .with_pid(pid);
     }
 
     pub fn start_map(&mut self, pid: u32) {
+        self.map_task.cancel();
+        self.region_detail_task.cancel();
         self.map = None;
         self.map_selected = None;
         self.region_detail = None;
         self.region_page_task.cancel();
         self.region_page_pending = None;
-        self.map_task = BackgroundTask::spawn("메모리맵", move |_| {
-            Ok((pid, xmem_memory::LiveProcess::open(pid)?.region_map()?))
-        });
+        self.map_task = BackgroundTask::spawn("메모리맵", move |cancel| {
+            Ok((
+                pid,
+                xmem_memory::LiveProcess::open(pid)?.region_map_cancellable(cancel)?,
+            ))
+        })
+        .with_pid(pid);
     }
 
     pub fn select_region(&mut self, pid: u32, region: xmem_core::MemoryRegion) {
@@ -443,7 +460,8 @@ impl XMemApp {
                 None
             };
             Ok((pid, ModuleBundle { modules, pe }))
-        });
+        })
+        .with_pid(pid);
     }
 
     pub fn start_threads(&mut self, pid: u32) {
@@ -452,7 +470,8 @@ impl XMemApp {
         self.thread_detail = None;
         self.threads_task = BackgroundTask::spawn("스레드", move |_| {
             Ok((pid, xmem_memory::LiveProcess::open(pid)?.threads()?))
-        });
+        })
+        .with_pid(pid);
     }
 
     pub fn select_thread(&mut self, pid: u32, thread: xmem_core::ThreadInfo) {
@@ -502,7 +521,8 @@ impl XMemApp {
         self.scan_task = BackgroundTask::spawn("검색", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
             Ok((pid, xmem_memory::scan(&live, &pattern, &options, cancel)?))
-        });
+        })
+        .with_pid(pid);
     }
 
     /// 매치 주변 미리보기 읽기를 UI 스레드 밖에서 수행한다.
@@ -551,12 +571,14 @@ impl XMemApp {
                     threads: &threads,
                 }),
             ))
-        });
+        })
+        .with_pid(pid);
     }
 
     pub fn start_snapshot_create(&mut self, pid: u32) {
         let trimmed = self.snapshot_output.trim();
-        let output = if trimmed.is_empty() {
+        // 다른 프로세스용으로 만든 기본 파일명이면 새 PID 기준으로 다시 만든다(덮어쓰기 방지).
+        let output = if trimmed.is_empty() || self.snapshot_output_pid != Some(pid) {
             crate::config::default_output_dir().join(crate::config::output_file_name(
                 "snapshot",
                 pid,
@@ -574,6 +596,7 @@ impl XMemApp {
             return;
         }
         self.snapshot_output = output.to_string_lossy().into_owned();
+        self.snapshot_output_pid = Some(pid);
         if let Some(dir) = output.parent() {
             self.config.last_output_dir = Some(dir.to_path_buf());
         }
@@ -604,7 +627,8 @@ impl XMemApp {
 
     pub fn start_dump_create(&mut self, pid: u32) {
         let trimmed = self.dump_output.trim();
-        let output = if trimmed.is_empty() {
+        // 다른 프로세스용으로 만든 기본 파일명이면 새 PID 기준으로 다시 만든다(덮어쓰기 방지).
+        let output = if trimmed.is_empty() || self.dump_output_pid != Some(pid) {
             crate::config::default_output_dir().join(crate::config::output_file_name(
                 "dump",
                 pid,
@@ -622,6 +646,7 @@ impl XMemApp {
             return;
         }
         self.dump_output = output.to_string_lossy().into_owned();
+        self.dump_output_pid = Some(pid);
         if let Some(dir) = output.parent() {
             self.config.last_output_dir = Some(dir.to_path_buf());
         }
@@ -651,7 +676,8 @@ impl XMemApp {
     pub fn start_report_save(&mut self, pid: u32) {
         let ext = if self.report_markdown { "md" } else { "json" };
         let trimmed = self.report_output.trim();
-        let output = if trimmed.is_empty() {
+        // 다른 프로세스용으로 만든 기본 파일명이면 새 PID 기준으로 다시 만든다(덮어쓰기 방지).
+        let output = if trimmed.is_empty() || self.report_output_pid != Some(pid) {
             crate::config::default_output_dir().join(crate::config::output_file_name(
                 "report",
                 pid,
@@ -669,6 +695,7 @@ impl XMemApp {
             return;
         }
         self.report_output = output.to_string_lossy().into_owned();
+        self.report_output_pid = Some(pid);
         if let Some(dir) = output.parent() {
             self.config.last_output_dir = Some(dir.to_path_buf());
         }

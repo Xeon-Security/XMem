@@ -256,6 +256,94 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
         return;
     };
     let colors = palette(app.theme);
+
+    let mut goto_page: Option<u64> = None;
+    let mut goto_allocation: Option<u64> = None;
+    let mut copy_text: Option<String> = None;
+    let mut run_detect = false;
+    let mut close = false;
+
+    // 헤더는 상태와 무관하게 항상 그린다 — 로딩/실패 중에도 닫을 수 있도록.
+    let header_region = app
+        .region_detail
+        .as_ref()
+        .map(|detail| detail.region.clone())
+        .or_else(|| {
+            let base = app.map_selected?;
+            app.map
+                .as_ref()?
+                .regions
+                .iter()
+                .find(|region| region.base == base)
+                .cloned()
+        });
+    ui.horizontal(|ui| {
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            if ui.small_button("닫기").clicked() {
+                close = true;
+            }
+            if ui.small_button("탐지 실행").clicked() {
+                run_detect = true;
+            }
+            if ui
+                .add_enabled(
+                    app.region_detail.is_some(),
+                    egui::Button::new("요약 복사").small(),
+                )
+                .clicked()
+                && let Some(detail) = app.region_detail.as_ref()
+            {
+                copy_text = Some(summary_text(&detail.region, detail.module.as_deref()));
+            }
+            if app.region_detail_task.is_running() {
+                ui.spinner();
+            }
+            ui.with_layout(egui::Layout::left_to_right(egui::Align::Center), |ui| {
+                match &header_region {
+                    Some(region) => {
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!("영역 {}", opt_hex(Some(region.base))))
+                                    .strong(),
+                            )
+                            .truncate(),
+                        );
+                        ui.add(
+                            egui::Label::new(
+                                egui::RichText::new(format!(
+                                    "{} · {} · {}",
+                                    human_size(region.size),
+                                    region.protection,
+                                    region.classification
+                                ))
+                                .weak(),
+                            )
+                            .truncate(),
+                        );
+                    }
+                    None => {
+                        ui.strong("영역 상세");
+                    }
+                }
+            });
+        });
+    });
+
+    if close {
+        app.map_selected = None;
+        app.region_detail = None;
+        app.region_page_task.cancel();
+    }
+    if run_detect {
+        app.tab = Tab::Detect;
+        app.start_detect(pid);
+    }
+    if let Some(text) = copy_text {
+        ui.ctx().copy_text(text);
+        app.log
+            .push(LogLevel::Info, "영역 요약을 클립보드에 복사했습니다");
+    }
+
     match app.region_detail_task.state() {
         TaskState::Running => {
             ui.horizontal(|ui| {
@@ -281,36 +369,6 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new("표에서 영역을 클릭하면 상세 정보가 표시됩니다").weak());
         return;
     };
-
-    let mut goto_page: Option<u64> = None;
-    let mut goto_allocation: Option<u64> = None;
-    let mut copy_text: Option<String> = None;
-    let mut run_detect = false;
-    let mut close = false;
-
-    ui.horizontal(|ui| {
-        ui.strong(format!("영역 {}", opt_hex(Some(detail.region.base))));
-        ui.label(
-            egui::RichText::new(format!(
-                "{} · {} · {}",
-                human_size(detail.region.size),
-                detail.region.protection,
-                detail.region.classification
-            ))
-            .weak(),
-        );
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button("닫기").clicked() {
-                close = true;
-            }
-            if ui.small_button("탐지 실행").clicked() {
-                run_detect = true;
-            }
-            if ui.small_button("요약 복사").clicked() {
-                copy_text = Some(summary_text(&detail.region, detail.module.as_deref()));
-            }
-        });
-    });
 
     for note in &detail.notes {
         ui.colored_label(colors.warn, format!("주의: {note}"));
@@ -498,18 +556,31 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                     }
                     let first = region.base;
                     let last = last_page_start(region);
+                    let page_running = app.region_page_task.is_running();
                     ui.horizontal(|ui| {
-                        if ui.small_button("|◀ 처음").clicked() {
+                        if ui
+                            .add_enabled(!page_running, egui::Button::new("|◀ 처음").small())
+                            .clicked()
+                        {
                             goto_page = Some(first);
                         }
-                        if ui.small_button("◀ 이전").clicked() {
+                        if ui
+                            .add_enabled(!page_running, egui::Button::new("◀ 이전").small())
+                            .clicked()
+                        {
                             goto_page =
                                 Some(detail.page_start.saturating_sub(PAGE_SIZE).max(first));
                         }
-                        if ui.small_button("다음 ▶").clicked() {
+                        if ui
+                            .add_enabled(!page_running, egui::Button::new("다음 ▶").small())
+                            .clicked()
+                        {
                             goto_page = Some((detail.page_start + PAGE_SIZE).min(last));
                         }
-                        if ui.small_button("끝 ▶|").clicked() {
+                        if ui
+                            .add_enabled(!page_running, egui::Button::new("끝 ▶|").small())
+                            .clicked()
+                        {
                             goto_page = Some(last);
                         }
                         ui.label(
@@ -520,7 +591,7 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                             ))
                             .weak(),
                         );
-                        if app.region_page_task.is_running() {
+                        if page_running {
                             ui.spinner();
                         }
                     });
@@ -545,19 +616,6 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                 });
         });
 
-    if close {
-        app.map_selected = None;
-        app.region_detail = None;
-    }
-    if run_detect {
-        app.tab = Tab::Detect;
-        app.start_detect(pid);
-    }
-    if let Some(text) = copy_text {
-        ui.ctx().copy_text(text);
-        app.log
-            .push(LogLevel::Info, "영역 요약을 클립보드에 복사했습니다");
-    }
     if let Some(address) = goto_page
         && let Some(region) = app
             .region_detail

@@ -23,6 +23,7 @@ pub struct BackgroundTask<T> {
     state: TaskState<T>,
     cancel: Arc<AtomicBool>,
     rx: Option<Receiver<TaskMessage<T>>>,
+    pid: Option<u32>,
 }
 
 impl<T: Send + 'static> BackgroundTask<T> {
@@ -32,6 +33,7 @@ impl<T: Send + 'static> BackgroundTask<T> {
             state: TaskState::Idle,
             cancel: Arc::new(AtomicBool::new(false)),
             rx: None,
+            pid: None,
         }
     }
 
@@ -54,7 +56,18 @@ impl<T: Send + 'static> BackgroundTask<T> {
             state: TaskState::Running,
             cancel,
             rx: Some(rx),
+            pid: None,
         }
+    }
+
+    /// 실패 배너 분류에 쓸 대상 PID를 기록한다.
+    pub fn with_pid(mut self, pid: u32) -> Self {
+        self.pid = Some(pid);
+        self
+    }
+
+    pub fn pid(&self) -> Option<u32> {
+        self.pid
     }
 
     pub fn label(&self) -> &str {
@@ -71,6 +84,14 @@ impl<T: Send + 'static> BackgroundTask<T> {
 
     pub fn cancel(&self) {
         self.cancel.store(true, Ordering::Relaxed);
+    }
+
+    /// Idle로 되돌리고 취소 플래그를 세운다. 진행 중 워커의 결과는 버려진다
+    /// (수신 채널을 끊으므로 늦게 도착한 결과는 무시된다).
+    pub fn reset(&mut self) {
+        self.cancel.store(true, Ordering::Relaxed);
+        self.rx = None;
+        self.state = TaskState::Idle;
     }
 
     /// 논블로킹으로 결과를 반영한다. 상태가 바뀌면 true.

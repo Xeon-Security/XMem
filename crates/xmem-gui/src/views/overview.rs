@@ -66,8 +66,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     }
     match app.overview_task.state() {
         TaskState::Failed(err) => {
-            let failure = classify_open_failure(err, app.is_elevated, pid);
-            failure_banner(ui, app, &failure);
+            let failure =
+                classify_open_failure(err, app.is_elevated, app.overview_task.pid().unwrap_or(pid));
+            failure_banner(ui, app, &failure, |app| app.start_overview(pid));
             return;
         }
         TaskState::Cancelled => {
@@ -94,26 +95,55 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         });
     ui.add_space(8.0);
     ui.horizontal(|ui| {
-        if ui.button("탐지 실행").clicked() {
+        if ui
+            .add_enabled(
+                !app.detect_task.is_running(),
+                egui::Button::new("탐지 실행"),
+            )
+            .clicked()
+        {
             app.tab = crate::app::Tab::Detect;
             app.start_detect(pid);
         }
-        if ui.button("스냅샷 생성").clicked() {
+        if ui
+            .add_enabled(
+                !app.snapshot_create_task.is_running(),
+                egui::Button::new("스냅샷 생성"),
+            )
+            .clicked()
+        {
             app.tab = crate::app::Tab::Snapshot;
             app.start_snapshot_create(pid);
         }
-        if ui.button("덤프 생성").clicked() {
+        if ui
+            .add_enabled(
+                !app.dump_create_task.is_running(),
+                egui::Button::new("덤프 생성"),
+            )
+            .clicked()
+        {
             app.tab = crate::app::Tab::Dump;
             app.start_dump_create(pid);
         }
-        if ui.button("리포트 저장").clicked() {
+        if ui
+            .add_enabled(
+                !app.report_task.is_running(),
+                egui::Button::new("리포트 저장"),
+            )
+            .clicked()
+        {
             app.tab = crate::app::Tab::Report;
             app.start_report_save(pid);
         }
     });
 }
 
-pub fn failure_banner(ui: &mut egui::Ui, app: &mut XMemApp, failure: &OpenFailure) {
+pub fn failure_banner(
+    ui: &mut egui::Ui,
+    app: &mut XMemApp,
+    failure: &OpenFailure,
+    retry: impl FnOnce(&mut XMemApp),
+) {
     let palette = crate::theme::palette(app.theme);
     ui.label(egui::RichText::new(failure.message()).color(palette.danger));
     ui.horizontal(|ui| {
@@ -121,10 +151,8 @@ pub fn failure_banner(ui: &mut egui::Ui, app: &mut XMemApp, failure: &OpenFailur
         {
             app.restart_elevated();
         }
-        if let Some(pid) = app.selected_pid
-            && ui.button("다시 시도").clicked()
-        {
-            app.select_process(pid);
+        if ui.button("다시 시도").clicked() {
+            retry(app);
         }
     });
 }
