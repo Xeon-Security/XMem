@@ -4827,7 +4827,7 @@ checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "xmem-cli"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "anyhow",
  "chrono",
@@ -4847,7 +4847,7 @@ dependencies = [
 
 [[package]]
 name = "xmem-core"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -4856,14 +4856,14 @@ dependencies = [
 
 [[package]]
 name = "xmem-detection"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "xmem-core",
 ]
 
 [[package]]
 name = "xmem-experiments"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde",
  "serde_json",
@@ -4877,7 +4877,7 @@ dependencies = [
 
 [[package]]
 name = "xmem-forensics"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "blake3",
  "chrono",
@@ -4892,7 +4892,7 @@ dependencies = [
 
 [[package]]
 name = "xmem-gui"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "chrono",
  "eframe",
@@ -4912,7 +4912,7 @@ dependencies = [
 
 [[package]]
 name = "xmem-memory"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "rayon",
  "serde",
@@ -4924,7 +4924,7 @@ dependencies = [
 
 [[package]]
 name = "xmem-pe"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "goblin",
  "serde",
@@ -4933,7 +4933,7 @@ dependencies = [
 
 [[package]]
 name = "xmem-target"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "serde_json",
  "xmem-core",
@@ -4946,7 +4946,7 @@ dependencies = [
 
 [[package]]
 name = "xmem-windows"
-version = "0.1.8"
+version = "0.1.9"
 dependencies = [
  "windows",
  "xmem-core",
