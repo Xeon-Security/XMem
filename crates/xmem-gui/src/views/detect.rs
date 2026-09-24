@@ -67,6 +67,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         crate::views::truncate_cells(ui);
         egui_extras::TableBuilder::new(ui)
+            .min_scrolled_height(0.0)
             .striped(true)
             .sense(egui::Sense::click())
             .column(egui_extras::Column::exact(90.0))
@@ -139,6 +140,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         if !finding.evidence.is_empty() {
             crate::views::truncate_cells(ui);
             egui_extras::TableBuilder::new(ui)
+                .min_scrolled_height(0.0)
                 .striped(true)
                 .column(egui_extras::Column::exact(130.0))
                 .column(egui_extras::Column::exact(250.0))

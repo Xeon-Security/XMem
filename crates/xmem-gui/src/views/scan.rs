@@ -233,6 +233,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         let selected = app.scan_state.selected_match;
         crate::views::truncate_cells(ui);
         egui_extras::TableBuilder::new(ui)
+            .min_scrolled_height(0.0)
             .striped(true)
             .sense(egui::Sense::click())
             .column(egui_extras::Column::exact(150.0))

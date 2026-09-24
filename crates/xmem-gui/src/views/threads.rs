@@ -46,6 +46,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let mut clicked_thread: Option<xmem_core::ThreadInfo> = None;
     crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
+        .min_scrolled_height(0.0)
         .striped(true)
         .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(70.0))

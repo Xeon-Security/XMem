@@ -89,6 +89,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let mut clicked_module: Option<ModuleInfo> = None;
     crate::views::truncate_cells(ui);
     let mut builder = egui_extras::TableBuilder::new(ui)
+        .min_scrolled_height(0.0)
         .striped(true)
         .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(140.0))

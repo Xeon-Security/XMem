@@ -161,6 +161,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let mut clicked_region: Option<MemoryRegion> = None;
     crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
+        .min_scrolled_height(0.0)
         .striped(true)
         .drag_to_scroll(egui::scroll_area::DragScroll::Never)
         .sense(egui::Sense::click())
