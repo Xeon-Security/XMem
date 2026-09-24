@@ -114,7 +114,7 @@ pub fn build_options(state: &ScanUiState) -> ScanOptions {
         },
         chunk_size: DEFAULT_CHUNK_SIZE,
         threads: state.threads.max(1),
-        max_results: state.max_results,
+        max_results: state.max_results.max(1),
         offset: None,
     }
 }
@@ -148,12 +148,16 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new("왼쪽에서 프로세스를 선택하세요").weak());
         return;
     };
+    let mut submit = false;
     ui.horizontal(|ui| {
         ui.label("검색어");
-        ui.add(
+        let needle = ui.add(
             egui::TextEdit::singleline(&mut app.scan_state.needle)
                 .hint_text("pwsh / 48 8B ?? ?? / 문자열"),
         );
+        if needle.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            submit = true;
+        }
         ui.label("형식");
         ui.radio_value(&mut app.scan_state.kind, NeedleKind::Pattern, "패턴(hex)");
         ui.radio_value(&mut app.scan_state.kind, NeedleKind::Ascii, "ASCII");
@@ -164,10 +168,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.checkbox(&mut app.scan_state.private_only, "Private만");
         ui.checkbox(&mut app.scan_state.writable_only, "쓰기 가능만");
         ui.separator();
-        ui.label("최대 결과");
+        ui.label("최대 결과")
+            .on_hover_text("최대 결과 수 (최대 1,000,000)");
         ui.add(
             egui::DragValue::new(&mut app.scan_state.max_results)
-                .range(0..=1_000_000)
+                .range(1..=1_000_000)
                 .speed(8.0),
         );
         ui.label("스레드");
@@ -179,10 +184,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     });
     ui.horizontal(|ui| {
         let running = app.scan_task.is_running();
-        if ui
+        let clicked = ui
             .add_enabled(!running, egui::Button::new("검색"))
-            .clicked()
-        {
+            .clicked();
+        if (clicked || submit) && !running {
             app.start_scan(pid);
         }
         if running {

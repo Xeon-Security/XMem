@@ -21,9 +21,17 @@ fn parse_pid_arg(args: &[String]) -> Option<u32> {
 }
 
 fn load_korean_font(ctx: &egui::Context) {
-    let path = std::path::Path::new("C:\\Windows\\Fonts\\malgun.ttf");
-    let Ok(bytes) = std::fs::read(path) else {
-        tracing::warn!("맑은 고딕을 찾지 못해 기본 폰트를 사용합니다");
+    const CANDIDATES: [&str; 4] = ["malgun.ttf", "gulim.ttc", "Dotum.ttf", "batang.ttc"];
+    let fonts_dir = std::path::Path::new("C:\\Windows\\Fonts");
+    let mut bytes = None;
+    for name in CANDIDATES {
+        if let Ok(data) = std::fs::read(fonts_dir.join(name)) {
+            bytes = Some(data);
+            break;
+        }
+    }
+    let Some(bytes) = bytes else {
+        tracing::warn!("한글 폰트를 찾지 못해 기본 폰트를 사용합니다");
         return;
     };
     let mut fonts = egui::FontDefinitions::default();

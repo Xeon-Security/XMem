@@ -11,7 +11,13 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         return;
     };
     ui.horizontal(|ui| {
-        if ui.button("스레드 새로고침").clicked() {
+        if ui
+            .add_enabled(
+                !app.threads_task.is_running(),
+                egui::Button::new("스레드 새로고침"),
+            )
+            .clicked()
+        {
             app.start_threads(pid);
         }
         if app.threads_task.is_running() {

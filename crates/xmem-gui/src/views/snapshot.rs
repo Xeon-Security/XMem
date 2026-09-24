@@ -34,7 +34,7 @@ pub fn create_snapshot_file(pid: u32, output: &Path, cancel: &AtomicBool) -> Res
 }
 
 fn short_hash(hash: &str) -> &str {
-    &hash[..hash.len().min(16)]
+    hash.get(..16).unwrap_or(hash)
 }
 
 /// CLI `render_diff`와 같은 라인 포맷의 요약 텍스트.
@@ -172,8 +172,13 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 .add_filter("XMem snapshot", &["xmem"])
                 .set_file_name(&name)
                 .set_directory(&dir);
-            if !app.snapshot_output.trim().is_empty() {
-                dialog = dialog.set_file_name(app.snapshot_output.trim());
+            let current = app.snapshot_output.trim();
+            if !current.is_empty() {
+                let file_name = std::path::Path::new(current)
+                    .file_name()
+                    .map(|file_name| file_name.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| name.clone());
+                dialog = dialog.set_file_name(file_name);
             }
             if let Some(path) = dialog.save_file() {
                 app.snapshot_output = path.to_string_lossy().into_owned();
@@ -205,13 +210,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     }
     ui.separator();
     ui.label(egui::RichText::new("스냅샷 비교").strong());
+    let mut compare_submit = false;
     ui.horizontal(|ui| {
         ui.label("이전");
-        ui.add(
+        let input = ui.add(
             egui::TextEdit::singleline(&mut app.snapshot_before)
                 .hint_text("before.xmem")
                 .desired_width(320.0),
         );
+        if input.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            compare_submit = true;
+        }
         if ui.button("열기").clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .add_filter("XMem snapshot", &["xmem"])
@@ -222,11 +231,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     });
     ui.horizontal(|ui| {
         ui.label("이후");
-        ui.add(
+        let input = ui.add(
             egui::TextEdit::singleline(&mut app.snapshot_after)
                 .hint_text("after.xmem")
                 .desired_width(320.0),
         );
+        if input.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            compare_submit = true;
+        }
         if ui.button("열기").clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .add_filter("XMem snapshot", &["xmem"])
@@ -237,10 +249,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     });
     ui.horizontal(|ui| {
         let running = app.snapshot_diff_task.is_running();
-        if ui
+        let clicked = ui
             .add_enabled(!running, egui::Button::new("비교"))
-            .clicked()
-        {
+            .clicked();
+        if (clicked || compare_submit) && !running {
             app.start_snapshot_diff();
         }
         if running {

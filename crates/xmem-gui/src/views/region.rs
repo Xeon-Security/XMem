@@ -37,7 +37,9 @@ pub fn page_count(region: &MemoryRegion) -> u64 {
 }
 
 pub fn last_page_start(region: &MemoryRegion) -> u64 {
-    region.base + region.size.saturating_sub(1) / PAGE_SIZE * PAGE_SIZE
+    region
+        .base
+        .saturating_add(region.size.saturating_sub(1) / PAGE_SIZE * PAGE_SIZE)
 }
 
 pub fn clamp_page(address: u64, region: &MemoryRegion) -> u64 {
@@ -280,6 +282,7 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
     };
 
     let mut goto_page: Option<u64> = None;
+    let mut goto_allocation: Option<u64> = None;
     let mut copy_text: Option<String> = None;
     let mut run_detect = false;
     let mut close = false;
@@ -343,7 +346,7 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                             field(ui, "할당 내 오프셋", format!("{offset:#x}"));
                             if offset > 0 && ui.small_button("할당 시작으로 이동").clicked()
                             {
-                                goto_page = Some(allocation);
+                                goto_allocation = Some(allocation);
                             }
                         }
                         None => field(ui, "할당 시작", "-"),
@@ -559,6 +562,30 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
         detail.page_start = page;
         detail.page_bytes = bytes;
         detail.page_error = error;
+    }
+    if let Some(allocation) = goto_allocation {
+        // 할당 시작 주소는 현재 영역 밖일 수 있으므로, 그 주소를 포함하는 영역을 찾아 이동한다.
+        let target = app.map.as_ref().and_then(|map| {
+            map.regions
+                .iter()
+                .find(|region| contains(region.base, region.size, allocation))
+                .cloned()
+        });
+        match target {
+            Some(region) => app.select_region(pid, region),
+            None => {
+                if app.map.is_none() {
+                    app.start_map(pid);
+                    app.log.push(
+                        LogLevel::Warn,
+                        "맵을 불러오는 중입니다. 잠시 후 다시 시도하세요",
+                    );
+                } else {
+                    app.log
+                        .push(LogLevel::Warn, "할당 시작 주소를 맵에서 찾지 못했습니다");
+                }
+            }
+        }
     }
 }
 

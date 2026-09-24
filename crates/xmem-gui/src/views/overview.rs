@@ -96,15 +96,19 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     ui.horizontal(|ui| {
         if ui.button("탐지 실행").clicked() {
             app.tab = crate::app::Tab::Detect;
+            app.start_detect(pid);
         }
         if ui.button("스냅샷 생성").clicked() {
             app.tab = crate::app::Tab::Snapshot;
+            app.start_snapshot_create(pid);
         }
         if ui.button("덤프 생성").clicked() {
             app.tab = crate::app::Tab::Dump;
+            app.start_dump_create(pid);
         }
         if ui.button("리포트 저장").clicked() {
             app.tab = crate::app::Tab::Report;
+            app.start_report_save(pid);
         }
     });
 }

@@ -48,14 +48,26 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         return;
     };
     ui.horizontal(|ui| {
-        if ui.button("모듈 새로고침").clicked() {
+        if ui
+            .add_enabled(
+                !app.modules_task.is_running(),
+                egui::Button::new("모듈 새로고침"),
+            )
+            .clicked()
+        {
             app.start_modules(pid);
         }
         if app.modules_task.is_running() {
             ui.spinner();
         }
         let mut pe = app.modules_pe;
-        if ui.checkbox(&mut pe, "PE 요약").changed() {
+        if ui
+            .add_enabled(
+                !app.modules_task.is_running(),
+                egui::Checkbox::new(&mut pe, "PE 요약"),
+            )
+            .changed()
+        {
             app.modules_pe = pe;
             app.start_modules(pid);
         }

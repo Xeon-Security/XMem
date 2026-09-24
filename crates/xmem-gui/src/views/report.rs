@@ -41,13 +41,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.radio_value(&mut app.report_markdown, false, "JSON");
         ui.radio_value(&mut app.report_markdown, true, "Markdown");
     });
+    let mut save_submit = false;
     ui.horizontal(|ui| {
         ui.label("출력:");
-        ui.add(
+        let output = ui.add(
             egui::TextEdit::singleline(&mut app.report_output)
                 .desired_width(320.0)
                 .hint_text("비우면 Documents\\XMem 아래 기본 이름"),
         );
+        if output.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            save_submit = true;
+        }
         if ui.button("찾아보기").clicked() {
             let (ext, label) = if app.report_markdown {
                 ("md", "Markdown")
@@ -75,16 +79,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
     });
     ui.horizontal(|ui| {
-        if ui
-            .add_enabled(
-                !app.report_task.is_running(),
-                egui::Button::new("리포트 저장"),
-            )
-            .clicked()
-        {
+        let running = app.report_task.is_running();
+        let clicked = ui
+            .add_enabled(!running, egui::Button::new("리포트 저장"))
+            .clicked();
+        if (clicked || save_submit) && !running {
             app.start_report_save(pid);
         }
-        if app.report_task.is_running() {
+        if running {
             ui.spinner();
             ui.label("수집 및 저장 중...");
         }

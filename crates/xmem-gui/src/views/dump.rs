@@ -27,12 +27,25 @@ pub fn full_dump_blocked(commit_bytes: u64, free_bytes: u64) -> Option<String> {
     }
 }
 
-/// 현재 기본 출력 위치 기준 --full 사전 검사(체크박스 토글 시 1회 호출).
-pub fn full_dump_warning(pid: u32) -> Option<String> {
+/// 지정한 출력 디렉터리 기준 --full 사전 검사.
+pub fn full_dump_warning(pid: u32, output_dir: &Path) -> Option<String> {
     let info = process_info(pid).ok()?;
     let commit = info.memory_stats.as_ref().map(|s| s.commit).unwrap_or(0);
-    let free = free_space_bytes(&crate::config::default_output_dir().to_string_lossy()).ok()?;
+    let free = free_space_bytes(&output_dir.to_string_lossy()).ok()?;
     full_dump_blocked(commit, free)
+}
+
+/// 출력 경로에서 검사에 쓸 디렉터리를 고른다(비어 있으면 기본 출력 위치).
+fn output_dir(app: &XMemApp) -> std::path::PathBuf {
+    let trimmed = app.dump_output.trim();
+    if trimmed.is_empty() {
+        return crate::config::default_output_dir();
+    }
+    std::path::PathBuf::from(trimmed)
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+        .map(Path::to_path_buf)
+        .unwrap_or_else(crate::config::default_output_dir)
 }
 
 pub fn create_dump_file(pid: u32, output: &Path, full: bool) -> Result<u64> {
@@ -117,8 +130,13 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         .changed()
     {
         app.dump_full = full;
-        app.dump_full_warning = if full { full_dump_warning(pid) } else { None };
     }
+    let warning_dir = output_dir(app);
+    app.dump_full_warning = if app.dump_full {
+        full_dump_warning(pid, &warning_dir)
+    } else {
+        None
+    };
     if let Some(warning) = app.dump_full_warning.clone() {
         ui.label(egui::RichText::new(warning).color(colors.danger));
     }
@@ -150,13 +168,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
 
     ui.separator();
     ui.label(egui::RichText::new("덤프 분석").strong());
+    let mut analyze_submit = false;
     ui.horizontal(|ui| {
         ui.label("파일:");
-        ui.add(
+        let input = ui.add(
             egui::TextEdit::singleline(&mut app.dump_analyze_input)
                 .desired_width(320.0)
                 .hint_text("분석할 .dmp 파일 경로"),
         );
+        if input.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+            analyze_submit = true;
+        }
         if ui.button("열기").clicked()
             && let Some(path) = rfd::FileDialog::new()
                 .add_filter("Minidump", &["dmp"])
@@ -166,16 +188,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
     });
     ui.horizontal(|ui| {
-        if ui
-            .add_enabled(
-                !app.dump_analyze_task.is_running(),
-                egui::Button::new("분석"),
-            )
-            .clicked()
-        {
+        let running = app.dump_analyze_task.is_running();
+        let clicked = ui
+            .add_enabled(!running, egui::Button::new("분석"))
+            .clicked();
+        if (clicked || analyze_submit) && !running {
             app.start_dump_analyze();
         }
-        if app.dump_analyze_task.is_running() {
+        if running {
             ui.spinner();
         }
     });

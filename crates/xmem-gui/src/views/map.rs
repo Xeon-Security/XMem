@@ -98,7 +98,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         return;
     };
     ui.horizontal(|ui| {
-        if ui.button("맵 새로고침").clicked() {
+        if ui
+            .add_enabled(!app.map_task.is_running(), egui::Button::new("맵 새로고침"))
+            .clicked()
+        {
             app.start_map(pid);
         }
         if app.map_task.is_running() {

@@ -3,6 +3,7 @@
 use xmem_core::ProcessInfo;
 
 use crate::app::XMemApp;
+use crate::task::TaskState;
 
 pub fn filter_processes(list: &[ProcessInfo], query: &str) -> Vec<usize> {
     let query = query.trim().to_lowercase();
@@ -21,13 +22,30 @@ pub fn filter_processes(list: &[ProcessInfo], query: &str) -> Vec<usize> {
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     ui.horizontal(|ui| {
         ui.label("프로세스");
-        if ui.small_button("새로고침").clicked() {
+        if ui
+            .add_enabled(
+                !app.list_task.is_running(),
+                egui::Button::new("새로고침").small(),
+            )
+            .clicked()
+        {
             app.refresh_processes();
         }
         if app.list_task.is_running() {
             ui.spinner();
         }
     });
+    let list_failure = match app.list_task.state() {
+        TaskState::Failed(err) => Some(crate::error::error_label(err)),
+        _ => None,
+    };
+    if let Some(message) = list_failure {
+        ui.label(egui::RichText::new(message).color(crate::theme::palette(app.theme).danger));
+        if ui.button("다시 시도").clicked() {
+            app.refresh_processes();
+        }
+        return;
+    }
     ui.add(
         egui::TextEdit::singleline(&mut app.process_filter)
             .hint_text("이름 또는 PID 검색")
@@ -108,6 +126,7 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
             .selected_text(selected_text)
             .show_ui(ui, |ui| {
                 let filtered = filter_processes(&app.processes, &app.process_filter);
+                let filtered_len = filtered.len();
                 for index in filtered.into_iter().take(200) {
                     let (name, pid) = (app.processes[index].name.clone(), app.processes[index].pid);
                     let selected = app.selected_pid == Some(pid);
@@ -118,11 +137,24 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
                         app.select_process(pid);
                     }
                 }
+                if filtered_len > 200 {
+                    ui.label(egui::RichText::new("상위 200개만 표시 (필터를 사용하세요)").weak());
+                }
             });
         if app.list_task.is_running() {
             ui.spinner();
         }
     });
+    let list_failure = match app.list_task.state() {
+        TaskState::Failed(err) => Some(crate::error::error_label(err)),
+        _ => None,
+    };
+    if let Some(message) = list_failure {
+        ui.label(egui::RichText::new(message).color(crate::theme::palette(app.theme).danger));
+        if ui.button("다시 시도").clicked() {
+            app.refresh_processes();
+        }
+    }
 }
 
 #[cfg(test)]

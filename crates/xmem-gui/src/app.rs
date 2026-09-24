@@ -288,6 +288,18 @@ impl XMemApp {
 
     pub fn select_process(&mut self, pid: u32) {
         self.selected_pid = Some(pid);
+        // 이전 프로세스의 진행 중 태스크를 취소한다 — 새 프로세스의 자동 로딩을 막지 않도록.
+        self.map_task.cancel();
+        self.region_detail_task.cancel();
+        self.modules_task.cancel();
+        self.module_detail_task.cancel();
+        self.threads_task.cancel();
+        self.thread_detail_task.cancel();
+        self.scan_task.cancel();
+        self.detect_task.cancel();
+        self.snapshot_create_task.cancel();
+        self.dump_create_task.cancel();
+        self.report_task.cancel();
         self.start_overview(pid);
         self.map = None;
         self.map_selected = None;
@@ -307,6 +319,7 @@ impl XMemApp {
         self.snapshot_diff = None;
         self.dump_created = None;
         self.dump_analysis = None;
+        self.dump_full_warning = None;
         self.report_saved = None;
     }
 
@@ -651,7 +664,10 @@ impl eframe::App for XMemApp {
             let size = ctx.input(|i| i.viewport_rect().size());
             self.config.window_width = size.x;
             self.config.window_height = size.y;
-            let _ = crate::config::save(&self.config);
+            if let Err(err) = crate::config::save(&self.config) {
+                self.log
+                    .push(LogLevel::Warn, format!("설정 저장 실패: {err}"));
+            }
         }
         let palette = theme::palette(self.theme);
 
@@ -682,7 +698,10 @@ impl eframe::App for XMemApp {
                     };
                     self.config.theme = self.theme;
                     theme::apply(&ctx, self.theme);
-                    let _ = crate::config::save(&self.config);
+                    if let Err(err) = crate::config::save(&self.config) {
+                        self.log
+                            .push(LogLevel::Warn, format!("설정 저장 실패: {err}"));
+                    }
                 }
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(egui::RichText::new(format!("v{}", xmem_core::VERSION)).weak());
@@ -696,7 +715,7 @@ impl eframe::App for XMemApp {
         });
 
         egui::Panel::bottom(egui::Id::new("log")).show(ui, |ui| {
-            crate::views::log::ui(ui, &mut self.log);
+            crate::views::log::ui(ui, &mut self.log, self.theme);
         });
 
         let narrow = ui.ctx().input(|i| i.viewport_rect().width()) < 900.0;
@@ -723,24 +742,33 @@ impl eframe::App for XMemApp {
             }
             ui.separator();
             if let Some(pid) = self.selected_pid {
-                // Idle일 때만 자동 시작한다 — 실패/취소된 태스크를 매 프레임 다시 시작하면
+                // Idle/취소 상태일 때만 자동 시작한다 — 실패한 태스크를 매 프레임 다시 시작하면
                 // 오류가 화면에 남지 않고 CPU만 소모된다.
                 match self.tab {
                     Tab::Map
                         if self.map.is_none()
-                            && matches!(self.map_task.state(), TaskState::Idle) =>
+                            && matches!(
+                                self.map_task.state(),
+                                TaskState::Idle | TaskState::Cancelled
+                            ) =>
                     {
                         self.start_map(pid);
                     }
                     Tab::Modules
                         if self.modules_bundle.is_none()
-                            && matches!(self.modules_task.state(), TaskState::Idle) =>
+                            && matches!(
+                                self.modules_task.state(),
+                                TaskState::Idle | TaskState::Cancelled
+                            ) =>
                     {
                         self.start_modules(pid);
                     }
                     Tab::Threads
                         if self.threads.is_none()
-                            && matches!(self.threads_task.state(), TaskState::Idle) =>
+                            && matches!(
+                                self.threads_task.state(),
+                                TaskState::Idle | TaskState::Cancelled
+                            ) =>
                     {
                         self.start_threads(pid);
                     }
