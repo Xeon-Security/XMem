@@ -4,7 +4,7 @@ use xmem_core::XmemError;
 
 use crate::config::GuiConfig;
 use crate::log::{LogBuffer, LogLevel};
-use crate::task::BackgroundTask;
+use crate::task::{BackgroundTask, TaskState};
 use crate::theme::{self, ThemeMode};
 use crate::views::map::MapSort;
 use crate::views::module::ModuleDetail;
@@ -723,16 +723,25 @@ impl eframe::App for XMemApp {
             }
             ui.separator();
             if let Some(pid) = self.selected_pid {
+                // Idle일 때만 자동 시작한다 — 실패/취소된 태스크를 매 프레임 다시 시작하면
+                // 오류가 화면에 남지 않고 CPU만 소모된다.
                 match self.tab {
-                    Tab::Map if self.map.is_none() && !self.map_task.is_running() => {
+                    Tab::Map
+                        if self.map.is_none()
+                            && matches!(self.map_task.state(), TaskState::Idle) =>
+                    {
                         self.start_map(pid);
                     }
                     Tab::Modules
-                        if self.modules_bundle.is_none() && !self.modules_task.is_running() =>
+                        if self.modules_bundle.is_none()
+                            && matches!(self.modules_task.state(), TaskState::Idle) =>
                     {
                         self.start_modules(pid);
                     }
-                    Tab::Threads if self.threads.is_none() && !self.threads_task.is_running() => {
+                    Tab::Threads
+                        if self.threads.is_none()
+                            && matches!(self.threads_task.state(), TaskState::Idle) =>
+                    {
                         self.start_threads(pid);
                     }
                     _ => {}

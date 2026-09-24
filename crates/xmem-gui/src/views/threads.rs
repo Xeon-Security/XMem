@@ -47,7 +47,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
         .striped(true)
-        .resizable(true)
         .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(70.0))
         .column(egui_extras::Column::exact(80.0))
@@ -65,22 +64,34 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             body.rows(20.0, threads.len(), |mut row| {
                 let thread = &threads[row.index()];
                 row.set_selected(selected_tid == Some(thread.tid));
+                let mut row_clicked = false;
                 row.col(|ui| {
-                    ui.label(thread.tid.to_string());
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(thread.tid.to_string()));
                 });
                 row.col(|ui| {
-                    ui.label(opt_num(thread.priority));
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(opt_num(thread.priority)));
                 });
                 row.col(|ui| {
-                    ui.label(opt_hex(thread.start_address));
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(opt_hex(thread.start_address)),
+                    );
                 });
                 row.col(|ui| {
-                    ui.label(opt_hex(thread.start_region_base));
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(opt_hex(thread.start_region_base)),
+                    );
                 });
                 row.col(|ui| {
-                    ui.label(thread.start_module.as_deref().unwrap_or("-"));
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(thread.start_module.as_deref().unwrap_or("-")),
+                    );
                 });
-                if row.response().clicked() {
+                if row_clicked {
                     clicked_thread = Some(thread.clone());
                 }
             });

@@ -54,6 +54,26 @@ pub fn truncate_cells(ui: &mut egui::Ui) {
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
 }
 
+/// 표 행 높이(px). 셀 내용도 이 높이에 맞춘다.
+pub const ROW_HEIGHT: f32 = 20.0;
+
+/// 표 셀을 한 줄 고정 높이로 그린다. 셀 영역이 클릭되면 `true`를 돌려준다.
+///
+/// 셀 내용이 길어 줄바꿈되면 셀 min_rect가 행 높이를 넘겨 행 클릭 영역이 어긋난다.
+/// 또한 egui_extras 셀 위젯은 포인터가 셀 안에 있어도 히트테스트에서 제외되어
+/// hover/click이 잡히지 않으므로, 입력에서 직접 클릭을 판정한다.
+pub fn table_cell(ui: &mut egui::Ui, text: egui::RichText) -> bool {
+    let band = ui.max_rect();
+    let clicked = ui.input(|i| {
+        i.pointer.primary_clicked() && i.pointer.latest_pos().is_some_and(|pos| band.contains(pos))
+    });
+    ui.add_sized(
+        [ui.available_width(), ROW_HEIGHT],
+        egui::Label::new(text).truncate(),
+    );
+    clicked
+}
+
 /// `truncate_cells`로 바꾼 줄바꿈 모드를 기본값으로 되돌린다.
 pub fn wrap_default(ui: &mut egui::Ui) {
     ui.style_mut().wrap_mode = None;

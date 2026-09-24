@@ -68,7 +68,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         crate::views::truncate_cells(ui);
         egui_extras::TableBuilder::new(ui)
             .striped(true)
-            .resizable(true)
             .sense(egui::Sense::click())
             .column(egui_extras::Column::exact(90.0))
             .column(egui_extras::Column::exact(100.0))
@@ -87,19 +86,27 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     if Some(index) == selected {
                         row.set_selected(true);
                     }
+                    let mut row_clicked = false;
                     row.col(|ui| {
-                        ui.label(
+                        row_clicked |= crate::views::table_cell(
+                            ui,
                             egui::RichText::new(severity_label(finding.severity))
                                 .color(severity_color(finding.severity, &colors)),
                         );
                     });
                     row.col(|ui| {
-                        ui.label(&finding.rule_id);
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(finding.rule_id.as_str()),
+                        );
                     });
                     row.col(|ui| {
-                        ui.label(&finding.name);
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(finding.name.as_str()),
+                        );
                     });
-                    if row.response().clicked() {
+                    if row_clicked {
                         clicked = Some(index);
                     }
                 });
@@ -133,7 +140,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             crate::views::truncate_cells(ui);
             egui_extras::TableBuilder::new(ui)
                 .striped(true)
-                .resizable(true)
                 .column(egui_extras::Column::exact(130.0))
                 .column(egui_extras::Column::exact(250.0))
                 .column(egui_extras::Column::remainder().clip(true))
@@ -148,13 +154,22 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     body.rows(20.0, finding.evidence.len(), |mut row| {
                         let evidence = &finding.evidence[row.index()];
                         row.col(|ui| {
-                            ui.label(&evidence.kind);
+                            crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(evidence.kind.as_str()),
+                            );
                         });
                         row.col(|ui| {
-                            ui.label(evidence_location(evidence));
+                            crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(evidence_location(evidence)),
+                            );
                         });
                         row.col(|ui| {
-                            ui.label(observed_text(evidence));
+                            crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(observed_text(evidence)),
+                            );
                         });
                     });
                 });

@@ -234,7 +234,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         crate::views::truncate_cells(ui);
         egui_extras::TableBuilder::new(ui)
             .striped(true)
-            .resizable(true)
             .sense(egui::Sense::click())
             .column(egui_extras::Column::exact(150.0))
             .column(egui_extras::Column::exact(80.0))
@@ -256,29 +255,48 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     if Some(index) == selected {
                         row.set_selected(true);
                     }
+                    let mut row_clicked = false;
                     row.col(|ui| {
-                        ui.label(opt_hex(Some(found.address)));
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(opt_hex(Some(found.address))),
+                        );
                     });
                     row.col(|ui| {
-                        ui.label(format!("{:#x}", found.offset));
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(format!("{:#x}", found.offset)),
+                        );
                     });
                     row.col(|ui| {
-                        ui.label(format!("{:?}", found.class).to_lowercase());
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(format!("{:?}", found.class).to_lowercase()),
+                        );
                     });
                     row.col(|ui| {
-                        ui.label(found.protection.to_string());
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(found.protection.to_string()),
+                        );
                     });
                     row.col(|ui| {
-                        ui.label(format!(
-                            "{} {}",
-                            opt_hex(Some(found.region_base)),
-                            human_size(found.region_size)
-                        ));
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(format!(
+                                "{} {}",
+                                opt_hex(Some(found.region_base)),
+                                human_size(found.region_size)
+                            )),
+                        );
                     });
                     row.col(|ui| {
-                        ui.label(found.mapped_file.as_deref().unwrap_or("-"));
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(found.mapped_file.as_deref().unwrap_or("-")),
+                        );
                     });
-                    if row.response().clicked() {
+                    if row_clicked {
                         clicked = Some(index);
                     }
                 });

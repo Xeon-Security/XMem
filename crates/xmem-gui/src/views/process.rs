@@ -47,7 +47,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
         .striped(true)
-        .resizable(true)
         .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(56.0))
         .column(egui_extras::Column::initial(150.0).clip(true))
@@ -68,21 +67,27 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 let index = filtered[row.index()];
                 let pid = app.processes[index].pid;
                 row.set_selected(app.selected_pid == Some(pid));
+                let mut row_clicked = false;
                 row.col(|ui| {
-                    ui.label(pid.to_string());
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(pid.to_string()));
                 });
                 row.col(|ui| {
-                    ui.label(&app.processes[index].name);
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(app.processes[index].name.as_str()),
+                    );
                 });
                 row.col(|ui| {
-                    ui.label(
+                    row_clicked |= crate::views::table_cell(
+                        ui,
                         egui::RichText::new(
                             app.processes[index].image_path.as_deref().unwrap_or("-"),
                         )
                         .weak(),
                     );
                 });
-                if row.response().clicked() {
+                if row_clicked {
                     app.select_process(pid);
                 }
             });

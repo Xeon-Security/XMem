@@ -90,7 +90,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     crate::views::truncate_cells(ui);
     let mut builder = egui_extras::TableBuilder::new(ui)
         .striped(true)
-        .resizable(true)
         .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(140.0))
         .column(egui_extras::Column::exact(80.0));
@@ -128,41 +127,58 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 let index = row.index();
                 let module = &bundle.modules[index];
                 row.set_selected(selected_base == Some(module.base));
+                let mut row_clicked = false;
                 row.col(|ui| {
-                    ui.label(opt_hex(Some(module.base)));
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(opt_hex(Some(module.base))),
+                    );
                 });
                 row.col(|ui| {
-                    ui.label(human_size(module.size));
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(human_size(module.size)));
                 });
                 if let Some(pe_list) = bundle.pe.as_ref() {
                     match pe_list.get(index).and_then(Option::as_ref) {
                         Some(pe) => {
                             row.col(|ui| {
-                                ui.label(pe_arch(pe));
+                                row_clicked |=
+                                    crate::views::table_cell(ui, egui::RichText::new(pe_arch(pe)));
                             });
                             row.col(|ui| {
-                                ui.label(format!("{:#x}", pe.entry_point));
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(format!("{:#x}", pe.entry_point)),
+                                );
                             });
                             row.col(|ui| {
-                                ui.label(pe.sections.len().to_string());
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(pe.sections.len().to_string()),
+                                );
                             });
                         }
                         None => {
                             for _ in 0..3 {
                                 row.col(|ui| {
-                                    ui.label("-");
+                                    row_clicked |=
+                                        crate::views::table_cell(ui, egui::RichText::new("-"));
                                 });
                             }
                         }
                     }
                 }
                 row.col(|ui| {
-                    ui.label(&module.name);
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(module.name.as_str()));
                 });
                 row.col(|ui| {
-                    ui.label(egui::RichText::new(module.path.as_deref().unwrap_or("-")).weak());
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(module.path.as_deref().unwrap_or("-")).weak(),
+                    );
                 });
-                if row.response().clicked() {
+                if row_clicked {
                     clicked_module = Some(module.clone());
                 }
             });

@@ -162,7 +162,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
         .striped(true)
-        .resizable(true)
+        .drag_to_scroll(egui::scroll_area::DragScroll::Never)
         .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(140.0))
         .column(egui_extras::Column::exact(80.0))
@@ -191,28 +191,45 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 let index = row.index();
                 let region = &map.regions[selected[index]];
                 row.set_selected(selected_base == Some(region.base));
+                let mut row_clicked = false;
                 row.col(|ui| {
-                    ui.label(opt_hex(Some(region.base)));
-                });
-                row.col(|ui| {
-                    ui.label(human_size(region.size));
-                });
-                row.col(|ui| {
-                    ui.label(format!("{:?}", region.state).to_uppercase());
-                });
-                row.col(|ui| {
-                    ui.label(
-                        region
-                            .region_type
-                            .map(|t| format!("{t:?}").to_uppercase())
-                            .unwrap_or_else(|| "-".into()),
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(opt_hex(Some(region.base))),
                     );
                 });
                 row.col(|ui| {
-                    ui.label(region.protection.to_string());
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(human_size(region.size)));
                 });
                 row.col(|ui| {
-                    ui.label(format!("{:?}", region.classification).to_lowercase());
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(format!("{:?}", region.state).to_uppercase()),
+                    );
+                });
+                row.col(|ui| {
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(
+                            region
+                                .region_type
+                                .map(|t| format!("{t:?}").to_uppercase())
+                                .unwrap_or_else(|| "-".into()),
+                        ),
+                    );
+                });
+                row.col(|ui| {
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(region.protection.to_string()),
+                    );
+                });
+                row.col(|ui| {
+                    row_clicked |= crate::views::table_cell(
+                        ui,
+                        egui::RichText::new(format!("{:?}", region.classification).to_lowercase()),
+                    );
                 });
                 row.col(|ui| {
                     let mut text = region
@@ -235,9 +252,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     } else {
                         colors.warn
                     };
-                    ui.label(egui::RichText::new(text).color(color));
+                    row_clicked |=
+                        crate::views::table_cell(ui, egui::RichText::new(text).color(color));
                 });
-                if row.response().clicked() {
+                if row_clicked {
                     clicked_region = Some(region.clone());
                 }
             });
