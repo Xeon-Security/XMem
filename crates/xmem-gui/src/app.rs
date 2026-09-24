@@ -1,5 +1,7 @@
 //! 앱 셸: 상단 바 + 탭 + 하단 로그.
 
+use std::sync::atomic::Ordering;
+
 use xmem_core::XmemError;
 
 use crate::config::GuiConfig;
@@ -118,6 +120,8 @@ pub struct XMemApp {
     pub map_selected: Option<u64>,
     pub region_detail: Option<RegionDetail>,
     pub region_detail_task: BackgroundTask<(u64, RegionDetail)>,
+    pub region_page_task: BackgroundTask<(u64, u64, Vec<u8>, Option<String>)>,
+    pub region_page_pending: Option<u64>,
     pub modules_task: BackgroundTask<(u32, ModuleBundle)>,
     pub modules_bundle: Option<ModuleBundle>,
     pub module_selected: Option<u64>,
@@ -131,6 +135,7 @@ pub struct XMemApp {
     pub thread_detail_task: BackgroundTask<(u32, ThreadDetail)>,
     pub scan_state: crate::views::scan::ScanUiState,
     pub scan_task: BackgroundTask<(u32, xmem_memory::ScanReport)>,
+    pub scan_preview_task: BackgroundTask<(u64, u64, String)>,
     pub scan_report: Option<xmem_memory::ScanReport>,
     pub detect_task: BackgroundTask<(u32, Vec<xmem_core::Finding>)>,
     pub findings: Option<Vec<xmem_core::Finding>>,
@@ -201,6 +206,8 @@ impl XMemApp {
             map_selected: None,
             region_detail: None,
             region_detail_task: BackgroundTask::idle(),
+            region_page_task: BackgroundTask::idle(),
+            region_page_pending: None,
             modules_task: BackgroundTask::idle(),
             modules_bundle: None,
             module_selected: None,
@@ -214,6 +221,7 @@ impl XMemApp {
             thread_detail_task: BackgroundTask::idle(),
             scan_state: crate::views::scan::ScanUiState::default(),
             scan_task: BackgroundTask::idle(),
+            scan_preview_task: BackgroundTask::idle(),
             scan_report: None,
             detect_task: BackgroundTask::idle(),
             findings: None,
@@ -291,11 +299,13 @@ impl XMemApp {
         // 이전 프로세스의 진행 중 태스크를 취소한다 — 새 프로세스의 자동 로딩을 막지 않도록.
         self.map_task.cancel();
         self.region_detail_task.cancel();
+        self.region_page_task.cancel();
         self.modules_task.cancel();
         self.module_detail_task.cancel();
         self.threads_task.cancel();
         self.thread_detail_task.cancel();
         self.scan_task.cancel();
+        self.scan_preview_task.cancel();
         self.detect_task.cancel();
         self.snapshot_create_task.cancel();
         self.dump_create_task.cancel();
@@ -304,6 +314,7 @@ impl XMemApp {
         self.map = None;
         self.map_selected = None;
         self.region_detail = None;
+        self.region_page_pending = None;
         self.modules_bundle = None;
         self.module_selected = None;
         self.module_detail = None;
@@ -334,6 +345,8 @@ impl XMemApp {
         self.map = None;
         self.map_selected = None;
         self.region_detail = None;
+        self.region_page_task.cancel();
+        self.region_page_pending = None;
         self.map_task = BackgroundTask::spawn("메모리맵", move |_| {
             Ok((pid, xmem_memory::LiveProcess::open(pid)?.region_map()?))
         });
@@ -343,10 +356,45 @@ impl XMemApp {
         let base = region.base;
         self.map_selected = Some(base);
         self.region_detail = None;
+        self.region_page_task.cancel();
+        self.region_page_pending = None;
         self.region_detail_task = BackgroundTask::spawn("영역 상세", move |_| {
             let detail = crate::views::region::collect_region_detail(pid, region)?;
             Ok((base, detail))
         });
+    }
+
+    /// 4 KiB 페이지 읽기를 UI 스레드 밖에서 수행한다.
+    pub fn request_region_page(&mut self, pid: u32, region: xmem_core::MemoryRegion, address: u64) {
+        let base = region.base;
+        let requested = crate::views::region::clamp_page(address, &region);
+        self.region_page_pending = Some(requested);
+        self.region_page_task = BackgroundTask::spawn("영역 페이지", move |_| {
+            let (page, bytes, error) = crate::views::region::load_page(pid, &region, requested);
+            Ok((base, page, bytes, error))
+        });
+    }
+
+    pub fn retry_region_detail(&mut self) {
+        let Some(pid) = self.selected_pid else {
+            self.log
+                .push(LogLevel::Warn, "다시 시도할 데이터가 없습니다");
+            return;
+        };
+        let region = self.map_selected.and_then(|base| {
+            self.map
+                .as_ref()?
+                .regions
+                .iter()
+                .find(|region| region.base == base)
+                .cloned()
+        });
+        match region {
+            Some(region) => self.select_region(pid, region),
+            None => self
+                .log
+                .push(LogLevel::Warn, "다시 시도할 데이터가 없습니다"),
+        }
     }
 
     pub fn select_module(&mut self, pid: u32, module: xmem_core::ModuleInfo) {
@@ -357,6 +405,28 @@ impl XMemApp {
             let detail = crate::views::module::collect_module_detail(pid, module);
             Ok((base, detail))
         });
+    }
+
+    pub fn retry_module_detail(&mut self) {
+        let Some(pid) = self.selected_pid else {
+            self.log
+                .push(LogLevel::Warn, "다시 시도할 데이터가 없습니다");
+            return;
+        };
+        let module = self.module_selected.and_then(|base| {
+            self.modules_bundle
+                .as_ref()?
+                .modules
+                .iter()
+                .find(|module| module.base == base)
+                .cloned()
+        });
+        match module {
+            Some(module) => self.select_module(pid, module),
+            None => self
+                .log
+                .push(LogLevel::Warn, "다시 시도할 데이터가 없습니다"),
+        }
     }
 
     pub fn start_modules(&mut self, pid: u32) {
@@ -395,6 +465,27 @@ impl XMemApp {
         });
     }
 
+    pub fn retry_thread_detail(&mut self) {
+        let Some(pid) = self.selected_pid else {
+            self.log
+                .push(LogLevel::Warn, "다시 시도할 데이터가 없습니다");
+            return;
+        };
+        let thread = self.thread_selected.and_then(|tid| {
+            self.threads
+                .as_ref()?
+                .iter()
+                .find(|thread| thread.tid == tid)
+                .cloned()
+        });
+        match thread {
+            Some(thread) => self.select_thread(pid, thread),
+            None => self
+                .log
+                .push(LogLevel::Warn, "다시 시도할 데이터가 없습니다"),
+        }
+    }
+
     pub fn start_scan(&mut self, pid: u32) {
         let pattern = match crate::views::scan::build_pattern(&self.scan_state) {
             Ok(pattern) => pattern,
@@ -407,18 +498,59 @@ impl XMemApp {
         self.scan_report = None;
         self.scan_state.selected_match = None;
         self.scan_state.preview = None;
+        self.scan_preview_task.cancel();
         self.scan_task = BackgroundTask::spawn("검색", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
             Ok((pid, xmem_memory::scan(&live, &pattern, &options, cancel)?))
         });
     }
 
+    /// 매치 주변 미리보기 읽기를 UI 스레드 밖에서 수행한다.
+    pub fn request_scan_preview(
+        &mut self,
+        pid: u32,
+        address: u64,
+        region_base: u64,
+        region_size: u64,
+    ) {
+        self.scan_preview_task = BackgroundTask::spawn("미리보기", move |_| {
+            let (start, dump) =
+                crate::views::scan::collect_preview(pid, address, region_base, region_size)?;
+            Ok((address, start, dump))
+        });
+    }
+
     pub fn start_detect(&mut self, pid: u32) {
         self.findings = None;
         self.detect_selected = None;
-        self.detect_task = BackgroundTask::spawn("탐지", move |_| {
+        self.detect_task = BackgroundTask::spawn("탐지", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
-            Ok((pid, xmem_detection::detect_source(&live)?))
+            let regions = live.region_map_cancellable(cancel)?.regions;
+            if cancel.load(Ordering::Relaxed) {
+                return Err(XmemError::Cancelled {
+                    reason: "user interrupt".into(),
+                });
+            }
+            let modules = live.modules()?;
+            if cancel.load(Ordering::Relaxed) {
+                return Err(XmemError::Cancelled {
+                    reason: "user interrupt".into(),
+                });
+            }
+            let threads = live.threads()?;
+            if cancel.load(Ordering::Relaxed) {
+                return Err(XmemError::Cancelled {
+                    reason: "user interrupt".into(),
+                });
+            }
+            Ok((
+                pid,
+                xmem_detection::detect(&xmem_detection::DetectionContext {
+                    regions: &regions,
+                    modules: &modules,
+                    threads: &threads,
+                }),
+            ))
         });
     }
 
@@ -593,6 +725,17 @@ impl eframe::App for XMemApp {
         {
             self.region_detail = Some(detail);
         }
+        if self.region_page_task.poll()
+            && let Some((base, page, bytes, error)) = self.region_page_task.take_done()
+            && Some(base) == self.map_selected
+            && Some(page) == self.region_page_pending
+            && let Some(detail) = self.region_detail.as_mut()
+        {
+            detail.page_start = page;
+            detail.page_bytes = bytes;
+            detail.page_error = error;
+            self.region_page_pending = None;
+        }
         if self.modules_task.poll()
             && let Some((task_pid, bundle)) = self.modules_task.take_done()
             && Some(task_pid) == self.selected_pid
@@ -622,6 +765,22 @@ impl eframe::App for XMemApp {
             && Some(task_pid) == self.selected_pid
         {
             self.scan_report = Some(report);
+        }
+        if self.scan_preview_task.poll() {
+            if let Some((address, start, dump)) = self.scan_preview_task.take_done() {
+                let still_selected = self
+                    .scan_state
+                    .selected_match
+                    .and_then(|index| self.scan_report.as_ref()?.matches.get(index))
+                    .is_some_and(|found| found.address == address);
+                if still_selected {
+                    self.scan_state.preview = Some((start, dump));
+                }
+            } else if let TaskState::Failed(err) = self.scan_preview_task.state() {
+                let label = crate::error::error_label(err);
+                self.log
+                    .push(LogLevel::Warn, format!("미리보기 실패: {label}"));
+            }
         }
         if self.detect_task.poll()
             && let Some((task_pid, findings)) = self.detect_task.take_done()

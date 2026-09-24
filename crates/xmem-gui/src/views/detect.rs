@@ -46,6 +46,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         if running {
             ui.spinner();
             ui.label("규칙 평가 중...");
+            if ui.button("취소").clicked() {
+                app.detect_task.cancel();
+            }
         }
     });
     if let TaskState::Failed(err) = app.detect_task.state() {
@@ -66,51 +69,58 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             return;
         }
         crate::views::truncate_cells(ui);
-        egui_extras::TableBuilder::new(ui)
-            .min_scrolled_height(0.0)
-            .striped(true)
-            .sense(egui::Sense::click())
-            .column(egui_extras::Column::exact(90.0))
-            .column(egui_extras::Column::exact(100.0))
-            .column(egui_extras::Column::remainder().clip(true))
-            .header(18.0, |mut header| {
-                for title in ["SEVERITY", "RULE", "NAME"] {
-                    header.col(|ui| {
-                        ui.strong(title);
+        // finding 상세가 표 아래에 남아야 하므로 높이는 내용에 맞춘다.
+        egui::ScrollArea::horizontal()
+            .id_salt("detect_findings_hscroll")
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.set_min_width(500.0);
+                egui_extras::TableBuilder::new(ui)
+                    .min_scrolled_height(0.0)
+                    .striped(true)
+                    .sense(egui::Sense::click())
+                    .column(egui_extras::Column::exact(90.0))
+                    .column(egui_extras::Column::exact(100.0))
+                    .column(egui_extras::Column::remainder().clip(true))
+                    .header(18.0, |mut header| {
+                        for title in ["SEVERITY", "RULE", "NAME"] {
+                            header.col(|ui| {
+                                ui.strong(title);
+                            });
+                        }
+                    })
+                    .body(|body| {
+                        body.rows(20.0, findings.len(), |mut row| {
+                            let index = row.index();
+                            let finding = &findings[index];
+                            if Some(index) == selected {
+                                row.set_selected(true);
+                            }
+                            let mut row_clicked = false;
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(severity_label(finding.severity))
+                                        .color(severity_color(finding.severity, &colors)),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(finding.rule_id.as_str()),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(finding.name.as_str()),
+                                );
+                            });
+                            if row_clicked {
+                                clicked = Some(index);
+                            }
+                        });
                     });
-                }
-            })
-            .body(|body| {
-                body.rows(20.0, findings.len(), |mut row| {
-                    let index = row.index();
-                    let finding = &findings[index];
-                    if Some(index) == selected {
-                        row.set_selected(true);
-                    }
-                    let mut row_clicked = false;
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(severity_label(finding.severity))
-                                .color(severity_color(finding.severity, &colors)),
-                        );
-                    });
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(finding.rule_id.as_str()),
-                        );
-                    });
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(finding.name.as_str()),
-                        );
-                    });
-                    if row_clicked {
-                        clicked = Some(index);
-                    }
-                });
             });
         crate::views::wrap_default(ui);
     } else if !app.detect_task.is_running() {
@@ -139,41 +149,47 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(format!("interpretation: {}", finding.interpretation));
         if !finding.evidence.is_empty() {
             crate::views::truncate_cells(ui);
-            egui_extras::TableBuilder::new(ui)
-                .min_scrolled_height(0.0)
-                .striped(true)
-                .column(egui_extras::Column::exact(130.0))
-                .column(egui_extras::Column::exact(250.0))
-                .column(egui_extras::Column::remainder().clip(true))
-                .header(18.0, |mut header| {
-                    for title in ["KIND", "LOCATION", "OBSERVED"] {
-                        header.col(|ui| {
-                            ui.strong(title);
+            egui::ScrollArea::horizontal()
+                .id_salt("detect_evidence_hscroll")
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.set_min_width(680.0);
+                    egui_extras::TableBuilder::new(ui)
+                        .min_scrolled_height(0.0)
+                        .striped(true)
+                        .column(egui_extras::Column::exact(130.0))
+                        .column(egui_extras::Column::exact(250.0))
+                        .column(egui_extras::Column::remainder().clip(true))
+                        .header(18.0, |mut header| {
+                            for title in ["KIND", "LOCATION", "OBSERVED"] {
+                                header.col(|ui| {
+                                    ui.strong(title);
+                                });
+                            }
+                        })
+                        .body(|body| {
+                            body.rows(20.0, finding.evidence.len(), |mut row| {
+                                let evidence = &finding.evidence[row.index()];
+                                row.col(|ui| {
+                                    crate::views::table_cell(
+                                        ui,
+                                        egui::RichText::new(evidence.kind.as_str()),
+                                    );
+                                });
+                                row.col(|ui| {
+                                    crate::views::table_cell(
+                                        ui,
+                                        egui::RichText::new(evidence_location(evidence)),
+                                    );
+                                });
+                                row.col(|ui| {
+                                    crate::views::table_cell(
+                                        ui,
+                                        egui::RichText::new(observed_text(evidence)),
+                                    );
+                                });
+                            });
                         });
-                    }
-                })
-                .body(|body| {
-                    body.rows(20.0, finding.evidence.len(), |mut row| {
-                        let evidence = &finding.evidence[row.index()];
-                        row.col(|ui| {
-                            crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(evidence.kind.as_str()),
-                            );
-                        });
-                        row.col(|ui| {
-                            crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(evidence_location(evidence)),
-                            );
-                        });
-                        row.col(|ui| {
-                            crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(observed_text(evidence)),
-                            );
-                        });
-                    });
                 });
         }
     }

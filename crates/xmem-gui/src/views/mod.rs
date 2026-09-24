@@ -67,11 +67,18 @@ pub fn table_cell(ui: &mut egui::Ui, text: egui::RichText) -> bool {
     let clicked = ui.input(|i| {
         i.pointer.primary_clicked() && i.pointer.latest_pos().is_some_and(|pos| band.contains(pos))
     });
+    // 포커스 위젯은 추가적인 것이다. egui_extras 셀은 히트테스트가 불안정해
+    // 마우스 클릭은 위 입력 판정을 그대로 신뢰하고, 이 위젯은 Enter 활성화만 담당한다.
+    let resp = ui.interact(band, ui.id().with("cell_focus"), egui::Sense::click());
+    let activated = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+    if clicked || activated {
+        resp.request_focus();
+    }
     ui.add_sized(
         [ui.available_width(), ROW_HEIGHT],
         egui::Label::new(text).truncate(),
     );
-    clicked
+    clicked || activated
 }
 
 /// `truncate_cells`로 바꾼 줄바꿈 모드를 기본값으로 되돌린다.

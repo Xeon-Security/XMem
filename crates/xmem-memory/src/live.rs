@@ -1,3 +1,5 @@
+use std::sync::atomic::{AtomicBool, Ordering};
+
 use xmem_core::{
     Heuristic, MemoryRegion, MemorySource, MemoryState, ModuleInfo, ProcessInfo, ReadOutcome,
     RegionClass, Result, ThreadInfo, XmemError,
@@ -13,6 +15,9 @@ pub struct RegionMap {
     pub regions: Vec<MemoryRegion>,
     pub truncated: bool,
 }
+
+/// 취소를 지원하지 않는 호출자(`region_map`)용 상시 false 플래그.
+static NEVER_CANCELLED: AtomicBool = AtomicBool::new(false);
 
 /// 실행 중 프로세스. handle은 RAII로 닫힌다.
 #[derive(Debug)]
@@ -37,6 +42,11 @@ impl LiveProcess {
 
     /// VirtualQueryEx walk + 매핑 파일 이름 조회. 버퍼는 1회 할당 후 재사용한다.
     pub fn region_map(&self) -> Result<RegionMap> {
+        self.region_map_cancellable(&NEVER_CANCELLED)
+    }
+
+    /// `region_map`과 같지만 영역 루프에서 취소 플래그를 확인한다.
+    pub fn region_map_cancellable(&self, cancel: &AtomicBool) -> Result<RegionMap> {
         let walk = memory::walk_regions(
             &self.handle,
             memory::native_max_user_address(),
@@ -46,6 +56,11 @@ impl LiveProcess {
         let mut buf = vec![0u16; 32 * 1024];
         let mut header_buf = vec![0u8; PE_HEADER_PREFIX];
         for raw in &walk.regions {
+            if cancel.load(Ordering::Relaxed) {
+                return Err(XmemError::Cancelled {
+                    reason: "user interrupt".into(),
+                });
+            }
             let mapped_file = if memory::is_file_backed(raw) {
                 memory::mapped_file_name(&self.handle, raw.base, &mut buf)
             } else {
@@ -226,6 +241,14 @@ mod tests {
                 .filter(|r| r.classification == xmem_core::RegionClass::Free)
                 .all(|r| r.region_type.is_none())
         );
+    }
+
+    #[test]
+    fn cancelled_region_map_returns_cancelled_error() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        let cancel = AtomicBool::new(true);
+        let err = live.region_map_cancellable(&cancel).unwrap_err();
+        assert!(matches!(err, XmemError::Cancelled { .. }));
     }
 
     #[test]

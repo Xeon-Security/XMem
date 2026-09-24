@@ -6,7 +6,6 @@ use xmem_memory::{
 };
 
 use crate::app::XMemApp;
-use crate::log::LogLevel;
 use crate::task::TaskState;
 use crate::theme::palette;
 use crate::views::map::{human_size, opt_hex};
@@ -119,27 +118,29 @@ pub fn build_options(state: &ScanUiState) -> ScanOptions {
     }
 }
 
-fn load_preview(app: &mut XMemApp, pid: u32, address: u64, region_base: u64, region_size: u64) {
+/// 미리보기 바이트를 읽어 hex dump를 만든다(백그라운드 태스크에서 호출).
+pub fn collect_preview(
+    pid: u32,
+    address: u64,
+    region_base: u64,
+    region_size: u64,
+) -> xmem_core::Result<(u64, String)> {
     let (start, len) = preview_range(address, region_base, region_size);
     if len == 0 {
-        return;
+        return Err(XmemError::InvalidInput {
+            reason: "미리보기 범위가 비어 있습니다".into(),
+        });
     }
-    let Ok(live) = LiveProcess::open(pid) else {
-        app.log
-            .push(LogLevel::Warn, "미리보기: 프로세스를 열 수 없습니다");
-        return;
-    };
+    let live = LiveProcess::open(pid)?;
     let mut buf = vec![0u8; len];
     match live.read(start, &mut buf) {
         Ok(outcome) if outcome.bytes_read > 0 => {
-            app.scan_state.preview = Some((start, hex_dump(&buf[..outcome.bytes_read], start)));
+            Ok((start, hex_dump(&buf[..outcome.bytes_read], start)))
         }
-        Ok(_) => app
-            .log
-            .push(LogLevel::Warn, "미리보기: 0바이트를 읽었습니다"),
-        Err(err) => app
-            .log
-            .push(LogLevel::Warn, format!("미리보기 실패: {err}")),
+        Ok(_) => Err(XmemError::InvalidInput {
+            reason: "0바이트를 읽었습니다".into(),
+        }),
+        Err(err) => Err(err),
     }
 }
 
@@ -237,75 +238,87 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         );
         let selected = app.scan_state.selected_match;
         crate::views::truncate_cells(ui);
-        egui_extras::TableBuilder::new(ui)
-            .min_scrolled_height(0.0)
-            .striped(true)
-            .sense(egui::Sense::click())
-            .column(egui_extras::Column::exact(150.0))
-            .column(egui_extras::Column::exact(80.0))
-            .column(egui_extras::Column::exact(80.0))
-            .column(egui_extras::Column::exact(120.0))
-            .column(egui_extras::Column::exact(140.0))
-            .column(egui_extras::Column::remainder().clip(true))
-            .header(18.0, |mut header| {
-                for title in ["ADDRESS", "OFFSET", "CLASS", "PROTECTION", "REGION", "FILE"] {
-                    header.col(|ui| {
-                        ui.strong(title);
+        // 미리보기가 표 아래에 남아야 하므로 높이는 내용에 맞춘다.
+        egui::ScrollArea::horizontal()
+            .id_salt("scan_table_hscroll")
+            .auto_shrink([false, true])
+            .show(ui, |ui| {
+                ui.set_min_width(880.0);
+                egui_extras::TableBuilder::new(ui)
+                    .min_scrolled_height(0.0)
+                    .striped(true)
+                    .sense(egui::Sense::click())
+                    .column(egui_extras::Column::exact(150.0))
+                    .column(egui_extras::Column::exact(80.0))
+                    .column(egui_extras::Column::exact(80.0))
+                    .column(egui_extras::Column::exact(120.0))
+                    .column(egui_extras::Column::exact(140.0))
+                    .column(egui_extras::Column::remainder().clip(true))
+                    .header(18.0, |mut header| {
+                        for title in ["ADDRESS", "OFFSET", "CLASS", "PROTECTION", "REGION", "FILE"]
+                        {
+                            header.col(|ui| {
+                                ui.strong(title);
+                            });
+                        }
+                    })
+                    .body(|body| {
+                        body.rows(20.0, report.matches.len(), |mut row| {
+                            let index = row.index();
+                            let found = &report.matches[index];
+                            if Some(index) == selected {
+                                row.set_selected(true);
+                            }
+                            let mut row_clicked = false;
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(opt_hex(Some(found.address))),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(format!("{:#x}", found.offset)),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(
+                                        format!("{:?}", found.class).to_lowercase(),
+                                    ),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(found.protection.to_string()),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(format!(
+                                        "{} {}",
+                                        opt_hex(Some(found.region_base)),
+                                        human_size(found.region_size)
+                                    )),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(
+                                        found.mapped_file.as_deref().unwrap_or("-"),
+                                    ),
+                                );
+                            });
+                            if row_clicked {
+                                clicked = Some(index);
+                            }
+                        });
                     });
-                }
-            })
-            .body(|body| {
-                body.rows(20.0, report.matches.len(), |mut row| {
-                    let index = row.index();
-                    let found = &report.matches[index];
-                    if Some(index) == selected {
-                        row.set_selected(true);
-                    }
-                    let mut row_clicked = false;
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(opt_hex(Some(found.address))),
-                        );
-                    });
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(format!("{:#x}", found.offset)),
-                        );
-                    });
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(format!("{:?}", found.class).to_lowercase()),
-                        );
-                    });
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(found.protection.to_string()),
-                        );
-                    });
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(format!(
-                                "{} {}",
-                                opt_hex(Some(found.region_base)),
-                                human_size(found.region_size)
-                            )),
-                        );
-                    });
-                    row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
-                            ui,
-                            egui::RichText::new(found.mapped_file.as_deref().unwrap_or("-")),
-                        );
-                    });
-                    if row_clicked {
-                        clicked = Some(index);
-                    }
-                });
             });
         crate::views::wrap_default(ui);
     } else if !app.scan_task.is_running() {
@@ -321,14 +334,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             .cloned();
         if let Some(found) = selected {
             app.scan_state.selected_match = Some(index);
-            load_preview(
-                app,
-                pid,
-                found.address,
-                found.region_base,
-                found.region_size,
-            );
+            app.request_scan_preview(pid, found.address, found.region_base, found.region_size);
         }
+    }
+    if app.scan_preview_task.is_running() {
+        ui.horizontal(|ui| {
+            ui.spinner();
+            ui.label(egui::RichText::new("미리보기를 불러오는 중...").weak());
+        });
     }
     if let Some((base, text)) = app.scan_state.preview.as_ref() {
         ui.separator();

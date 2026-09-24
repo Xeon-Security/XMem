@@ -265,13 +265,14 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
             return;
         }
         TaskState::Failed(err) => {
-            ui.colored_label(
-                colors.danger,
-                format!(
-                    "영역 상세 정보를 불러오지 못했습니다 — {}",
-                    error_label(err)
-                ),
+            let label = format!(
+                "영역 상세 정보를 불러오지 못했습니다 — {}",
+                error_label(err)
             );
+            ui.colored_label(colors.danger, label);
+            if ui.button("다시 시도").clicked() {
+                app.retry_region_detail();
+            }
             return;
         }
         _ => {}
@@ -519,6 +520,9 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                             ))
                             .weak(),
                         );
+                        if app.region_page_task.is_running() {
+                            ui.spinner();
+                        }
                     });
                     if let Some(error) = &detail.page_error {
                         ui.colored_label(colors.danger, format!("읽기 실패 — {error}"));
@@ -555,13 +559,12 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
             .push(LogLevel::Info, "영역 요약을 클립보드에 복사했습니다");
     }
     if let Some(address) = goto_page
-        && let Some(detail) = app.region_detail.as_mut()
+        && let Some(region) = app
+            .region_detail
+            .as_ref()
+            .map(|detail| detail.region.clone())
     {
-        let region = detail.region.clone();
-        let (page, bytes, error) = load_page(pid, &region, address);
-        detail.page_start = page;
-        detail.page_bytes = bytes;
-        detail.page_error = error;
+        app.request_region_page(pid, region, address);
     }
     if let Some(allocation) = goto_allocation {
         // 할당 시작 주소는 현재 영역 밖일 수 있으므로, 그 주소를 포함하는 영역을 찾아 이동한다.

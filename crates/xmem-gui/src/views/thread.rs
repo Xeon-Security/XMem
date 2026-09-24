@@ -184,10 +184,11 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
             return;
         }
         TaskState::Failed(err) => {
-            ui.label(
-                egui::RichText::new(format!("스레드 상세 실패: {}", error_label(err)))
-                    .color(colors.danger),
-            );
+            let label = format!("스레드 상세 실패: {}", error_label(err));
+            ui.label(egui::RichText::new(label).color(colors.danger));
+            if ui.button("다시 시도").clicked() {
+                app.retry_thread_detail();
+            }
             return;
         }
         _ => {}

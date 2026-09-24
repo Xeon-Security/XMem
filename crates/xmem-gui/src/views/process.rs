@@ -63,53 +63,59 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     ui.separator();
     let row_height = 20.0;
     crate::views::truncate_cells(ui);
-    egui_extras::TableBuilder::new(ui)
-        .min_scrolled_height(0.0)
-        .striped(true)
-        .sense(egui::Sense::click())
-        .column(egui_extras::Column::exact(56.0))
-        .column(egui_extras::Column::initial(150.0).clip(true))
-        .column(egui_extras::Column::remainder().clip(true))
-        .header(18.0, |mut header| {
-            header.col(|ui| {
-                ui.strong("PID");
-            });
-            header.col(|ui| {
-                ui.strong("이름");
-            });
-            header.col(|ui| {
-                ui.strong("경로");
-            });
-        })
-        .body(|body| {
-            body.rows(row_height, filtered.len(), |mut row| {
-                let index = filtered[row.index()];
-                let pid = app.processes[index].pid;
-                row.set_selected(app.selected_pid == Some(pid));
-                let mut row_clicked = false;
-                row.col(|ui| {
-                    row_clicked |=
-                        crate::views::table_cell(ui, egui::RichText::new(pid.to_string()));
+    egui::ScrollArea::horizontal()
+        .id_salt("process_table_hscroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_min_width(520.0);
+            egui_extras::TableBuilder::new(ui)
+                .min_scrolled_height(0.0)
+                .striped(true)
+                .sense(egui::Sense::click())
+                .column(egui_extras::Column::exact(56.0))
+                .column(egui_extras::Column::initial(150.0).clip(true))
+                .column(egui_extras::Column::remainder().clip(true))
+                .header(18.0, |mut header| {
+                    header.col(|ui| {
+                        ui.strong("PID");
+                    });
+                    header.col(|ui| {
+                        ui.strong("이름");
+                    });
+                    header.col(|ui| {
+                        ui.strong("경로");
+                    });
+                })
+                .body(|body| {
+                    body.rows(row_height, filtered.len(), |mut row| {
+                        let index = filtered[row.index()];
+                        let pid = app.processes[index].pid;
+                        row.set_selected(app.selected_pid == Some(pid));
+                        let mut row_clicked = false;
+                        row.col(|ui| {
+                            row_clicked |=
+                                crate::views::table_cell(ui, egui::RichText::new(pid.to_string()));
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(app.processes[index].name.as_str()),
+                            );
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(
+                                    app.processes[index].image_path.as_deref().unwrap_or("-"),
+                                )
+                                .weak(),
+                            );
+                        });
+                        if row_clicked {
+                            app.select_process(pid);
+                        }
+                    });
                 });
-                row.col(|ui| {
-                    row_clicked |= crate::views::table_cell(
-                        ui,
-                        egui::RichText::new(app.processes[index].name.as_str()),
-                    );
-                });
-                row.col(|ui| {
-                    row_clicked |= crate::views::table_cell(
-                        ui,
-                        egui::RichText::new(
-                            app.processes[index].image_path.as_deref().unwrap_or("-"),
-                        )
-                        .weak(),
-                    );
-                });
-                if row_clicked {
-                    app.select_process(pid);
-                }
-            });
         });
 }
 

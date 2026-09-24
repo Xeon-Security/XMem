@@ -53,57 +53,67 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let selected_tid = app.thread_selected;
     let mut clicked_thread: Option<xmem_core::ThreadInfo> = None;
     crate::views::truncate_cells(ui);
-    egui_extras::TableBuilder::new(ui)
-        .min_scrolled_height(0.0)
-        .striped(true)
-        .sense(egui::Sense::click())
-        .column(egui_extras::Column::exact(70.0))
-        .column(egui_extras::Column::exact(80.0))
-        .column(egui_extras::Column::exact(150.0))
-        .column(egui_extras::Column::exact(150.0))
-        .column(egui_extras::Column::remainder().clip(true))
-        .header(18.0, |mut header| {
-            for title in ["TID", "PRIORITY", "START ADDRESS", "REGION", "MODULE"] {
-                header.col(|ui| {
-                    ui.strong(title);
+    egui::ScrollArea::horizontal()
+        .id_salt("threads_table_hscroll")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            ui.set_min_width(760.0);
+            egui_extras::TableBuilder::new(ui)
+                .min_scrolled_height(0.0)
+                .striped(true)
+                .sense(egui::Sense::click())
+                .column(egui_extras::Column::exact(70.0))
+                .column(egui_extras::Column::exact(80.0))
+                .column(egui_extras::Column::exact(150.0))
+                .column(egui_extras::Column::exact(150.0))
+                .column(egui_extras::Column::remainder().clip(true))
+                .header(18.0, |mut header| {
+                    for title in ["TID", "PRIORITY", "START ADDRESS", "REGION", "MODULE"] {
+                        header.col(|ui| {
+                            ui.strong(title);
+                        });
+                    }
+                })
+                .body(|body| {
+                    body.rows(20.0, threads.len(), |mut row| {
+                        let thread = &threads[row.index()];
+                        row.set_selected(selected_tid == Some(thread.tid));
+                        let mut row_clicked = false;
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(thread.tid.to_string()),
+                            );
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(opt_num(thread.priority)),
+                            );
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(opt_hex(thread.start_address)),
+                            );
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(opt_hex(thread.start_region_base)),
+                            );
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(thread.start_module.as_deref().unwrap_or("-")),
+                            );
+                        });
+                        if row_clicked {
+                            clicked_thread = Some(thread.clone());
+                        }
+                    });
                 });
-            }
-        })
-        .body(|body| {
-            body.rows(20.0, threads.len(), |mut row| {
-                let thread = &threads[row.index()];
-                row.set_selected(selected_tid == Some(thread.tid));
-                let mut row_clicked = false;
-                row.col(|ui| {
-                    row_clicked |=
-                        crate::views::table_cell(ui, egui::RichText::new(thread.tid.to_string()));
-                });
-                row.col(|ui| {
-                    row_clicked |=
-                        crate::views::table_cell(ui, egui::RichText::new(opt_num(thread.priority)));
-                });
-                row.col(|ui| {
-                    row_clicked |= crate::views::table_cell(
-                        ui,
-                        egui::RichText::new(opt_hex(thread.start_address)),
-                    );
-                });
-                row.col(|ui| {
-                    row_clicked |= crate::views::table_cell(
-                        ui,
-                        egui::RichText::new(opt_hex(thread.start_region_base)),
-                    );
-                });
-                row.col(|ui| {
-                    row_clicked |= crate::views::table_cell(
-                        ui,
-                        egui::RichText::new(thread.start_module.as_deref().unwrap_or("-")),
-                    );
-                });
-                if row_clicked {
-                    clicked_thread = Some(thread.clone());
-                }
-            });
         });
     if let Some(thread) = clicked_thread {
         app.select_thread(pid, thread);
