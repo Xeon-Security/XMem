@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **v0.1.2** — Milestone 13 (GUI)에 이어 메모리맵·모듈·스레드 **상세 패널**(hex 뷰어, 디스크/메모리 PE 비교, 스레드 시간)과 `memory map`의 allocation base(ALLOC) 컬럼, 사람이 읽을 수 있는 오류 라벨을 추가했다. 실험 자동화는 CLI 전용으로 유지된다.
+현재 **v0.1.3** — 상세 뷰어(v0.1.2)에 이어 GUI **가이드**를 첫 사용자용으로 개편했다: 빠른 시작 5단계(탭 이동 버튼), 탭별 안내 9종 + 검색, 용어·표기 사전, 심각도/신뢰도 읽는 법, 오류 대처 표. 첫 실행 시 가이드 탭이 자동으로 열린다. 실험 자동화는 CLI 전용으로 유지된다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -226,6 +226,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | M12 | 완성도 (`report` JSON/Markdown, 자원 모니터링 RSS, 문서 6종, UX) | 완료 |
 | M13 | GUI (`xmem-gui`: egui 단일 exe, 분석 전체 탭, 관리자 재시작, 가이드, 로그) | 완료 |
 | v0.1.2 | 상세 뷰어 (맵/모듈/스레드 상세 패널, ALLOC 컬럼, 디스크/메모리 PE 비교, 스레드 시간, 오류 라벨) | 완료 |
+| v0.1.3 | 가이드 개편 (빠른 시작·탭별 안내·검색·용어 사전·오류 대처, 첫 실행 시 가이드 자동 열림) | 완료 |
 
 ## License
 
