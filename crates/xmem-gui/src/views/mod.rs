@@ -63,7 +63,10 @@ pub const ROW_HEIGHT: f32 = 20.0;
 /// 또한 egui_extras 셀 위젯은 포인터가 셀 안에 있어도 히트테스트에서 제외되어
 /// hover/click이 잡히지 않으므로, 입력에서 직접 클릭을 판정한다.
 pub fn table_cell(ui: &mut egui::Ui, text: egui::RichText) -> bool {
-    let band = ui.max_rect();
+    // 가로 ScrollArea 안에서 표가 패널보다 넓어질 수 있으므로 보이는 영역만 클릭 밴드로 쓴다.
+    // 이렇게 하지 않으면 좌측 목록 행의 밴드가 중앙 패널까지 걸쳐, 맵을 클릭했는데
+    // 프로세스 선택이 바뀌는 문제가 생긴다.
+    let band = ui.max_rect().intersect(ui.clip_rect());
     let clicked = ui.input(|i| {
         i.pointer.primary_clicked() && i.pointer.latest_pos().is_some_and(|pos| band.contains(pos))
     });
