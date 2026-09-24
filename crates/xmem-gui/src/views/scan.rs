@@ -307,11 +307,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     if let Some((base, text)) = app.scan_state.preview.as_ref() {
         ui.separator();
         ui.label(egui::RichText::new(format!("미리보기 {base:#018x}")).weak());
-        egui::ScrollArea::vertical()
-            .max_height(180.0)
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new(text).monospace());
-            });
+        crate::views::pane_hint(ui);
+        crate::views::resizable_pane(ui, "scan_preview_pane", 280.0, 120.0, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new(text).monospace());
+                });
+        });
     }
 }
 

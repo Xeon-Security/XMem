@@ -311,12 +311,15 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                 .default_open(true)
                 .show(ui, |ui| match detail.preview.as_ref() {
                     Some((_, dump)) => {
-                        egui::ScrollArea::vertical()
-                            .max_height(160.0)
-                            .id_salt("thread_hex")
-                            .show(ui, |ui| {
-                                ui.label(egui::RichText::new(dump).monospace());
-                            });
+                        crate::views::pane_hint(ui);
+                        crate::views::resizable_pane(ui, "thread_hex_pane", 220.0, 120.0, |ui| {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .id_salt("thread_hex")
+                                .show(ui, |ui| {
+                                    ui.label(egui::RichText::new(dump).monospace());
+                                });
+                        });
                     }
                     None => {
                         ui.label(

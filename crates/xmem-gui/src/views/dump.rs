@@ -200,19 +200,22 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         if findings.is_empty() {
             ui.label("no findings (absence of findings is not proof of safety)");
         } else {
-            egui::ScrollArea::vertical()
-                .max_height(160.0)
-                .show(ui, |ui| {
-                    for finding in findings {
-                        ui.horizontal(|ui| {
-                            ui.label(
-                                egui::RichText::new(severity_label(finding.severity))
-                                    .color(severity_color(finding.severity, &colors)),
-                            );
-                            ui.label(format!("{} {}", finding.rule_id, finding.name));
-                        });
-                    }
-                });
+            crate::views::pane_hint(ui);
+            crate::views::resizable_pane(ui, "dump_findings_pane", 220.0, 120.0, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false, false])
+                    .show(ui, |ui| {
+                        for finding in findings {
+                            ui.horizontal(|ui| {
+                                ui.label(
+                                    egui::RichText::new(severity_label(finding.severity))
+                                        .color(severity_color(finding.severity, &colors)),
+                                );
+                                ui.label(format!("{} {}", finding.rule_id, finding.name));
+                            });
+                        }
+                    });
+            });
         }
     }
 }

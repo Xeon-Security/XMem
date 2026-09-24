@@ -251,11 +251,15 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         error_label(ui, app, err);
     }
     if let Some(diff) = app.snapshot_diff.as_ref() {
-        egui::ScrollArea::vertical()
-            .max_height(320.0)
-            .show(ui, |ui| {
-                ui.label(egui::RichText::new(render_diff(diff)).monospace());
-            });
+        let text = render_diff(diff);
+        crate::views::pane_hint(ui);
+        crate::views::resizable_pane(ui, "snapshot_diff_pane", 360.0, 160.0, |ui| {
+            egui::ScrollArea::vertical()
+                .auto_shrink([false, false])
+                .show(ui, |ui| {
+                    ui.label(egui::RichText::new(text).monospace());
+                });
+        });
     }
 }
 

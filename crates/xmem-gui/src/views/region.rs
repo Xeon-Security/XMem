@@ -524,12 +524,15 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                         ui.label(egui::RichText::new("내용 없음").weak());
                     } else {
                         let text = hex_dump(&detail.page_bytes, detail.page_start);
-                        egui::ScrollArea::vertical()
-                            .max_height(180.0)
-                            .id_salt("region_hex")
-                            .show(ui, |ui| {
-                                ui.label(egui::RichText::new(text).monospace());
-                            });
+                        crate::views::pane_hint(ui);
+                        crate::views::resizable_pane(ui, "region_hex_pane", 280.0, 120.0, |ui| {
+                            egui::ScrollArea::vertical()
+                                .auto_shrink([false, false])
+                                .id_salt("region_hex")
+                                .show(ui, |ui| {
+                                    ui.label(egui::RichText::new(text).monospace());
+                                });
+                        });
                     }
                 });
         });
