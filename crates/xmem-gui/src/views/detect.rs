@@ -65,6 +65,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             );
             return;
         }
+        crate::views::truncate_cells(ui);
         egui_extras::TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
@@ -103,6 +104,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     }
                 });
             });
+        crate::views::wrap_default(ui);
     } else if !app.detect_task.is_running() {
         ui.label(egui::RichText::new("탐지를 실행하면 규칙 평가 결과가 표시됩니다").weak());
     } else {
@@ -128,6 +130,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(format!("heuristic: {}", finding.heuristic));
         ui.label(format!("interpretation: {}", finding.interpretation));
         if !finding.evidence.is_empty() {
+            crate::views::truncate_cells(ui);
             egui_extras::TableBuilder::new(ui)
                 .striped(true)
                 .resizable(true)

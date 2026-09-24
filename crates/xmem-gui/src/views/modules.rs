@@ -87,6 +87,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let show_pe = bundle.pe.is_some();
     let selected_base = app.module_selected;
     let mut clicked_module: Option<ModuleInfo> = None;
+    crate::views::truncate_cells(ui);
     let mut builder = egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)

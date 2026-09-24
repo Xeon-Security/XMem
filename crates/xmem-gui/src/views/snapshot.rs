@@ -254,9 +254,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         let text = render_diff(diff);
         crate::views::pane_hint(ui);
         crate::views::resizable_pane(ui, "snapshot_diff_pane", 360.0, 160.0, |ui| {
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     ui.label(egui::RichText::new(text).monospace());
                 });
         });

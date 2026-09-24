@@ -44,6 +44,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     );
     ui.separator();
     let row_height = 20.0;
+    crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)

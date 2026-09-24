@@ -44,6 +44,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     ui.label(egui::RichText::new(format!("{}개 스레드", threads.len())).weak());
     let selected_tid = app.thread_selected;
     let mut clicked_thread: Option<xmem_core::ThreadInfo> = None;
+    crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)

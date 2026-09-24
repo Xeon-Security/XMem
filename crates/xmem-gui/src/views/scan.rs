@@ -231,6 +231,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             .weak(),
         );
         let selected = app.scan_state.selected_match;
+        crate::views::truncate_cells(ui);
         egui_extras::TableBuilder::new(ui)
             .striped(true)
             .resizable(true)
@@ -282,6 +283,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     }
                 });
             });
+        crate::views::wrap_default(ui);
     } else if !app.scan_task.is_running() {
         ui.label(egui::RichText::new("검색어를 입력하고 검색을 누르세요").weak());
     } else {
@@ -309,9 +311,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new(format!("미리보기 {base:#018x}")).weak());
         crate::views::pane_hint(ui);
         crate::views::resizable_pane(ui, "scan_preview_pane", 280.0, 120.0, |ui| {
-            egui::ScrollArea::vertical()
+            egui::ScrollArea::both()
                 .auto_shrink([false, false])
                 .show(ui, |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                     ui.label(egui::RichText::new(text).monospace());
                 });
         });

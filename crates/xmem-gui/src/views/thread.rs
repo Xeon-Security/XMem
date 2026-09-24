@@ -313,10 +313,11 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                     Some((_, dump)) => {
                         crate::views::pane_hint(ui);
                         crate::views::resizable_pane(ui, "thread_hex_pane", 220.0, 120.0, |ui| {
-                            egui::ScrollArea::vertical()
+                            egui::ScrollArea::both()
                                 .auto_shrink([false, false])
                                 .id_salt("thread_hex")
                                 .show(ui, |ui| {
+                                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                                     ui.label(egui::RichText::new(dump).monospace());
                                 });
                         });

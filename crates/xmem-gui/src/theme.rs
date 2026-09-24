@@ -79,6 +79,8 @@ pub fn apply(ctx: &Context, mode: ThemeMode) {
         style.spacing.item_spacing = egui::vec2(4.0, 4.0);
         style.spacing.button_padding = egui::vec2(8.0, 2.0);
         style.spacing.interact_size.y = 20.0;
+        // 스크롤바가 내용 위에 떠서 글자를 가리지 않도록 공간을 차지하게 한다.
+        style.spacing.scroll = egui::style::ScrollStyle::solid();
     });
 }
 

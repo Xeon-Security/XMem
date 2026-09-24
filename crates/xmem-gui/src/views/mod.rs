@@ -16,6 +16,9 @@ pub mod thread;
 pub mod threads;
 
 /// 마우스로 크기를 조절할 수 있는 내용 영역(오른쪽 아래 모서리 드래그).
+///
+/// 내용은 전용 배경/테두리 상자(`content_frame`) 안에 들어가며, 크기 조절
+/// 테두리는 Resize 기본 스트로크 대신 이 상자가 담당한다(내용 침범 방지).
 pub fn resizable_pane<R>(
     ui: &mut egui::Ui,
     id_salt: &str,
@@ -28,7 +31,32 @@ pub fn resizable_pane<R>(
         .default_height(default_height)
         .min_height(min_height)
         .resizable(true)
+        .with_stroke(false)
+        .show(ui, |ui| content_frame(ui, add_contents))
+}
+
+/// 내용 영역 전용 상자(배경 + 테두리 + 여백). 내용과 주변 UI를 구분한다.
+pub fn content_frame<R>(ui: &mut egui::Ui, add_contents: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    let visuals = ui.visuals();
+    let fill = visuals.extreme_bg_color;
+    let stroke = visuals.widgets.noninteractive.bg_stroke;
+    egui::Frame::new()
+        .fill(fill)
+        .stroke(stroke)
+        .corner_radius(4.0)
+        .inner_margin(8.0)
         .show(ui, add_contents)
+        .inner
+}
+
+/// 표 셀에서 줄바꿈을 끈다(고정 행 높이에서 긴 값이 다음 행을 침범하지 않도록).
+pub fn truncate_cells(ui: &mut egui::Ui) {
+    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Truncate);
+}
+
+/// `truncate_cells`로 바꾼 줄바꿈 모드를 기본값으로 되돌린다.
+pub fn wrap_default(ui: &mut egui::Ui) {
+    ui.style_mut().wrap_mode = None;
 }
 
 /// 내용 영역 크기 조절 안내 문구.

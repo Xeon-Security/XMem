@@ -159,6 +159,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let colors = palette(app.theme);
     let selected_base = app.map_selected;
     let mut clicked_region: Option<MemoryRegion> = None;
+    crate::views::truncate_cells(ui);
     egui_extras::TableBuilder::new(ui)
         .striped(true)
         .resizable(true)

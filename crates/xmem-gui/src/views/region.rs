@@ -526,10 +526,11 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                         let text = hex_dump(&detail.page_bytes, detail.page_start);
                         crate::views::pane_hint(ui);
                         crate::views::resizable_pane(ui, "region_hex_pane", 280.0, 120.0, |ui| {
-                            egui::ScrollArea::vertical()
+                            egui::ScrollArea::both()
                                 .auto_shrink([false, false])
                                 .id_salt("region_hex")
                                 .show(ui, |ui| {
+                                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
                                     ui.label(egui::RichText::new(text).monospace());
                                 });
                         });
