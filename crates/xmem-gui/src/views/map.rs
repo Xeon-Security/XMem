@@ -139,10 +139,13 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         return;
     }
     if app.map_selected.is_some() {
+        // 표가 최소 높이를 유지하도록 패널 최대 높이를 가용 공간에서 제한한다.
+        // (패널이 가용 공간을 모두 차지하면 표 헤더/행이 패널 위로 겹쳐 그려진다)
+        let max_panel = (ui.available_height() - 160.0).max(140.0);
         egui::Panel::bottom(egui::Id::new("region_detail"))
             .resizable(true)
             .default_size(320.0)
-            .size_range(140.0..=900.0)
+            .size_range(140.0..=max_panel)
             .show(ui, |ui| crate::views::region::panel(ui, app));
     }
     let Some(map) = app.map.as_ref() else {

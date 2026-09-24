@@ -31,10 +31,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         _ => {}
     }
     if app.thread_selected.is_some() {
+        // 표가 최소 높이를 유지하도록 패널 최대 높이를 가용 공간에서 제한한다.
+        let max_panel = (ui.available_height() - 160.0).max(140.0);
         egui::Panel::bottom(egui::Id::new("thread_detail"))
             .resizable(true)
             .default_size(320.0)
-            .size_range(140.0..=900.0)
+            .size_range(140.0..=max_panel)
             .show(ui, |ui| crate::views::thread::panel(ui, app));
     }
     let Some(threads) = app.threads.as_ref() else {
