@@ -105,6 +105,9 @@ mod tests {
 
     #[test]
     fn write_minidump_file_of_self_is_valid() {
+        // MiniDumpWriteDump는 덤프 중 프로세스의 모듈/메모리/스레드가 바뀌면 실패할 수 있다.
+        // 자기 프로세스를 바꾸는 다른 테스트와 직렬화한다.
+        let _guard = crate::test_support::process_lock();
         let dir = std::env::temp_dir().join(format!("xmem-dump-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("self.dmp");

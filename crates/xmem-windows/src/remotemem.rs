@@ -106,6 +106,7 @@ mod tests {
 
     #[test]
     fn alloc_write_protect_and_free_remote_self() {
+        let _guard = crate::test_support::process_lock();
         let handle = self_handle();
         let address = alloc_remote(&handle, 4096, 0x04).unwrap();
         assert_ne!(address, 0);
@@ -131,6 +132,7 @@ mod tests {
 
     #[test]
     fn create_remote_thread_suspended_self_reports_tid() {
+        let _guard = crate::test_support::process_lock();
         let handle = self_handle();
         let address = alloc_remote(&handle, 4096, 0x20).unwrap();
         write_remote(&handle, address, &[0xC3]).unwrap();
@@ -145,6 +147,7 @@ mod tests {
 
     #[test]
     fn flush_instruction_cache_self_ok() {
+        let _guard = crate::test_support::process_lock();
         let handle = self_handle();
         let address = alloc_remote(&handle, 4096, 0x04).unwrap();
         flush_instruction_cache(&handle, address, 4096).unwrap();

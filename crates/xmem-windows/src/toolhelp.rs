@@ -166,6 +166,8 @@ mod tests {
 
     #[test]
     fn count_modules_matches_list_len() {
+        // 두 스냅샷을 비교하므로 모듈 목록을 바꾸는 테스트와 직렬화한다.
+        let _guard = crate::test_support::process_lock();
         let pid = current_pid();
         assert_eq!(
             count_modules(pid).unwrap() as usize,

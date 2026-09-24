@@ -17,6 +17,9 @@ pub mod token;
 pub mod toolhelp;
 pub mod util;
 
+#[cfg(test)]
+pub(crate) mod test_support;
+
 pub use disk::free_space_bytes;
 pub use dump::{create_file_for_write, validate_minidump, write_minidump, write_minidump_file};
 pub use elevate::{is_elevated, runas};

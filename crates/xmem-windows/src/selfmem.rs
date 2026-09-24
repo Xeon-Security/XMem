@@ -150,6 +150,7 @@ mod tests {
 
     #[test]
     fn alloc_write_and_drop() {
+        let _guard = crate::test_support::process_lock();
         let mut region = PrivateRegion::alloc(4096).unwrap();
         assert_ne!(region.base(), 0);
         assert_eq!(region.size(), 4096);
@@ -159,6 +160,7 @@ mod tests {
 
     #[test]
     fn protect_reports_old_and_gates_writes() {
+        let _guard = crate::test_support::process_lock();
         let mut region = PrivateRegion::alloc(4096).unwrap();
         region.write(b"before").unwrap();
         let old = region.protect(SELF_PAGE_RX).unwrap();
@@ -170,6 +172,7 @@ mod tests {
 
     #[test]
     fn alloc_executable_writes_and_protects() {
+        let _guard = crate::test_support::process_lock();
         let region = alloc_executable(&[0xC3], SELF_PAGE_RX).unwrap();
         assert_ne!(region.base(), 0);
         assert_eq!(region.protection(), SELF_PAGE_RX);
@@ -177,6 +180,7 @@ mod tests {
 
     #[test]
     fn spawn_suspended_thread_reports_id() {
+        let _guard = crate::test_support::process_lock();
         let region = alloc_executable(&[0xC3], SELF_PAGE_RX).unwrap();
         let handle = spawn_suspended_thread(region.base()).unwrap();
         assert_ne!(thread_id(&handle), 0);
