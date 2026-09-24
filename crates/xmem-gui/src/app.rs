@@ -162,6 +162,7 @@ pub struct XMemApp {
     pub report_output: String,
     pub report_task: BackgroundTask<(u32, (String, u64))>,
     pub report_saved: Option<(String, u64)>,
+    pub guide_query: String,
 }
 
 impl XMemApp {
@@ -176,11 +177,16 @@ impl XMemApp {
                 "표준 사용자 권한"
             },
         );
+        let tab = if config.guide_seen {
+            Tab::Overview
+        } else {
+            Tab::Guide
+        };
         let mut app = Self {
             theme: config.theme,
             config,
             is_elevated: elevated,
-            tab: Tab::Overview,
+            tab,
             selected_pid: initial_pid,
             log,
             list_task: BackgroundTask::idle(),
@@ -231,6 +237,7 @@ impl XMemApp {
             report_output: String::new(),
             report_task: BackgroundTask::idle(),
             report_saved: None,
+            guide_query: String::new(),
         };
         app.refresh_processes();
         if let Some(pid) = initial_pid {
