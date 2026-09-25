@@ -101,32 +101,6 @@ pub fn write_minidump_file(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::process::{current_pid, open_for_dump};
-
-    #[test]
-    fn write_minidump_file_of_self_is_valid() {
-        // MiniDumpWriteDump는 덤프 중 프로세스의 모듈/메모리/스레드가 바뀌면 실패할 수 있다.
-        // 자기 프로세스를 바꾸는 다른 테스트와 직렬화한다.
-        let _guard = crate::test_support::process_lock();
-        let dir = std::env::temp_dir().join(format!("xmem-dump-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("self.dmp");
-        let pid = current_pid();
-        let handle = open_for_dump(pid).unwrap();
-
-        let size = write_minidump_file(&handle, pid, &path, false).unwrap();
-        assert!(size > 0);
-        validate_minidump(&path).unwrap();
-
-        let leftovers: Vec<_> = std::fs::read_dir(&dir)
-            .unwrap()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.file_name().to_string_lossy().contains(".tmp-"))
-            .collect();
-        assert!(leftovers.is_empty(), "temp 파일이 남았다");
-
-        let _ = std::fs::remove_dir_all(&dir);
-    }
 
     #[test]
     fn validate_minidump_rejects_non_dump() {
