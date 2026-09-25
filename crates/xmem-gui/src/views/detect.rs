@@ -74,11 +74,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         crate::views::truncate_cells(ui);
         // finding 상세가 표 아래에 남아야 하므로 높이는 내용에 맞춘다.
-        egui::ScrollArea::horizontal()
-            .id_salt("detect_findings_hscroll")
-            .auto_shrink([false, true])
-            .show(ui, |ui| {
-                ui.set_min_width(500.0);
+        crate::views::wrap_hscroll_if_wide(
+            ui,
+            "detect_findings_hscroll",
+            500.0,
+            [false, true],
+            |ui| {
                 egui_extras::TableBuilder::new(ui)
                     .min_scrolled_height(0.0)
                     .striped(true)
@@ -125,7 +126,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                             }
                         });
                     });
-            });
+            },
+        );
         crate::views::wrap_default(ui);
     } else if !app.detect_task.is_running() {
         ui.label(egui::RichText::new("탐지를 실행하면 규칙 평가 결과가 표시됩니다").weak());
@@ -153,11 +155,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(format!("interpretation: {}", finding.interpretation));
         if !finding.evidence.is_empty() {
             crate::views::truncate_cells(ui);
-            egui::ScrollArea::horizontal()
-                .id_salt("detect_evidence_hscroll")
-                .auto_shrink([false, false])
-                .show(ui, |ui| {
-                    ui.set_min_width(680.0);
+            crate::views::wrap_hscroll_if_wide(
+                ui,
+                "detect_evidence_hscroll",
+                680.0,
+                [false, false],
+                |ui| {
                     egui_extras::TableBuilder::new(ui)
                         .min_scrolled_height(0.0)
                         .striped(true)
@@ -194,7 +197,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                                 });
                             });
                         });
-                });
+                },
+            );
         }
     }
 }

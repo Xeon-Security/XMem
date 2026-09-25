@@ -100,3 +100,47 @@ pub fn pane_hint(ui: &mut egui::Ui) {
             .small(),
     );
 }
+
+/// 표를 가로 스크롤로 감쌀지 판단한다. 가용 폭이 표 최소 폭 이상일 때만 감싼다.
+pub fn should_hscroll(available: f32, min_w: f32) -> bool {
+    available >= min_w
+}
+
+/// 가용 폭이 넉넉하면 표를 가로 ScrollArea에 담고, 좁으면 패널 폭에 맞춰 그린다.
+///
+/// 항상 가로 스크롤로 감싸면 좁은 창에서 표가 패널보다 넓어져 표 자신의 세로
+/// 스크롤바가 보이는 영역 밖으로 밀려난다. 좁을 때는 감싸지 않아 세로
+/// 스크롤바가 항상 보이게 한다(가로로는 열이 잘릴 수 있다).
+pub fn wrap_hscroll_if_wide<R>(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    min_w: f32,
+    auto_shrink: [bool; 2],
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> R {
+    if should_hscroll(ui.available_width(), min_w) {
+        egui::ScrollArea::horizontal()
+            .id_salt(id_salt)
+            .auto_shrink(auto_shrink)
+            .show(ui, |ui| {
+                ui.set_min_width(min_w);
+                add_contents(ui)
+            })
+            .inner
+    } else {
+        add_contents(ui)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn should_hscroll_only_when_available_width_sufficient() {
+        assert!(should_hscroll(910.0, 910.0));
+        assert!(should_hscroll(1200.0, 910.0));
+        assert!(!should_hscroll(909.9, 910.0));
+        assert!(!should_hscroll(400.0, 910.0));
+    }
+}

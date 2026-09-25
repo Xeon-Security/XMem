@@ -170,119 +170,113 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let selected_base = app.map_selected;
     let mut clicked_region: Option<MemoryRegion> = None;
     crate::views::truncate_cells(ui);
-    egui::ScrollArea::horizontal()
-        .id_salt("map_table_hscroll")
-        .auto_shrink([false, false])
-        .show(ui, |ui| {
-            ui.set_min_width(910.0);
-            egui_extras::TableBuilder::new(ui)
-                .min_scrolled_height(0.0)
-                .striped(true)
-                .drag_to_scroll(egui::scroll_area::DragScroll::Never)
-                .sense(egui::Sense::click())
-                .column(egui_extras::Column::exact(140.0))
-                .column(egui_extras::Column::exact(80.0))
-                .column(egui_extras::Column::exact(90.0))
-                .column(egui_extras::Column::exact(90.0))
-                .column(egui_extras::Column::exact(120.0))
-                .column(egui_extras::Column::exact(90.0))
-                .column(egui_extras::Column::remainder().clip(true))
-                .header(18.0, |mut header| {
-                    for title in [
-                        "BASE",
-                        "SIZE",
-                        "STATE",
-                        "TYPE",
-                        "PROTECTION",
-                        "CLASS",
-                        "HEURISTICS / FILE",
-                    ] {
-                        header.col(|ui| {
-                            ui.strong(title);
-                        });
-                    }
-                })
-                .body(|body| {
-                    body.rows(20.0, selected.len(), |mut row| {
-                        let index = row.index();
-                        let region = &map.regions[selected[index]];
-                        row.set_selected(selected_base == Some(region.base));
-                        let mut row_clicked = false;
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(opt_hex(Some(region.base))),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(human_size(region.size)),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(format!("{:?}", region.state).to_uppercase()),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(
-                                    region
-                                        .region_type
-                                        .map(|t| format!("{t:?}").to_uppercase())
-                                        .unwrap_or_else(|| "-".into()),
-                                ),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(region.protection.to_string()),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(
-                                    format!("{:?}", region.classification).to_lowercase(),
-                                ),
-                            );
-                        });
-                        row.col(|ui| {
-                            let mut text = region
-                                .heuristics
-                                .iter()
-                                .map(|h| heur_tag(*h))
-                                .collect::<Vec<_>>()
-                                .join(",");
-                            if let Some(file) = &region.mapped_file {
-                                if !text.is_empty() {
-                                    text.push(' ');
-                                }
-                                text.push_str(file);
-                            }
-                            if text.is_empty() {
-                                text = "-".into();
-                            }
-                            let color = if region.heuristics.is_empty() {
-                                colors.muted
-                            } else {
-                                colors.warn
-                            };
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(text).color(color),
-                            );
-                        });
-                        if row_clicked {
-                            clicked_region = Some(region.clone());
-                        }
+    crate::views::wrap_hscroll_if_wide(ui, "map_table_hscroll", 910.0, [false, false], |ui| {
+        egui_extras::TableBuilder::new(ui)
+            .min_scrolled_height(0.0)
+            .striped(true)
+            .drag_to_scroll(egui::scroll_area::DragScroll::Never)
+            .sense(egui::Sense::click())
+            .column(egui_extras::Column::exact(140.0))
+            .column(egui_extras::Column::exact(80.0))
+            .column(egui_extras::Column::exact(90.0))
+            .column(egui_extras::Column::exact(90.0))
+            .column(egui_extras::Column::exact(120.0))
+            .column(egui_extras::Column::exact(90.0))
+            .column(egui_extras::Column::remainder().clip(true))
+            .header(18.0, |mut header| {
+                for title in [
+                    "BASE",
+                    "SIZE",
+                    "STATE",
+                    "TYPE",
+                    "PROTECTION",
+                    "CLASS",
+                    "HEURISTICS / FILE",
+                ] {
+                    header.col(|ui| {
+                        ui.strong(title);
                     });
+                }
+            })
+            .body(|body| {
+                body.rows(20.0, selected.len(), |mut row| {
+                    let index = row.index();
+                    let region = &map.regions[selected[index]];
+                    row.set_selected(selected_base == Some(region.base));
+                    let mut row_clicked = false;
+                    row.col(|ui| {
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(opt_hex(Some(region.base))),
+                        );
+                    });
+                    row.col(|ui| {
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(human_size(region.size)),
+                        );
+                    });
+                    row.col(|ui| {
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(format!("{:?}", region.state).to_uppercase()),
+                        );
+                    });
+                    row.col(|ui| {
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(
+                                region
+                                    .region_type
+                                    .map(|t| format!("{t:?}").to_uppercase())
+                                    .unwrap_or_else(|| "-".into()),
+                            ),
+                        );
+                    });
+                    row.col(|ui| {
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(region.protection.to_string()),
+                        );
+                    });
+                    row.col(|ui| {
+                        row_clicked |= crate::views::table_cell(
+                            ui,
+                            egui::RichText::new(
+                                format!("{:?}", region.classification).to_lowercase(),
+                            ),
+                        );
+                    });
+                    row.col(|ui| {
+                        let mut text = region
+                            .heuristics
+                            .iter()
+                            .map(|h| heur_tag(*h))
+                            .collect::<Vec<_>>()
+                            .join(",");
+                        if let Some(file) = &region.mapped_file {
+                            if !text.is_empty() {
+                                text.push(' ');
+                            }
+                            text.push_str(file);
+                        }
+                        if text.is_empty() {
+                            text = "-".into();
+                        }
+                        let color = if region.heuristics.is_empty() {
+                            colors.muted
+                        } else {
+                            colors.warn
+                        };
+                        row_clicked |=
+                            crate::views::table_cell(ui, egui::RichText::new(text).color(color));
+                    });
+                    if row_clicked {
+                        clicked_region = Some(region.clone());
+                    }
                 });
-        });
+            });
+    });
     if let Some(region) = clicked_region {
         app.select_region(pid, region);
     }
