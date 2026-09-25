@@ -1,13 +1,22 @@
-use xmem_core::{ProcessInfo, Result, ThreadInfo, XmemError};
+use xmem_core::{ProcessInfo, Result, ThreadFilter, ThreadInfo, XmemError};
 use xmem_memory::LiveProcess;
 
-use crate::cli::{GlobalArgs, PidArg};
+use crate::cli::{GlobalArgs, ThreadsArgs};
 use crate::commands::render::{opt_hex, opt_num};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
-pub fn run(args: &PidArg, global: &GlobalArgs) -> Result<()> {
-    let live = LiveProcess::open(args.pid)?;
-    let threads = live.threads()?;
+pub fn run(args: &ThreadsArgs, global: &GlobalArgs) -> Result<()> {
+    let live = LiveProcess::open(args.pid.pid)?;
+    let filter = ThreadFilter {
+        with_start_only: args.with_start,
+        suspicious_only: args.suspicious,
+        tid: args.tid,
+    };
+    let threads: Vec<ThreadInfo> = live
+        .threads()?
+        .into_iter()
+        .filter(|thread| filter.matches(thread))
+        .collect();
     match resolve_mode(global.json) {
         OutputMode::Json => {
             let value = serde_json::to_value(json_payload(&live.info, &threads)).map_err(|e| {
@@ -96,6 +105,35 @@ mod tests {
         assert!(text.contains("target.exe"));
         assert!(text.contains("0x0000000140001234"));
         assert!(text.contains('-'));
+    }
+
+    #[test]
+    fn thread_filter_reduces_rows() {
+        let threads = vec![
+            sample_thread(100, Some(0x0001_4000_1234), Some("target.exe")),
+            sample_thread(200, Some(0x9000), None),
+            sample_thread(300, None, None),
+        ];
+        let suspicious = ThreadFilter {
+            suspicious_only: true,
+            ..Default::default()
+        };
+        let filtered: Vec<ThreadInfo> = threads
+            .into_iter()
+            .filter(|thread| suspicious.matches(thread))
+            .collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].tid, 200);
+        let value = json_payload(&sample_info(), &filtered);
+        assert_eq!(value["thread_count"], 1);
+        assert_eq!(value["threads"].as_array().unwrap().len(), 1);
+
+        let by_tid = ThreadFilter {
+            tid: Some(999),
+            ..Default::default()
+        };
+        let empty: Vec<ThreadInfo> = Vec::new();
+        assert!(empty.iter().all(|thread| !by_tid.matches(thread)));
     }
 
     #[test]

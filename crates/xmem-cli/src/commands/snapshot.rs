@@ -18,7 +18,97 @@ const DISK_MARGIN_BYTES: u64 = 16 * 1024 * 1024;
 pub fn run(cmd: &SnapshotCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
         SnapshotCmd::Create { pid, output } => run_create(pid.pid, output, global),
-        SnapshotCmd::Diff { before, after } => run_diff(before, after, global),
+        SnapshotCmd::Diff {
+            before,
+            after,
+            only,
+        } => run_diff(before, after, only, global),
+    }
+}
+
+/// `--only`가 고른 섹션. 미지정(빈 목록)이면 전체.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DiffSections {
+    pub regions: bool,
+    pub content: bool,
+    pub modules: bool,
+    pub threads: bool,
+    pub detections: bool,
+}
+
+/// 콤마 목록을 파싱한다. 빈 토큰만 있으면 None(전체 표시)을 돌려준다.
+pub(crate) fn parse_only(only: &[String]) -> Result<Option<DiffSections>> {
+    let mut sections = DiffSections {
+        regions: false,
+        content: false,
+        modules: false,
+        threads: false,
+        detections: false,
+    };
+    let mut any = false;
+    for value in only {
+        for token in value.split(',') {
+            let token = token.trim();
+            if token.is_empty() {
+                continue;
+            }
+            match token.to_ascii_lowercase().as_str() {
+                "regions" => sections.regions = true,
+                "content" => sections.content = true,
+                "modules" => sections.modules = true,
+                "threads" => sections.threads = true,
+                "detections" => sections.detections = true,
+                other => {
+                    return Err(XmemError::InvalidInput {
+                        reason: format!(
+                            "--only 값이 알 수 없음: '{other}' (regions,content,modules,threads,detections)"
+                        ),
+                    });
+                }
+            }
+            any = true;
+        }
+    }
+    Ok(any.then_some(sections))
+}
+
+/// 고르지 않은 섹션은 비우고 summary 카운터도 맞춰 0으로 만든다(JSON 키는 유지).
+pub(crate) fn apply_only(diff: &mut SnapshotDiff, sections: &DiffSections) {
+    if !sections.regions {
+        diff.regions_added.clear();
+        diff.regions_removed.clear();
+        diff.regions_changed.clear();
+        diff.summary.regions_added = 0;
+        diff.summary.regions_removed = 0;
+        diff.summary.regions_changed = 0;
+    }
+    if !sections.content {
+        diff.content_changed.clear();
+        diff.summary.content_changed = 0;
+    }
+    if !sections.modules {
+        diff.modules_added.clear();
+        diff.modules_removed.clear();
+        diff.modules_changed.clear();
+        diff.summary.modules_added = 0;
+        diff.summary.modules_removed = 0;
+        diff.summary.modules_changed = 0;
+    }
+    if !sections.threads {
+        diff.threads_added.clear();
+        diff.threads_removed.clear();
+        diff.threads_changed.clear();
+        diff.summary.threads_added = 0;
+        diff.summary.threads_removed = 0;
+        diff.summary.threads_changed = 0;
+    }
+    if !sections.detections {
+        diff.detections_added.clear();
+        diff.detections_removed.clear();
+        diff.detections_changed.clear();
+        diff.summary.detections_added = 0;
+        diff.summary.detections_removed = 0;
+        diff.summary.detections_changed = 0;
     }
 }
 
@@ -116,10 +206,13 @@ pub(crate) fn ensure_disk_space(dir: &Path, needed: u64) -> Result<()> {
     Ok(())
 }
 
-fn run_diff(before: &str, after: &str, global: &GlobalArgs) -> Result<()> {
+fn run_diff(before: &str, after: &str, only: &[String], global: &GlobalArgs) -> Result<()> {
     let before_envelope = read_file(Path::new(before))?;
     let after_envelope = read_file(Path::new(after))?;
-    let result = diff(&before_envelope, &after_envelope);
+    let mut result = diff(&before_envelope, &after_envelope);
+    if let Some(sections) = parse_only(only)? {
+        apply_only(&mut result, &sections);
+    }
     match resolve_mode(global.json) {
         OutputMode::Json => {
             emit_json(&success_envelope(diff_json_payload(&result)));
@@ -305,6 +398,53 @@ mod tests {
         assert_eq!(payload["summary"]["regions_added"], 1);
         assert_eq!(payload["summary"]["regions_removed"], 1);
         assert!(payload["regions_added"].is_array());
+    }
+
+    #[test]
+    fn parse_only_handles_lists_empties_and_unknown_values() {
+        assert_eq!(parse_only(&[]).unwrap(), None, "미지정은 전체");
+        assert_eq!(parse_only(&[String::new()]).unwrap(), None, "빈 값도 전체");
+
+        let sections = parse_only(&["regions,content".to_string()])
+            .unwrap()
+            .expect("섹션이 있어야 함");
+        assert!(sections.regions && sections.content);
+        assert!(!sections.modules && !sections.threads && !sections.detections);
+
+        assert!(parse_only(&["bogus".to_string()]).is_err());
+    }
+
+    #[test]
+    fn apply_only_clears_unselected_sections_and_summary() {
+        let before = sample_envelope_for_diff(0x1000, 0x04, 100);
+        let mut after = sample_envelope_for_diff(0x1000, 0x40, 101);
+        after.regions.push(xmem_core::MemoryRegion {
+            base: 0x9000,
+            ..after.regions[0].clone()
+        });
+        let mut result = xmem_forensics::diff(&before, &after);
+        assert!(!result.regions_added.is_empty());
+        assert!(!result.regions_changed.is_empty());
+        assert!(!result.threads_added.is_empty());
+
+        let sections = parse_only(&["regions".to_string()])
+            .unwrap()
+            .expect("섹션이 있어야 함");
+        apply_only(&mut result, &sections);
+        assert!(!result.regions_added.is_empty(), "선택된 섹션은 유지");
+        assert!(result.modules_added.is_empty());
+        assert!(result.threads_added.is_empty());
+        assert!(result.threads_removed.is_empty());
+        assert!(result.detections_added.is_empty());
+        assert_eq!(result.summary.threads_added, 0);
+        assert_eq!(result.summary.modules_added, 0);
+        assert!(result.summary.regions_changed > 0);
+
+        let value = diff_json_payload(&result);
+        assert!(!value["regions_changed"].as_array().unwrap().is_empty());
+        assert!(value["threads_added"].as_array().unwrap().is_empty());
+        assert!(value["threads_removed"].as_array().unwrap().is_empty());
+        assert!(value.get("summary").is_some(), "JSON 키는 유지된다");
     }
 
     #[test]

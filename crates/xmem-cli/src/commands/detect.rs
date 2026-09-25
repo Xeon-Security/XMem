@@ -1,18 +1,27 @@
 use std::path::Path;
 
 use serde_json::{Value, json};
-use xmem_core::{Finding, ProcessInfo, Result};
+use xmem_core::{Finding, FindingFilter, ProcessInfo, Result, severity_rank};
 use xmem_detection::detect_source;
 use xmem_memory::LiveProcess;
 
-use crate::cli::{DetectArgs, GlobalArgs};
+use crate::cli::{ConfidenceArg, DetectArgs, DetectSortArg, GlobalArgs, SeverityArg};
 use crate::commands::export::{ExportPayload, emit_export_saved, write_export};
 use crate::commands::render::opt_hex;
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 pub fn run(args: &DetectArgs, global: &GlobalArgs) -> Result<()> {
     let live = LiveProcess::open(args.pid.pid)?;
-    let findings = detect_source(&live)?;
+    let filter = FindingFilter {
+        min_severity: args.min_severity.map(SeverityArg::to_severity),
+        min_confidence: args.min_confidence.map(ConfidenceArg::to_confidence),
+        rule_id: args.rule.clone(),
+    };
+    let mut findings: Vec<Finding> = detect_source(&live)?
+        .into_iter()
+        .filter(|finding| filter.matches(finding))
+        .collect();
+    sort_findings(&mut findings, args.sort);
     if let Some(output) = args.output.output.as_deref() {
         let bytes = write_export(
             Path::new(output),
@@ -88,6 +97,33 @@ pub(crate) fn detect_json_payload(info: &ProcessInfo, findings: &[Finding]) -> V
     })
 }
 
+/// 첫 evidence의 address(없으면 region_base)를 정렬 기준 주소로 쓴다.
+fn finding_address(finding: &Finding) -> u64 {
+    finding
+        .evidence
+        .first()
+        .and_then(|evidence| evidence.address.or(evidence.region_base))
+        .unwrap_or(u64::MAX)
+}
+
+/// `--sort`. rule은 기존 detect()의 rule→주소 순서를 안정 정렬로 유지한다.
+pub(crate) fn sort_findings(findings: &mut [Finding], sort: DetectSortArg) {
+    match sort {
+        DetectSortArg::Rule => findings.sort_by(|a, b| a.rule_id.cmp(&b.rule_id)),
+        DetectSortArg::Address => findings.sort_by(|a, b| {
+            finding_address(a)
+                .cmp(&finding_address(b))
+                .then_with(|| a.rule_id.cmp(&b.rule_id))
+        }),
+        DetectSortArg::Severity => findings.sort_by(|a, b| {
+            severity_rank(b.severity)
+                .cmp(&severity_rank(a.severity))
+                .then_with(|| a.rule_id.cmp(&b.rule_id))
+                .then_with(|| finding_address(a).cmp(&finding_address(b)))
+        }),
+    }
+}
+
 fn severity_text(severity: xmem_core::Severity) -> &'static str {
     match severity {
         xmem_core::Severity::Info => "info",
@@ -128,21 +164,71 @@ mod tests {
         }
     }
 
-    fn sample_finding() -> Finding {
+    fn finding_at(
+        rule: &str,
+        severity: Severity,
+        confidence: Confidence,
+        region_base: u64,
+    ) -> Finding {
         Finding {
-            rule_id: "XMEM-001".to_string(),
+            rule_id: rule.to_string(),
             name: "Executable Private Memory".to_string(),
-            severity: Severity::Medium,
-            confidence: Confidence::High,
+            severity,
+            confidence,
             evidence: vec![
                 Evidence::new("region")
-                    .with_region_base(0x1000)
+                    .with_region_base(region_base)
                     .observe("protection", "RWX (0x40)")
                     .observe("state", "MEM_COMMIT"),
             ],
             heuristic: "private memory with executable protection".to_string(),
             interpretation: "Potentially suspicious memory region".to_string(),
         }
+    }
+
+    fn sample_finding() -> Finding {
+        finding_at("XMEM-001", Severity::Medium, Confidence::High, 0x1000)
+    }
+
+    #[test]
+    fn finding_filter_reduces_findings_and_keeps_json_shape() {
+        let findings = vec![
+            sample_finding(),
+            finding_at("XMEM-002", Severity::High, Confidence::Medium, 0x2000),
+        ];
+        let filter = FindingFilter {
+            min_severity: Some(Severity::High),
+            ..Default::default()
+        };
+        let filtered: Vec<Finding> = findings
+            .into_iter()
+            .filter(|finding| filter.matches(finding))
+            .collect();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].rule_id, "XMEM-002");
+        let payload = detect_json_payload(&sample_info(), &filtered);
+        assert_eq!(payload["finding_count"], 1);
+        assert_eq!(payload["findings"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn sort_findings_orders_by_requested_key() {
+        let mut findings = vec![
+            finding_at("XMEM-005", Severity::High, Confidence::High, 0x3000),
+            finding_at("XMEM-001", Severity::Medium, Confidence::High, 0x1000),
+            finding_at("XMEM-003", Severity::High, Confidence::Medium, 0x2000),
+        ];
+        sort_findings(&mut findings, DetectSortArg::Severity);
+        let rules: Vec<&str> = findings.iter().map(|f| f.rule_id.as_str()).collect();
+        assert_eq!(rules, vec!["XMEM-003", "XMEM-005", "XMEM-001"]);
+
+        sort_findings(&mut findings, DetectSortArg::Address);
+        let rules: Vec<&str> = findings.iter().map(|f| f.rule_id.as_str()).collect();
+        assert_eq!(rules, vec!["XMEM-001", "XMEM-003", "XMEM-005"]);
+
+        sort_findings(&mut findings, DetectSortArg::Rule);
+        let rules: Vec<&str> = findings.iter().map(|f| f.rule_id.as_str()).collect();
+        assert_eq!(rules, vec!["XMEM-001", "XMEM-003", "XMEM-005"]);
     }
 
     #[test]

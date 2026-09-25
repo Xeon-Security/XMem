@@ -2,56 +2,100 @@ use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use xmem_core::{MemoryRegion, ProcessInfo, RegionClass, Result, ScanPattern, XmemError};
+use xmem_core::{
+    MemoryRegion, ProcessInfo, RegionClass, RegionFilter, Result, ScanPattern, XmemError,
+};
 use xmem_memory::{
     DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RESULTS, LiveProcess, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE,
     RegionFilters, RegionMap, ScanOptions, ScanReport, scan,
 };
 
-use crate::cli::{GlobalArgs, MemoryCmd, ScanArgs};
+use crate::cli::{
+    ClassArg, GlobalArgs, HeuristicArg, MapArgs, MapSortArg, MemoryCmd, ProtArg, ScanArgs, StateArg,
+};
 use crate::commands::export::{ExportPayload, emit_export_saved, write_export};
 use crate::commands::render::{heur_short, human_size, truncate, truncate_tail};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
-        MemoryCmd::Map(args) => {
-            let live = LiveProcess::open(args.pid.pid)?;
-            let map = live.region_map()?;
-            if let Some(output) = args.output.output.as_deref() {
-                let bytes = write_export(
-                    Path::new(output),
-                    args.output.format,
-                    &ExportPayload::Map(&map.regions),
-                )?;
-                emit_export_saved(
-                    output,
-                    args.output.format,
-                    bytes,
-                    map.regions.len(),
-                    "map",
-                    global,
-                );
-                return Ok(());
-            }
-            match resolve_mode(global.json) {
-                OutputMode::Json => {
-                    let value =
-                        serde_json::to_value(json_payload(&live.info, &map)).map_err(|e| {
-                            XmemError::JsonError {
-                                reason: e.to_string(),
-                            }
-                        })?;
-                    emit_json(&success_envelope(value));
-                    Ok(())
-                }
-                OutputMode::Human => {
-                    emit(&render_map(&map));
-                    Ok(())
-                }
-            }
-        }
+        MemoryCmd::Map(args) => run_map(args, global),
         MemoryCmd::Scan(args) => run_scan(args, global),
+    }
+}
+
+/// CLI 플래그를 core `RegionFilter`로 변환한다. 값 파싱 오류는 프로세스 open 전에 낸다.
+fn build_map_filter(args: &MapArgs) -> Result<RegionFilter> {
+    Ok(RegionFilter {
+        readable_only: args.readable_only,
+        writable_only: args.writable_only,
+        executable_only: args.executable_only,
+        class: args.class.map(ClassArg::to_class),
+        state: args.state.map(StateArg::to_state),
+        protection: args.protection.map(ProtArg::to_mask),
+        heuristic: args.heuristic.map(HeuristicArg::to_heuristic),
+        pe_like_only: args.pe_like,
+        outside_modules_only: args.outside_modules,
+        mapped_only: args.mapped_only,
+        range: args.range.as_deref().map(parse_range).transpose()?,
+        min_size: args.min_size,
+        max_size: args.max_size,
+    })
+}
+
+/// GUI `MapSort`와 같은 순서를 만든다.
+fn sort_regions(regions: &mut [MemoryRegion], sort: MapSortArg) {
+    match sort {
+        MapSortArg::Addr => regions.sort_by_key(|region| region.base),
+        MapSortArg::AddrDesc => regions.sort_by_key(|region| std::cmp::Reverse(region.base)),
+        MapSortArg::SizeDesc => {
+            regions.sort_by_key(|region| (std::cmp::Reverse(region.size), region.base));
+        }
+    }
+}
+
+fn run_map(args: &MapArgs, global: &GlobalArgs) -> Result<()> {
+    let filter = build_map_filter(args)?;
+    let live = LiveProcess::open(args.pid.pid)?;
+    let modules = if filter.outside_modules_only {
+        live.modules()?
+    } else {
+        Vec::new()
+    };
+    let mut map = live.region_map()?;
+    map.regions
+        .retain(|region| filter.matches(region, &modules));
+    sort_regions(&mut map.regions, args.sort);
+    if let Some(output) = args.output.output.as_deref() {
+        let bytes = write_export(
+            Path::new(output),
+            args.output.format,
+            &ExportPayload::Map(&map.regions),
+        )?;
+        emit_export_saved(
+            output,
+            args.output.format,
+            bytes,
+            map.regions.len(),
+            "map",
+            global,
+        );
+        return Ok(());
+    }
+    match resolve_mode(global.json) {
+        OutputMode::Json => {
+            let value = serde_json::to_value(json_payload(&live.info, &map)).map_err(|e| {
+                XmemError::JsonError {
+                    reason: e.to_string(),
+                }
+            })?;
+            emit_json(&success_envelope(value));
+            Ok(())
+        }
+        OutputMode::Human => {
+            emit(&render_map(&map));
+            Ok(())
+        }
     }
 }
 
@@ -602,6 +646,89 @@ mod tests {
         assert_eq!(parse_range("4096:8192").unwrap(), (4096, 8192));
         assert!(parse_range("0x2000:0x1000").is_err());
         assert!(parse_range("0x1000").is_err());
+    }
+
+    #[test]
+    fn build_map_filter_maps_flags_to_core_filter() {
+        use clap::Parser;
+        let cli = crate::cli::Cli::try_parse_from([
+            "xmem",
+            "memory",
+            "map",
+            "--pid",
+            "1",
+            "--readable-only",
+            "--class",
+            "private",
+            "--prot",
+            "rwx",
+            "--range",
+            "0x1000:0x2000",
+            "--min-size",
+            "4096",
+            "--max-size",
+            "8192",
+        ])
+        .unwrap();
+        let crate::cli::Command::Memory {
+            cmd: MemoryCmd::Map(args),
+        } = cli.command
+        else {
+            panic!("map이 아님");
+        };
+        let filter = build_map_filter(&args).unwrap();
+        assert!(filter.readable_only);
+        assert_eq!(filter.class, Some(RegionClass::Private));
+        assert_eq!(filter.protection, Some(xmem_core::ProtectionMask::Rwx));
+        assert_eq!(filter.range, Some((0x1000, 0x2000)));
+        assert_eq!(filter.min_size, Some(4096));
+        assert_eq!(filter.max_size, Some(8192));
+        assert!(build_map_filter(&args).is_ok());
+    }
+
+    #[test]
+    fn region_filter_and_sort_apply_to_map_regions() {
+        let mut regions = sample_map().regions;
+        let filter = RegionFilter {
+            executable_only: true,
+            ..Default::default()
+        };
+        regions.retain(|region| filter.matches(region, &[]));
+        assert_eq!(regions.len(), 2, "executable 영역만 남는다");
+
+        sort_regions(&mut regions, MapSortArg::AddrDesc);
+        assert_eq!(
+            regions.iter().map(|r| r.base).collect::<Vec<_>>(),
+            vec![0x2000, 0x1000]
+        );
+        sort_regions(&mut regions, MapSortArg::SizeDesc);
+        assert_eq!(
+            regions.iter().map(|r| r.base).collect::<Vec<_>>(),
+            vec![0x1000, 0x2000],
+            "크기 동률이면 GUI와 같이 base 오름차순"
+        );
+
+        let out = render_map(&RegionMap {
+            regions,
+            truncated: false,
+        });
+        assert!(out.contains("MEM_IMAGE"));
+        assert!(out.contains("2 regions:"), "필터된 목록으로 요약한다");
+        assert!(!out.contains("MEM_FREE"));
+    }
+
+    #[test]
+    fn address_sort_matches_gui_ascending_order() {
+        let mut regions = vec![
+            region(0x3000, MemoryState::Commit, Some(MemoryType::Private), 0x04),
+            region(0x1000, MemoryState::Commit, Some(MemoryType::Private), 0x04),
+            region(0x2000, MemoryState::Commit, Some(MemoryType::Private), 0x04),
+        ];
+        sort_regions(&mut regions, MapSortArg::Addr);
+        assert_eq!(
+            regions.iter().map(|r| r.base).collect::<Vec<_>>(),
+            vec![0x1000, 0x2000, 0x3000]
+        );
     }
 
     #[test]

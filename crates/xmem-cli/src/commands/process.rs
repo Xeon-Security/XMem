@@ -1,12 +1,31 @@
-use crate::cli::{GlobalArgs, ProcessCmd};
+use crate::cli::{ArchArg, GlobalArgs, PidArg, ProcessCmd, ProcessListArgs};
 use crate::commands::render::{opt_num, truncate};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
-use xmem_core::{ProcessArch, ProcessInfo, Result, XmemError};
+use xmem_core::{ProcessArch, ProcessFilter, ProcessInfo, Result, XmemError};
 
 pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
-    match (cmd, resolve_mode(global.json)) {
-        (ProcessCmd::List(args), OutputMode::Json) => {
-            let rows = list_rows(args.accessible_only)?;
+    match cmd {
+        ProcessCmd::List(args) => run_list(args, global),
+        ProcessCmd::Info(args) => run_info(args, global),
+    }
+}
+
+fn build_filter(args: &ProcessListArgs) -> ProcessFilter {
+    ProcessFilter {
+        accessible_only: args.accessible_only,
+        name_contains: args.name.clone(),
+        arch: args.arch.map(ArchArg::to_arch),
+        session: args.session,
+        user_contains: args.user.clone(),
+        protected_only: args.protected,
+        parent_pid: args.ppid,
+    }
+}
+
+fn run_list(args: &ProcessListArgs, global: &GlobalArgs) -> Result<()> {
+    let rows = list_rows(&build_filter(args))?;
+    match resolve_mode(global.json) {
+        OutputMode::Json => {
             let processes = rows
                 .iter()
                 .map(|(info, accessible)| {
@@ -22,21 +41,21 @@ pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
                 serde_json::json!({ "processes": processes }),
             ));
         }
-        (ProcessCmd::List(args), OutputMode::Human) => {
-            let rows = list_rows(args.accessible_only)?;
-            emit(&render_list(&rows));
-        }
-        (ProcessCmd::Info(args), OutputMode::Json) => {
-            let info = xmem_windows::process_info(args.pid)?;
+        OutputMode::Human => emit(&render_list(&rows)),
+    }
+    Ok(())
+}
+
+fn run_info(args: &PidArg, global: &GlobalArgs) -> Result<()> {
+    let info = xmem_windows::process_info(args.pid)?;
+    match resolve_mode(global.json) {
+        OutputMode::Json => {
             let value = serde_json::to_value(&info).map_err(|e| XmemError::JsonError {
                 reason: e.to_string(),
             })?;
             emit_json(&success_envelope(value));
         }
-        (ProcessCmd::Info(args), OutputMode::Human) => {
-            let info = xmem_windows::process_info(args.pid)?;
-            emit(&render_info(&info));
-        }
+        OutputMode::Human => emit(&render_info(&info)),
     }
     Ok(())
 }
@@ -50,27 +69,24 @@ pub(crate) fn arch_str(arch: ProcessArch) -> &'static str {
     }
 }
 
-/// 각 프로세스를 접근성(메모리 읽기 가능 여부)과 함께 나열한다.
-fn list_rows(accessible_only: bool) -> Result<Vec<(ProcessInfo, bool)>> {
+/// 각 프로세스를 접근성(메모리 읽기 가능 여부)과 함께 나열하고 필터를 적용한다.
+fn list_rows(filter: &ProcessFilter) -> Result<Vec<(ProcessInfo, bool)>> {
     let infos = xmem_windows::list_processes()?;
-    let rows = infos
+    Ok(infos
         .into_iter()
         .map(|info| {
             let accessible = xmem_windows::is_memory_readable(info.pid);
             (info, accessible)
         })
-        .collect();
-    Ok(filter_rows(rows, accessible_only))
+        .filter(|(info, accessible)| filter.matches(info, *accessible))
+        .collect())
 }
 
-fn filter_rows(rows: Vec<(ProcessInfo, bool)>, accessible_only: bool) -> Vec<(ProcessInfo, bool)> {
-    if accessible_only {
-        rows.into_iter()
-            .filter(|(_, accessible)| *accessible)
-            .collect()
-    } else {
-        rows
-    }
+#[cfg(test)]
+fn filter_rows(rows: Vec<(ProcessInfo, bool)>, filter: &ProcessFilter) -> Vec<(ProcessInfo, bool)> {
+    rows.into_iter()
+        .filter(|(info, accessible)| filter.matches(info, *accessible))
+        .collect()
 }
 
 fn access_str(accessible: bool) -> &'static str {
@@ -230,10 +246,39 @@ mod tests {
     #[test]
     fn accessible_only_filters_rows() {
         let rows = vec![row(10, true), row(20, false)];
-        let filtered = filter_rows(rows.clone(), true);
+        let accessible = ProcessFilter {
+            accessible_only: true,
+            ..Default::default()
+        };
+        let filtered = filter_rows(rows.clone(), &accessible);
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].0.pid, 10);
-        assert_eq!(filter_rows(rows, false).len(), 2);
+        assert_eq!(filter_rows(rows, &ProcessFilter::default()).len(), 2);
+    }
+
+    #[test]
+    fn filters_rows_by_name_arch_and_ppid() {
+        let mut rows = vec![(sample(10), true), (sample(20), true)];
+        rows[1].0.name = "other.exe".to_string();
+        let by_name = ProcessFilter {
+            name_contains: Some("PROC10".to_string()),
+            ..Default::default()
+        };
+        let filtered = filter_rows(rows.clone(), &by_name);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0.pid, 10);
+
+        let all_parents = ProcessFilter {
+            parent_pid: Some(1000),
+            ..Default::default()
+        };
+        assert_eq!(filter_rows(rows.clone(), &all_parents).len(), 2);
+
+        let x86 = ProcessFilter {
+            arch: Some(ProcessArch::X86),
+            ..Default::default()
+        };
+        assert_eq!(filter_rows(rows, &x86).len(), 0);
     }
 
     #[test]

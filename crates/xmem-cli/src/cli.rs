@@ -1,5 +1,8 @@
 //! CLI 트리. 전 명령의 인터페이스 계약을 여기서 확정한다.
 use clap::{ArgGroup, Args, Parser, Subcommand};
+use xmem_core::{
+    Confidence, Heuristic, MemoryState, ProcessArch, ProtectionMask, RegionClass, Severity,
+};
 
 #[derive(Debug, Parser)]
 #[command(
@@ -64,12 +67,235 @@ pub struct OutputArgs {
     pub format: ExportFormat,
 }
 
+/// `--state` 값.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum StateArg {
+    #[value(name = "commit")]
+    Commit,
+    #[value(name = "reserve")]
+    Reserve,
+    #[value(name = "free")]
+    Free,
+}
+
+impl StateArg {
+    pub fn to_state(self) -> MemoryState {
+        match self {
+            StateArg::Commit => MemoryState::Commit,
+            StateArg::Reserve => MemoryState::Reserve,
+            StateArg::Free => MemoryState::Free,
+        }
+    }
+}
+
+/// `--class` 값.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ClassArg {
+    #[value(name = "image")]
+    Image,
+    #[value(name = "mapped")]
+    Mapped,
+    #[value(name = "private")]
+    Private,
+}
+
+impl ClassArg {
+    pub fn to_class(self) -> RegionClass {
+        match self {
+            ClassArg::Image => RegionClass::Image,
+            ClassArg::Mapped => RegionClass::Mapped,
+            ClassArg::Private => RegionClass::Private,
+        }
+    }
+}
+
+/// `--prot` 값. Windows 보호 비트의 R/W/X 표기를 그대로 받는다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ProtArg {
+    #[value(name = "rwx")]
+    Rwx,
+    #[value(name = "r-x")]
+    Rx,
+    #[value(name = "rw-")]
+    Rw,
+    #[value(name = "r--")]
+    R,
+    #[value(name = "---")]
+    None,
+}
+
+impl ProtArg {
+    pub fn to_mask(self) -> ProtectionMask {
+        match self {
+            ProtArg::Rwx => ProtectionMask::Rwx,
+            ProtArg::Rx => ProtectionMask::Rx,
+            ProtArg::Rw => ProtectionMask::Rw,
+            ProtArg::R => ProtectionMask::R,
+            ProtArg::None => ProtectionMask::None,
+        }
+    }
+}
+
+/// `--heuristic` 값.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum HeuristicArg {
+    #[value(name = "exec-private")]
+    ExecPrivate,
+    #[value(name = "exec-anon")]
+    ExecAnon,
+    #[value(name = "pe-like")]
+    PeLike,
+    #[value(name = "wx")]
+    Wx,
+}
+
+impl HeuristicArg {
+    pub fn to_heuristic(self) -> Heuristic {
+        match self {
+            HeuristicArg::ExecPrivate => Heuristic::ExecutablePrivate,
+            HeuristicArg::ExecAnon => Heuristic::ExecutableAnonymous,
+            HeuristicArg::PeLike => Heuristic::PrivateExecutablePeLike,
+            HeuristicArg::Wx => Heuristic::WritableExecutable,
+        }
+    }
+}
+
+/// 프로세스/모듈 아키텍처 값. x64/x86만 지원한다(ARM64는 범위 밖).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ArchArg {
+    #[value(name = "x64")]
+    X64,
+    #[value(name = "x86")]
+    X86,
+}
+
+impl ArchArg {
+    pub fn to_arch(self) -> ProcessArch {
+        match self {
+            ArchArg::X64 => ProcessArch::X64,
+            ArchArg::X86 => ProcessArch::X86,
+        }
+    }
+}
+
+/// `memory map --sort` 값. GUI `MapSort`와 같은 순서를 만든다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum MapSortArg {
+    #[value(name = "addr")]
+    Addr,
+    #[value(name = "addr-desc")]
+    AddrDesc,
+    #[value(name = "size-desc")]
+    SizeDesc,
+}
+
+/// `detect --sort` 값. 기본 rule은 기존 rule→주소 순서를 유지한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum DetectSortArg {
+    #[value(name = "severity")]
+    Severity,
+    #[value(name = "address")]
+    Address,
+    #[value(name = "rule")]
+    Rule,
+}
+
+/// `--min-severity` 값.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum SeverityArg {
+    #[value(name = "info")]
+    Info,
+    #[value(name = "low")]
+    Low,
+    #[value(name = "medium")]
+    Medium,
+    #[value(name = "high")]
+    High,
+    #[value(name = "critical")]
+    Critical,
+}
+
+impl SeverityArg {
+    pub fn to_severity(self) -> Severity {
+        match self {
+            SeverityArg::Info => Severity::Info,
+            SeverityArg::Low => Severity::Low,
+            SeverityArg::Medium => Severity::Medium,
+            SeverityArg::High => Severity::High,
+            SeverityArg::Critical => Severity::Critical,
+        }
+    }
+}
+
+/// `--min-confidence` 값.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ConfidenceArg {
+    #[value(name = "low")]
+    Low,
+    #[value(name = "medium")]
+    Medium,
+    #[value(name = "high")]
+    High,
+}
+
+impl ConfidenceArg {
+    pub fn to_confidence(self) -> Confidence {
+        match self {
+            ConfidenceArg::Low => Confidence::Low,
+            ConfidenceArg::Medium => Confidence::Medium,
+            ConfidenceArg::High => Confidence::High,
+        }
+    }
+}
+
 #[derive(Debug, Args)]
 pub struct MapArgs {
     #[command(flatten)]
     pub pid: PidArg,
     #[command(flatten)]
     pub output: OutputArgs,
+    /// 읽기 가능 영역만
+    #[arg(long = "readable-only")]
+    pub readable_only: bool,
+    /// 쓰기 가능 영역만
+    #[arg(long = "writable-only")]
+    pub writable_only: bool,
+    /// 실행 가능 영역만
+    #[arg(long = "executable-only")]
+    pub executable_only: bool,
+    /// 메모리 상태 필터
+    #[arg(long, value_enum)]
+    pub state: Option<StateArg>,
+    /// 분류 필터
+    #[arg(long, value_enum)]
+    pub class: Option<ClassArg>,
+    /// 보호 속성 필터 (rwx|r-x|rw-|r--|---)
+    #[arg(long = "prot", value_enum, allow_hyphen_values = true)]
+    pub protection: Option<ProtArg>,
+    /// heuristic 태그 필터
+    #[arg(long, value_enum)]
+    pub heuristic: Option<HeuristicArg>,
+    /// PE-like private executable 영역만
+    #[arg(long = "pe-like")]
+    pub pe_like: bool,
+    /// 로드된 모듈 범위 밖 영역만 (모듈 목록이 비면 매칭 없음)
+    #[arg(long = "outside-modules")]
+    pub outside_modules: bool,
+    /// 파일 백킹이 관찰된 영역만
+    #[arg(long = "mapped-only")]
+    pub mapped_only: bool,
+    /// 주소 범위 겹침 필터 (예: "0x1000:0x2000")
+    #[arg(long)]
+    pub range: Option<String>,
+    /// 최소 영역 크기(바이트)
+    #[arg(long = "min-size")]
+    pub min_size: Option<u64>,
+    /// 최대 영역 크기(바이트)
+    #[arg(long = "max-size")]
+    pub max_size: Option<u64>,
+    /// 정렬 순서
+    #[arg(long, value_enum, default_value = "addr")]
+    pub sort: MapSortArg,
 }
 
 #[derive(Debug, Args)]
@@ -78,6 +304,18 @@ pub struct DetectArgs {
     pub pid: PidArg,
     #[command(flatten)]
     pub output: OutputArgs,
+    /// 최소 severity
+    #[arg(long = "min-severity", value_enum)]
+    pub min_severity: Option<SeverityArg>,
+    /// 최소 confidence
+    #[arg(long = "min-confidence", value_enum)]
+    pub min_confidence: Option<ConfidenceArg>,
+    /// 특정 rule ID만
+    #[arg(long)]
+    pub rule: Option<String>,
+    /// 정렬 순서
+    #[arg(long, value_enum, default_value = "rule")]
+    pub sort: DetectSortArg,
 }
 
 #[derive(Debug, Args)]
@@ -87,6 +325,15 @@ pub struct ModulesArgs {
     /// 모듈 메모리 헤더에서 PE 정보(arch/entry/sections)를 파싱해 함께 표시한다
     #[arg(long)]
     pub pe: bool,
+    /// 이름/경로에 SUBSTR이 포함된 모듈만
+    #[arg(long = "filter")]
+    pub filter: Option<String>,
+    /// 모듈 아키텍처 필터
+    #[arg(long, value_enum)]
+    pub arch: Option<ArchArg>,
+    /// PE 파싱에 실패한 모듈만
+    #[arg(long)]
+    pub unparsed: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -104,7 +351,7 @@ pub enum Command {
     /// 로드된 모듈 분석
     Modules(ModulesArgs),
     /// 스레드 분석
-    Threads(PidArg),
+    Threads(ThreadsArgs),
     /// 메모리 스냅샷
     Snapshot {
         #[command(subcommand)]
@@ -137,6 +384,39 @@ pub struct ProcessListArgs {
     /// 메모리를 읽을 수 있는 프로세스만 표시
     #[arg(long)]
     pub accessible_only: bool,
+    /// 이름에 SUBSTR이 포함된 프로세스만
+    #[arg(long)]
+    pub name: Option<String>,
+    /// 아키텍처 필터
+    #[arg(long, value_enum)]
+    pub arch: Option<ArchArg>,
+    /// 세션 ID 필터
+    #[arg(long)]
+    pub session: Option<u32>,
+    /// 사용자 이름에 SUBSTR이 포함된 프로세스만
+    #[arg(long)]
+    pub user: Option<String>,
+    /// 중요 프로세스 보호 목록에 있는 프로세스만
+    #[arg(long)]
+    pub protected: bool,
+    /// 부모 PID 필터
+    #[arg(long)]
+    pub ppid: Option<u32>,
+}
+
+#[derive(Debug, Args)]
+pub struct ThreadsArgs {
+    #[command(flatten)]
+    pub pid: PidArg,
+    /// 시작 주소를 조회할 수 있는 스레드만
+    #[arg(long = "with-start")]
+    pub with_start: bool,
+    /// 모듈 밖 시작 주소를 가진 스레드만 (suspicious)
+    #[arg(long)]
+    pub suspicious: bool,
+    /// 특정 TID만
+    #[arg(long)]
+    pub tid: Option<u32>,
 }
 
 #[derive(Debug, Subcommand)]
@@ -211,7 +491,13 @@ pub enum SnapshotCmd {
         output: String,
     },
     /// 스냅샷 비교
-    Diff { before: String, after: String },
+    Diff {
+        before: String,
+        after: String,
+        /// 표시할 섹션 (콤마 목록: regions,content,modules,threads,detections; 미지정 시 전체)
+        #[arg(long, value_delimiter = ',')]
+        only: Vec<String>,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -344,16 +630,249 @@ mod tests {
     }
 
     #[test]
-    fn parses_snapshot_diff_paths() {
+    fn parses_snapshot_diff_paths_and_only_sections() {
         let cli = parse(&["xmem", "snapshot", "diff", "a.xmem", "b.xmem"]).unwrap();
         let Command::Snapshot {
-            cmd: SnapshotCmd::Diff { before, after },
+            cmd:
+                SnapshotCmd::Diff {
+                    before,
+                    after,
+                    only,
+                },
         } = cli.command
         else {
             panic!("expected snapshot diff");
         };
         assert_eq!(before, "a.xmem");
         assert_eq!(after, "b.xmem");
+        assert!(only.is_empty(), "미지정이면 전체");
+
+        let cli = parse(&[
+            "xmem",
+            "snapshot",
+            "diff",
+            "a.xmem",
+            "b.xmem",
+            "--only",
+            "regions,content",
+        ])
+        .unwrap();
+        let Command::Snapshot {
+            cmd: SnapshotCmd::Diff { only, .. },
+        } = cli.command
+        else {
+            panic!("expected snapshot diff");
+        };
+        assert_eq!(only, vec!["regions".to_string(), "content".to_string()]);
+    }
+
+    #[test]
+    fn memory_map_parses_filter_flags_and_sort() {
+        let cli = parse(&[
+            "xmem",
+            "memory",
+            "map",
+            "--pid",
+            "7",
+            "--readable-only",
+            "--writable-only",
+            "--executable-only",
+            "--state",
+            "commit",
+            "--class",
+            "image",
+            "--prot",
+            "r-x",
+            "--heuristic",
+            "pe-like",
+            "--pe-like",
+            "--outside-modules",
+            "--mapped-only",
+            "--range",
+            "0x1000:0x2000",
+            "--min-size",
+            "4096",
+            "--max-size",
+            "1048576",
+            "--sort",
+            "size-desc",
+        ])
+        .unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Map(args),
+        } = cli.command
+        else {
+            panic!("expected memory map");
+        };
+        assert!(args.readable_only && args.writable_only && args.executable_only);
+        assert_eq!(args.state, Some(StateArg::Commit));
+        assert_eq!(args.class, Some(ClassArg::Image));
+        assert_eq!(args.protection, Some(ProtArg::Rx));
+        assert_eq!(args.heuristic, Some(HeuristicArg::PeLike));
+        assert!(args.pe_like && args.outside_modules && args.mapped_only);
+        assert_eq!(args.range.as_deref(), Some("0x1000:0x2000"));
+        assert_eq!(args.min_size, Some(4096));
+        assert_eq!(args.max_size, Some(1_048_576));
+        assert_eq!(args.sort, MapSortArg::SizeDesc);
+    }
+
+    #[test]
+    fn memory_map_defaults_to_unfiltered_address_sort() {
+        let cli = parse(&["xmem", "memory", "map", "--pid", "7"]).unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Map(args),
+        } = cli.command
+        else {
+            panic!("expected memory map");
+        };
+        assert!(!args.readable_only && !args.writable_only && !args.executable_only);
+        assert!(!args.pe_like && !args.outside_modules && !args.mapped_only);
+        assert_eq!(args.state, None);
+        assert_eq!(args.class, None);
+        assert_eq!(args.protection, None);
+        assert_eq!(args.heuristic, None);
+        assert_eq!(args.range, None);
+        assert_eq!(args.min_size, None);
+        assert_eq!(args.max_size, None);
+        assert_eq!(args.sort, MapSortArg::Addr);
+    }
+
+    #[test]
+    fn memory_map_prot_accepts_no_access_and_rejects_unknown() {
+        let cli = parse(&["xmem", "memory", "map", "--pid", "7", "--prot", "---"]).unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Map(args),
+        } = cli.command
+        else {
+            panic!("expected memory map");
+        };
+        assert_eq!(args.protection, Some(ProtArg::None));
+
+        assert!(parse(&["xmem", "memory", "map", "--pid", "7", "--prot", "xx"]).is_err());
+        assert!(parse(&["xmem", "memory", "map", "--pid", "7", "--state", "bogus"]).is_err());
+        assert!(parse(&["xmem", "memory", "map", "--pid", "7", "--class", "bogus"]).is_err());
+        assert!(
+            parse(&[
+                "xmem",
+                "memory",
+                "map",
+                "--pid",
+                "7",
+                "--heuristic",
+                "bogus"
+            ])
+            .is_err()
+        );
+        assert!(parse(&["xmem", "memory", "map", "--pid", "7", "--sort", "bogus"]).is_err());
+    }
+
+    #[test]
+    fn process_list_parses_filters() {
+        let cli = parse(&[
+            "xmem",
+            "process",
+            "list",
+            "--name",
+            "svc",
+            "--arch",
+            "x86",
+            "--session",
+            "2",
+            "--user",
+            "sys",
+            "--protected",
+            "--ppid",
+            "4",
+            "--accessible-only",
+        ])
+        .unwrap();
+        let Command::Process { cmd } = cli.command else {
+            panic!("process 명령이 아님");
+        };
+        let ProcessCmd::List(args) = cmd else {
+            panic!("list 명령이 아님");
+        };
+        assert_eq!(args.name.as_deref(), Some("svc"));
+        assert_eq!(args.arch, Some(ArchArg::X86));
+        assert_eq!(args.session, Some(2));
+        assert_eq!(args.user.as_deref(), Some("sys"));
+        assert!(args.protected);
+        assert_eq!(args.ppid, Some(4));
+        assert!(args.accessible_only);
+        assert!(parse(&["xmem", "process", "list", "--arch", "arm64"]).is_err());
+    }
+
+    #[test]
+    fn modules_parses_filters() {
+        let cli = parse(&[
+            "xmem",
+            "modules",
+            "--pid",
+            "42",
+            "--filter",
+            "kernel",
+            "--arch",
+            "x64",
+            "--unparsed",
+        ])
+        .unwrap();
+        let Command::Modules(args) = cli.command else {
+            panic!("modules 명령이 아님");
+        };
+        assert_eq!(args.filter.as_deref(), Some("kernel"));
+        assert_eq!(args.arch, Some(ArchArg::X64));
+        assert!(args.unparsed);
+    }
+
+    #[test]
+    fn threads_parses_filters() {
+        let cli = parse(&[
+            "xmem",
+            "threads",
+            "--pid",
+            "5",
+            "--with-start",
+            "--suspicious",
+            "--tid",
+            "9",
+        ])
+        .unwrap();
+        let Command::Threads(args) = cli.command else {
+            panic!("threads 명령이 아님");
+        };
+        assert_eq!(args.pid.pid, 5);
+        assert!(args.with_start);
+        assert!(args.suspicious);
+        assert_eq!(args.tid, Some(9));
+    }
+
+    #[test]
+    fn detect_parses_filters_and_sort() {
+        let cli = parse(&[
+            "xmem",
+            "detect",
+            "--pid",
+            "42",
+            "--min-severity",
+            "high",
+            "--min-confidence",
+            "medium",
+            "--rule",
+            "XMEM-003",
+            "--sort",
+            "severity",
+        ])
+        .unwrap();
+        let Command::Detect(args) = cli.command else {
+            panic!("detect 명령이 아님");
+        };
+        assert_eq!(args.min_severity, Some(SeverityArg::High));
+        assert_eq!(args.min_confidence, Some(ConfidenceArg::Medium));
+        assert_eq!(args.rule.as_deref(), Some("XMEM-003"));
+        assert_eq!(args.sort, DetectSortArg::Severity);
+        assert!(parse(&["xmem", "detect", "--pid", "42", "--min-severity", "bogus"]).is_err());
+        assert!(parse(&["xmem", "detect", "--pid", "42", "--min-confidence", "bogus"]).is_err());
+        assert!(parse(&["xmem", "detect", "--pid", "42", "--sort", "bogus"]).is_err());
     }
 
     #[test]

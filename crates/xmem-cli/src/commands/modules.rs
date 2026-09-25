@@ -10,20 +10,72 @@ use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope}
 pub fn run(args: &ModulesArgs, global: &GlobalArgs) -> Result<()> {
     let live = LiveProcess::open(args.pid.pid)?;
     let modules = live.modules()?;
+    // --unparsed는 PE 파싱 결과가 필요하므로 --pe 없이도 수집만 수행한다(표시 컬럼은 --pe일 때만).
+    let all_pe = (args.pe || args.unparsed).then(|| collect_pe(&live, &modules));
+    let selected: Vec<usize> = modules
+        .iter()
+        .enumerate()
+        .filter(|(index, module)| {
+            module_matches(
+                module,
+                all_pe.as_ref().and_then(|list| list.get(*index)),
+                args,
+            )
+        })
+        .map(|(index, _)| index)
+        .collect();
+    let filtered: Vec<ModuleInfo> = selected
+        .iter()
+        .map(|&index| modules[index].clone())
+        .collect();
     let pe = if args.pe {
-        Some(collect_pe(&live, &modules))
+        Some(
+            selected
+                .iter()
+                .map(|&index| {
+                    all_pe
+                        .as_ref()
+                        .and_then(|list| list.get(index).cloned())
+                        .flatten()
+                })
+                .collect::<Vec<_>>(),
+        )
     } else {
         None
     };
     match resolve_mode(global.json) {
         OutputMode::Json => emit_json(&success_envelope(json_payload(
             &live.info,
-            &modules,
+            &filtered,
             pe.as_deref(),
         ))),
-        OutputMode::Human => emit(&render_modules(&live.info, &modules, pe.as_deref())),
+        OutputMode::Human => emit(&render_modules(&live.info, &filtered, pe.as_deref())),
     }
     Ok(())
+}
+
+/// 수집 후 필터. `--unparsed`는 PE 파싱 결과가 없으면(실패) 매칭한다.
+fn module_matches(module: &ModuleInfo, pe: Option<&Option<PeInfo>>, args: &ModulesArgs) -> bool {
+    if let Some(needle) = args.filter.as_deref() {
+        let needle = needle.to_lowercase();
+        let name_hit = module.name.to_lowercase().contains(&needle);
+        let path_hit = module
+            .path
+            .as_deref()
+            .is_some_and(|path| path.to_lowercase().contains(&needle));
+        if !name_hit && !path_hit {
+            return false;
+        }
+    }
+    if let Some(arch) = args.arch
+        && module.arch != Some(arch.to_arch())
+    {
+        return false;
+    }
+    if args.unparsed && pe.is_some_and(|item| item.is_some()) {
+        return false;
+    }
+    true
 }
 
 /// 모듈별 PE 헤더 prefix 파싱. 개별 실패는 None으로 degrade한다.
@@ -231,6 +283,86 @@ mod tests {
         assert!(text.contains("SECTIONS"));
         assert!(text.contains("x64"));
         assert!(text.contains("0x140001234"));
+    }
+
+    fn filter_args(
+        filter: Option<&str>,
+        arch: Option<crate::cli::ArchArg>,
+        unparsed: bool,
+    ) -> ModulesArgs {
+        ModulesArgs {
+            pid: crate::cli::PidArg { pid: 1 },
+            pe: false,
+            filter: filter.map(str::to_string),
+            arch,
+            unparsed,
+        }
+    }
+
+    #[test]
+    fn module_matches_name_path_arch_and_unparsed() {
+        let module = sample_module(
+            "kernel32.dll",
+            0x7ffb_0000,
+            Some(r"C:\Windows\System32\kernel32.dll"),
+        );
+        assert!(module_matches(
+            &module,
+            None,
+            &filter_args(Some("KERNEL"), None, false)
+        ));
+        assert!(module_matches(
+            &module,
+            None,
+            &filter_args(Some("system32"), None, false)
+        ));
+        assert!(!module_matches(
+            &module,
+            None,
+            &filter_args(Some("user32"), None, false)
+        ));
+
+        use crate::cli::ArchArg;
+        assert!(module_matches(
+            &module,
+            None,
+            &filter_args(None, Some(ArchArg::X64), false)
+        ));
+        assert!(!module_matches(
+            &module,
+            None,
+            &filter_args(None, Some(ArchArg::X86), false)
+        ));
+
+        let parsed = Some(sample_pe());
+        assert!(module_matches(
+            &module,
+            Some(&parsed),
+            &filter_args(None, None, false)
+        ));
+        assert!(!module_matches(
+            &module,
+            Some(&parsed),
+            &filter_args(None, None, true)
+        ));
+        let unparsed: Option<xmem_pe::PeInfo> = None;
+        assert!(module_matches(
+            &module,
+            Some(&unparsed),
+            &filter_args(None, None, true)
+        ));
+    }
+
+    #[test]
+    fn filtered_modules_json_keeps_schema_keys() {
+        let filtered = vec![sample_module("a.dll", 0x1000, None)];
+        let value = json_payload(&sample_info(), &filtered, None);
+        assert_eq!(value["module_count"], 1);
+        assert_eq!(value["modules"].as_array().unwrap().len(), 1);
+        assert!(
+            value["modules"][0].get("pe").is_none(),
+            "--pe 없이는 pe 키도 없다"
+        );
     }
 
     #[test]
