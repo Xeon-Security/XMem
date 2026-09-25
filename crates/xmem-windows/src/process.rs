@@ -63,6 +63,12 @@ pub fn open_for_read(pid: u32) -> Result<OwnedHandle> {
     open_process(pid, PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ)
 }
 
+/// 메모리 읽기 가능 여부. `open_for_read`(QUERY_LIMITED_INFORMATION | VM_READ)가
+/// 성공하면 true, 권한 부족·종료 등으로 실패하면 false.
+pub fn is_memory_readable(pid: u32) -> bool {
+    open_for_read(pid).is_ok()
+}
+
 /// 덤프 생성용 핸들(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ).
 /// QUERY_INFORMATION이 거부되면 QUERY_LIMITED로 재시도한다(제한 덤프만 가능할 수 있음).
 pub fn open_for_dump(pid: u32) -> Result<OwnedHandle> {
@@ -377,6 +383,16 @@ mod tests {
     fn open_for_dump_self_succeeds() {
         let handle = open_for_dump(current_pid()).expect("open_for_dump");
         assert!(!handle.raw().is_invalid());
+    }
+
+    #[test]
+    fn is_memory_readable_self() {
+        assert!(is_memory_readable(current_pid()));
+    }
+
+    #[test]
+    fn is_memory_readable_rejects_system_idle() {
+        assert!(!is_memory_readable(0));
     }
 
     #[test]
