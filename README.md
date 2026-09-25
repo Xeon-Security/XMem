@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **v0.2.0** — 기능 갭 Batch A 10건을 적용했다: mapped_file 드라이브 경로 변환(`\Device\...` → `C:\...`), 읽기 실패 사유별 집계(권한/무효 주소/기타), 모듈별 PE machine 기반 arch, 덤프·모듈 상세 한계 안내, 좁은 창 세로 스크롤바 확보, 표 방향키 이동, 맵·모듈·스레드·탐지 취소 확대, 맵·스캔·탐지 결과 JSON/CSV 내보내기(CLI `--output`·`--format`, GUI 버튼). 실험 자동화는 CLI 전용으로 유지된다.
+현재 **v0.2.1** — 프로세스 접근 권한을 한눈에 볼 수 있게 했다: 프로세스 목록에 접근 열(가능/권한 필요)과 "접근 가능만 보기"·아키텍처 필터를 추가하고, CLI `process list --accessible-only`·ACCESS 열·JSON `accessible` 필드를 넣었다. 테스트 플레이크(미니덤프 테스트 분리, 모듈 수 허용 오차)도 수정했다. 실험 자동화는 CLI 전용으로 유지된다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -237,6 +237,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | v0.1.8 | 보류 항목 해소 (상세 재시도, 비동기 페이지 로드, 표 가로 스크롤, 탐지 취소, 행 키보드 포커스) | 완료 |
 | v0.1.9 | 맵/프로세스 정밀 수정 (클릭 밴드 클립, 태스크 리셋, 팝업 레이어 가드, 헤더 레이아웃, 목록 스크롤 복구 등) | 완료 |
 | v0.2.0 | 기능 갭 Batch A (경로 변환, 실패 사유 집계, 모듈 arch, 덤프/모듈 안내, 좁은 창 스크롤, 방향키, 취소 확대, JSON/CSV 내보내기, PPL 비목표) | 완료 |
+| v0.2.1 | 접근 권한 표시·필터 (접근 열, 접근 가능만 보기, 아키텍처 필터, CLI --accessible-only, 테스트 플레이크 수정) | 완료 |
 
 ## License
 
