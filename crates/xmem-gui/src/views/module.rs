@@ -78,6 +78,16 @@ pub fn pe_source_text(detail: &ModuleDetail) -> &'static str {
     }
 }
 
+/// 디스크 PE 파싱 실패 사유를 담은 라이브러리 섹션 안내 문구.
+pub fn disk_library_unavailable_text(error: Option<&str>) -> String {
+    match error {
+        Some(reason) => {
+            format!("디스크 PE를 파싱하지 못해 라이브러리 목록이 없습니다: {reason}")
+        }
+        None => "디스크 PE를 파싱하지 못해 라이브러리 목록이 없습니다".to_string(),
+    }
+}
+
 fn read_memory_pe(live: &LiveProcess, module: &ModuleInfo) -> (Option<PeInfo>, Option<String>) {
     let len = module.size.min(PE_HEADER_PREFIX as u64) as usize;
     if len < 64 {
@@ -462,9 +472,9 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                     }
                     None => {
                         ui.label(
-                            egui::RichText::new(
-                                "디스크 PE를 파싱하지 못해 라이브러리 목록이 없습니다",
-                            )
+                            egui::RichText::new(disk_library_unavailable_text(
+                                detail.pe_disk_error.as_deref(),
+                            ))
                             .color(colors.warn),
                         );
                     }
@@ -605,5 +615,13 @@ mod tests {
         assert!(text.contains("module sample.exe"));
         assert!(!text.contains("0x0000000000000000"));
         assert!(text.contains("AccessDenied"));
+    }
+
+    #[test]
+    fn disk_parse_failure_reason_in_library_hint() {
+        let text = disk_library_unavailable_text(Some("접근 거부 (AccessDenied): denied"));
+        assert!(text.contains("AccessDenied"), "{text}");
+        let text = disk_library_unavailable_text(None);
+        assert!(text.contains("디스크 PE"), "{text}");
     }
 }

@@ -149,6 +149,11 @@ pub(crate) fn render_dump(analysis: &DumpAnalysis, findings: &[Finding]) -> Stri
         human_size(analysis.memory_bytes),
     ));
     out.push_str(&render_findings(&analysis.process, findings));
+    if analysis.modules.is_empty() {
+        out.push_str(
+            "  note: 모듈 목록 없음 — 미니덤프에 모듈 정보가 포함되지 않아 상세가 제한됩니다\n",
+        );
+    }
     out
 }
 
@@ -212,6 +217,27 @@ mod tests {
             heuristic: "Executable Private Memory".to_string(),
             interpretation: "Potentially suspicious memory region".to_string(),
         }
+    }
+
+    #[test]
+    fn render_dump_notes_missing_module_list() {
+        let analysis = sample_analysis();
+        let text = render_dump(&analysis, &[]);
+        assert!(text.contains("모듈 목록 없음"), "{text}");
+    }
+
+    #[test]
+    fn render_dump_omits_module_note_when_modules_exist() {
+        let mut analysis = sample_analysis();
+        analysis.modules.push(xmem_core::ModuleInfo {
+            name: "ntdll.dll".into(),
+            base: 0x7ffc_0000,
+            size: 0x1000,
+            path: None,
+            arch: None,
+        });
+        let text = render_dump(&analysis, &[]);
+        assert!(!text.contains("모듈 목록 없음"), "{text}");
     }
 
     #[test]

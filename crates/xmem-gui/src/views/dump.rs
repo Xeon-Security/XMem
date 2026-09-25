@@ -76,6 +76,12 @@ pub fn create_dump_file(pid: u32, output: &Path, full: bool) -> Result<u64> {
     write_minidump_file(&handle, pid, output, full)
 }
 
+/// 덤프에 모듈 정보가 없을 때만 표시할 안내 문구.
+pub fn missing_modules_note(module_count: usize) -> Option<&'static str> {
+    (module_count == 0)
+        .then_some("모듈 목록 없음 — 미니덤프에 모듈 정보가 없어 모듈 상세를 표시할 수 없습니다")
+}
+
 pub fn analyze_dump_file(path: &Path) -> Result<(DumpAnalysis, Vec<Finding>)> {
     let source = MinidumpSource::open(path)?;
     let findings = xmem_detection::detect_source(&source)?;
@@ -217,6 +223,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             ))
             .weak(),
         );
+        if let Some(note) = missing_modules_note(analysis.modules.len()) {
+            ui.label(egui::RichText::new(note).color(colors.warn));
+        }
         if findings.is_empty() {
             ui.label("no findings (absence of findings is not proof of safety)");
         } else {
@@ -248,5 +257,12 @@ mod tests {
     fn full_dump_blocks_when_disk_is_tight() {
         assert!(full_dump_blocked(100 * 1024 * 1024, 50 * 1024 * 1024).is_some());
         assert!(full_dump_blocked(100 * 1024 * 1024, 200 * 1024 * 1024).is_none());
+    }
+
+    #[test]
+    fn missing_modules_note_only_when_empty() {
+        let note = missing_modules_note(0).expect("모듈 0개 안내가 있어야 함");
+        assert!(note.contains("모듈 목록 없음"), "{note}");
+        assert!(missing_modules_note(1).is_none());
     }
 }
