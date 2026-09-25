@@ -132,10 +132,17 @@ pub enum Command {
     },
 }
 
+#[derive(Debug, Args)]
+pub struct ProcessListArgs {
+    /// 메모리를 읽을 수 있는 프로세스만 표시
+    #[arg(long)]
+    pub accessible_only: bool,
+}
+
 #[derive(Debug, Subcommand)]
 pub enum ProcessCmd {
     /// 프로세스 목록
-    List,
+    List(ProcessListArgs),
     /// 단일 프로세스 정보
     Info(PidArg),
 }
@@ -244,8 +251,26 @@ mod tests {
     #[test]
     fn parses_process_list() {
         let cli = parse(&["xmem", "process", "list"]).unwrap();
-        assert!(matches!(cli.command, Command::Process { .. }));
+        let Command::Process { cmd } = cli.command else {
+            panic!("process 명령이 아님");
+        };
+        let ProcessCmd::List(args) = cmd else {
+            panic!("list 명령이 아님");
+        };
+        assert!(!args.accessible_only);
         assert!(!cli.global.json);
+    }
+
+    #[test]
+    fn parses_process_list_accessible_only() {
+        let cli = parse(&["xmem", "process", "list", "--accessible-only"]).unwrap();
+        let Command::Process { cmd } = cli.command else {
+            panic!("process 명령이 아님");
+        };
+        let ProcessCmd::List(args) = cmd else {
+            panic!("list 명령이 아님");
+        };
+        assert!(args.accessible_only);
     }
 
     #[test]

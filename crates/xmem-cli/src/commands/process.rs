@@ -5,16 +5,26 @@ use xmem_core::{ProcessArch, ProcessInfo, Result, XmemError};
 
 pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
     match (cmd, resolve_mode(global.json)) {
-        (ProcessCmd::List, OutputMode::Json) => {
-            let infos = xmem_windows::list_processes()?;
-            let value = serde_json::to_value(&infos).map_err(|e| XmemError::JsonError {
-                reason: e.to_string(),
-            })?;
-            emit_json(&success_envelope(serde_json::json!({ "processes": value })));
+        (ProcessCmd::List(args), OutputMode::Json) => {
+            let rows = list_rows(args.accessible_only)?;
+            let processes = rows
+                .iter()
+                .map(|(info, accessible)| {
+                    let mut value =
+                        serde_json::to_value(info).map_err(|e| XmemError::JsonError {
+                            reason: e.to_string(),
+                        })?;
+                    value["accessible"] = (*accessible).into();
+                    Ok(value)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            emit_json(&success_envelope(
+                serde_json::json!({ "processes": processes }),
+            ));
         }
-        (ProcessCmd::List, OutputMode::Human) => {
-            let infos = xmem_windows::list_processes()?;
-            emit(&render_list(&infos));
+        (ProcessCmd::List(args), OutputMode::Human) => {
+            let rows = list_rows(args.accessible_only)?;
+            emit(&render_list(&rows));
         }
         (ProcessCmd::Info(args), OutputMode::Json) => {
             let info = xmem_windows::process_info(args.pid)?;
@@ -40,16 +50,48 @@ pub(crate) fn arch_str(arch: ProcessArch) -> &'static str {
     }
 }
 
-pub fn render_list(infos: &[ProcessInfo]) -> String {
+/// 각 프로세스를 접근성(메모리 읽기 가능 여부)과 함께 나열한다.
+fn list_rows(accessible_only: bool) -> Result<Vec<(ProcessInfo, bool)>> {
+    let infos = xmem_windows::list_processes()?;
+    let rows = infos
+        .into_iter()
+        .map(|info| {
+            let accessible = xmem_windows::is_memory_readable(info.pid);
+            (info, accessible)
+        })
+        .collect();
+    Ok(filter_rows(rows, accessible_only))
+}
+
+fn filter_rows(rows: Vec<(ProcessInfo, bool)>, accessible_only: bool) -> Vec<(ProcessInfo, bool)> {
+    if accessible_only {
+        rows.into_iter()
+            .filter(|(_, accessible)| *accessible)
+            .collect()
+    } else {
+        rows
+    }
+}
+
+fn access_str(accessible: bool) -> &'static str {
+    if accessible {
+        "가능"
+    } else {
+        "권한 필요"
+    }
+}
+
+pub fn render_list(rows: &[(ProcessInfo, bool)]) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "{:>6}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
-        "PID", "PPID", "THREADS", "SESSION", "ARCH", "NAME", "PATH"
+        "{:>6}  {:<7}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
+        "PID", "ACCESS", "PPID", "THREADS", "SESSION", "ARCH", "NAME", "PATH"
     ));
-    for info in infos {
+    for (info, accessible) in rows {
         out.push_str(&format!(
-            "{:>6}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
+            "{:>6}  {:<7}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
             info.pid,
+            access_str(*accessible),
             opt_num(info.ppid),
             opt_num(info.thread_count),
             opt_num(info.session_id),
@@ -147,9 +189,13 @@ mod tests {
         }
     }
 
+    fn row(pid: u32, accessible: bool) -> (ProcessInfo, bool) {
+        (sample(pid), accessible)
+    }
+
     #[test]
     fn render_list_has_header_and_rows() {
-        let out = render_list(&[sample(10), sample(20)]);
+        let out = render_list(&[row(10, true), row(20, true)]);
         assert!(out.contains("PID"));
         assert!(out.contains("proc10.exe"));
         assert!(out.contains("proc20.exe"));
@@ -162,7 +208,7 @@ mod tests {
         info.image_path = None;
         info.session_id = None;
         info.thread_count = None;
-        let out = render_list(&[info]);
+        let out = render_list(&[(info, false)]);
         assert!(out.contains('-'));
     }
 
@@ -170,8 +216,24 @@ mod tests {
     fn render_list_truncates_long_name() {
         let mut info = sample(10);
         info.name = "a".repeat(80);
-        let out = render_list(&[info]);
+        let out = render_list(&[(info, true)]);
         assert!(out.contains("..."));
+    }
+
+    #[test]
+    fn render_list_marks_access() {
+        let out = render_list(&[row(10, true), row(20, false)]);
+        assert!(out.contains("가능"), "{out}");
+        assert!(out.contains("권한 필요"), "{out}");
+    }
+
+    #[test]
+    fn accessible_only_filters_rows() {
+        let rows = vec![row(10, true), row(20, false)];
+        let filtered = filter_rows(rows.clone(), true);
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].0.pid, 10);
+        assert_eq!(filter_rows(rows, false).len(), 2);
     }
 
     #[test]
