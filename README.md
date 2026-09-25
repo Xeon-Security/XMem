@@ -176,13 +176,14 @@ cargo clippy --workspace --all-targets -- -D warnings
 
 - **User-mode 전용**: Kernel driver, 물리 메모리 접근, 커널 패칭은 범위 밖(Non-Goal).
 - M12 기준 모든 CLI 명령(`process` / `memory` / `modules` / `threads` / `snapshot` / `dump` / `detect` / `report` / `experiment`)이 구현되어 있다.
-- `memory map`의 mapped file 경로는 NT 디바이스 경로(`\Device\...`)로 표시된다(드라이브 문자 변환 미구현).
+- `memory map`의 mapped file 경로는 `QueryDosDeviceW`로 `C:\...` 형태로 정규화해 표시한다(볼륨 문자를 찾지 못하면 `\Device\...` 원본 유지).
 - `memory scan`은 guard(no-access) 및 non-readable 영역을 사전 스킵하며(카운트됨), 결과는 기본 1024개 상한(초과 시 `truncated: true` 보고, `--max-results 0`으로 해제).
 - committed > 4 GiB 대형 프로세스는 기본적으로 executable/private 영역만 스캔한다(`--all`로 해제, `policy_restricted`로 보고).
 - 문자열 검색은 대소문자를 구분하며, 패턴 매처는 naive 구현이다(벤치마크 후 최적화 예정).
-- `memory scan` 통계에는 XMem 자신의 RSS(작업 집합)가 포함된다(peak RSS 추적은 후속).
+- `memory scan` 통계에는 XMem 자신의 RSS(작업 집합)가 포함된다(peak RSS 추적은 후속). 읽기 실패는 사유별(denied/invalid/other)로 집계되며 실패 주소 목록은 아직 제공하지 않는다.
+- `memory map` / `memory scan` / `detect`는 `--output <FILE>`(미지정 시 기존 표준 출력)과 `--format json|csv`(기본 json)로 결과를 파일로 저장할 수 있다. 파일은 temp → 재읽기 검증 → rename으로 기록되며 실패 시 temp를 남기지 않는다. GUI는 맵/스캔/탐지 탭에서 JSON/CSV 내보내기 버튼과 저장 대화상자를 제공한다.
 - `executable_anonymous` / `private_executable_pe_like` heuristic은 private executable 영역의 헤더 prefix(4 KiB)를 읽어 판정한다(읽기 실패/부분 읽기에서는 heuristic을 추가하지 않는다).
-- `modules --pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시되며, VM_READ 권한이 없거나 파싱에 실패한 모듈은 `-`로 표시된다(Malformed PE는 pe-like로 취급). `modules` 기본 출력의 모듈별 arch는 프로세스 arch를 상속한다. GUI 모듈 상세 패널은 디스크 PE 전체 파싱(`parse_pe_file`, 64 MiB 상한)을 우선 사용해 imports/exports/relocations/TLS/컴파일 시각까지 표시하고, 디스크 파싱이 실패하면 메모리 헤더 결과만 출처 라벨과 함께 보여준다.
+- `modules --pe`는 메모리 헤더 prefix(4 KiB) 기준이라 imports/exports/relocations/TLS는 0으로 표시되며, VM_READ 권한이 없거나 파싱에 실패한 모듈은 `-`로 표시된다(Malformed PE는 pe-like로 취급). `modules`의 모듈별 arch는 모듈 헤더(4 KiB prefix)의 PE machine에서 읽으며, 읽기/파싱 실패 시 프로세스 arch로 폴백한다. GUI 모듈 상세 패널은 디스크 PE 전체 파싱(`parse_pe_file`, 64 MiB 상한)을 우선 사용해 imports/exports/relocations/TLS/컴파일 시각까지 표시하고, 디스크 파싱이 실패하면 메모리 헤더 결과만 출처 라벨과 함께 보여준다.
 - `threads`의 priority는 동적 우선순위(조회 실패 시 `-`)이다. 스레드 시간 통계는 GUI 스레드 상세 패널에서 `GetThreadTimes`(생성/종료 시각, kernel/user 시간)로 표시되며, CLI 출력에는 아직 포함되지 않는다.
 - Snapshot 해싱은 기본 64 MiB 예산이며, 해시가 없는 영역은 content diff로 보고되지 않는다. `SnapshotSource`의 메모리 내용 read는 후속(MemoryImage)에서 지원 예정이다.
 - `dump analyze`는 MemoryInfoList 스트림에 의존한다(XMem이 만든 덤프에는 항상 포함). minidump에는 thread start address가 없어 XMEM-004는 침묵하고, mapped file 이름은 module 목록 기반 근사이며, 모듈 목록이 없는 덤프에서는 XMEM-003/004가 침묵한다. `--full`은 진행 중 취소를 지원하지 않는다(Ctrl+C는 XMem을 종료하며, 콜백 기반 취소는 후속).
@@ -194,6 +195,8 @@ cargo clippy --workspace --all-targets -- -D warnings
 - Experiment는 v1에서 XMem이 spawn한 `xmem-target` 전용이다(임의 PID 불가). `remote-thread`의 원격 스레드는 suspended 상태로 생성되어 실행되지 않으며, 변경 Win32 API 호출은 `xmem-experiments` 경로에서만 일어난다. 테스트에서는 `RunOptions::target_binary`로 바이너리를 지정하며, CLI는 실행 파일 기준 또는 `XMEM_TARGET` 환경 변수로 타깃을 찾는다.
 - GUI는 분석 기능만 제공한다(실험은 CLI 전용). 덤프 생성은 진행 중 취소를 지원하지 않으며, PPL 보호 프로세스는 관리자 권한으로도 열 수 없다. 검색은 진행률을 표시하지 않는다(취소는 가능). GUI는 시작할 때 `ShellExecuteW runas`로 자신을 관리자 권한으로 다시 띄우고(`--pid` 유지), UAC를 취소하면 표준 권한으로 계속 실행된다(상단 배지의 "관리자로 재시작"으로 다시 시도 가능). 콘솔 창은 뜨지 않는다.
 - GUI 상세 패널(맵/모듈/스레드)은 행을 클릭하면 하단에 열리며, 조회 실패 시 원인을 사람이 읽을 수 있는 오류 라벨(`error_label`: 접근 거부·부분 읽기·잘못된 주소·Windows API 코드 등)로 표시한다. 맵 상세의 hex 뷰어는 4 KiB 페이지 단위로 읽고, 읽지 못한 페이지는 사유를 표시한다.
+- GUI는 좁은 창(820px)에서 표를 패널 폭에 맞춰 그려 세로 스크롤바를 유지한다(가로 스크롤 대신 일부 열이 잘릴 수 있다). 맵/모듈/스레드 표는 행을 클릭한 뒤 ↑/↓로 선택을 이동할 수 있고(텍스트 입력 중에는 동작하지 않음), 맵·모듈·스레드 수집은 취소할 수 있다(취소 시 "취소되었습니다" 표시).
+- 덤프에 모듈 목록이 없으면 그 한계를, 모듈 상세의 디스크 PE 파싱이 실패하면 실패 사유를 화면에 표시한다.
 
 ## Documentation
 

@@ -254,13 +254,16 @@ stdout: 사용자 출력(사람용 또는 --json)  /  stderr: tracing 로그
 
 ```text
 xmem process list | info --pid <PID>
-xmem memory map --pid <PID> | scan --pid <PID>
+xmem memory map --pid <PID> [--output <FILE> --format json|csv]
+xmem memory scan --pid <PID> [--output <FILE> --format json|csv]
 xmem modules --pid <PID> | threads --pid <PID>
 xmem snapshot create --pid <PID> --output <FILE> | snapshot diff <A> <B>
 xmem dump create --pid <PID> --output <FILE> [--full] | dump analyze <FILE>
-xmem detect --pid <PID> | report --pid <PID> --output <FILE>
+xmem detect --pid <PID> [--output <FILE> --format json|csv] | report --pid <PID> --output <FILE>
 xmem experiment list | run <NAME>
 ```
+
+`--output` 미지정 시 기존처럼 표준 출력으로 보내며, 파일은 temp → 재읽기 검증 → rename으로 기록한다.
 
 ## 13. Safety / Host Stability
 
@@ -291,7 +294,7 @@ xmem experiment list | run <NAME>
 | M12 완성도(`report` JSON/Markdown, `ScanStats.rss_bytes`, 문서 6종, UX) | Done |
 | M13 GUI(`xmem-gui` egui 단일 exe, 분석 탭 전체, 관리자 재시작, 가이드, 로그 패널, 다크/라이트) | Done |
 | v0.1.2 상세 뷰어(`MemoryRegion.allocation_base`, `PeInfo.time_date_stamp`+`parse_pe_file`, `thread_times`, ALLOC 컬럼, GUI 맵/모듈/스레드 상세 패널, `error_label`) | Done |
-| 이후 | 계획 없음 (v0.1.2까지 완료) |
+| v0.2.0 Batch A(드라이브 경로 변환, 스캔 실패 사유별 집계, 모듈별 PE machine arch, 내보내기 `--output`/GUI, 좁은 창 세로 스크롤바, 표 방향키, 맵·모듈·스레드 취소, 한계 안내 문구, PPL 비목표) | Done |
 
 ## 15. Non-Goals
 
@@ -299,6 +302,7 @@ xmem experiment list | run <NAME>
 - 비동기 런타임, 네트워크 기능
 - GUI에서의 Experiment 실행(실험은 CLI 전용 유지)
 - 탐지를 악성 확정으로 표현하는 것
+- **PPL(Protected Process Light) 보호 프로세스 접근**: Windows 보호 프로세스 정책상 관리자 권한으로도 열 수 없다. 커널 드라이버 없이는 해결할 수 없으므로 접근 불가를 정상 동작(한계)으로 문서화하고 비목표로 둔다.
 
 ## 16. Risk Register
 
