@@ -1,6 +1,7 @@
 pub mod detect;
 pub mod dump;
 pub mod experiment;
+pub mod export;
 pub mod memory;
 pub mod modules;
 pub mod process;

@@ -8,6 +8,7 @@ use xmem_memory::{
 use crate::app::XMemApp;
 use crate::task::TaskState;
 use crate::theme::palette;
+use crate::views::export::{ExportFormat, ExportPayload};
 use crate::views::map::{human_size, opt_hex};
 use crate::views::overview::failure_banner;
 
@@ -209,6 +210,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     }
     let colors = palette(app.theme);
     let mut clicked: Option<usize> = None;
+    let mut export: Option<ExportFormat> = None;
     if let Some(report) = app.scan_report.as_ref() {
         if report.cancelled {
             ui.label(
@@ -228,22 +230,30 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     .weak(),
             );
         }
-        ui.label(
-            egui::RichText::new(format!(
-                "{}건 · {}개 영역 검색({}개 건너뜀) · 읽기 실패 {} (denied {} / invalid {} / other {}) · {} · {}ms · rss {}",
-                report.matches.len(),
-                report.stats.regions_scanned,
-                report.stats.regions_skipped,
-                report.stats.read_failures,
-                report.stats.access_denied,
-                report.stats.invalid_address,
-                report.stats.other_failures,
-                human_size(report.stats.bytes_scanned),
-                report.stats.elapsed_ms,
-                human_size(report.stats.rss_bytes),
-            ))
-            .weak(),
-        );
+        ui.horizontal(|ui| {
+            ui.label(
+                egui::RichText::new(format!(
+                    "{}건 · {}개 영역 검색({}개 건너뜀) · 읽기 실패 {} (denied {} / invalid {} / other {}) · {} · {}ms · rss {}",
+                    report.matches.len(),
+                    report.stats.regions_scanned,
+                    report.stats.regions_skipped,
+                    report.stats.read_failures,
+                    report.stats.access_denied,
+                    report.stats.invalid_address,
+                    report.stats.other_failures,
+                    human_size(report.stats.bytes_scanned),
+                    report.stats.elapsed_ms,
+                    human_size(report.stats.rss_bytes),
+                ))
+                .weak(),
+            );
+            if ui.button("JSON 내보내기").clicked() {
+                export = Some(ExportFormat::Json);
+            }
+            if ui.button("CSV 내보내기").clicked() {
+                export = Some(ExportFormat::Csv);
+            }
+        });
         let selected = app.scan_state.selected_match;
         crate::views::truncate_cells(ui);
         // 미리보기가 표 아래에 남아야 하므로 높이는 내용에 맞춘다.
@@ -320,6 +330,19 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 });
         });
         crate::views::wrap_default(ui);
+        if let Some(format) = export {
+            let payload = ExportPayload::Scan(report);
+            if let Some(dir) = crate::views::export::save_with_dialog(
+                pid,
+                "scan",
+                format,
+                &payload,
+                app.config.last_output_dir.clone(),
+                &mut app.log,
+            ) {
+                app.config.last_output_dir = Some(dir);
+            }
+        }
     } else if !app.scan_task.is_running() {
         ui.label(egui::RichText::new("검색어를 입력하고 검색을 누르세요").weak());
     } else {

@@ -6,6 +6,7 @@ use xmem_memory::RegionFilters;
 use crate::app::XMemApp;
 use crate::task::TaskState;
 use crate::theme::palette;
+use crate::views::export::{ExportFormat, ExportPayload};
 use crate::views::overview::failure_banner;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -168,7 +169,16 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         );
     }
     let selected = select_and_sort(&map.regions, &app.map_filters, app.map_sort);
-    ui.label(egui::RichText::new(format!("{}개 영역 표시", selected.len())).weak());
+    let mut export: Option<ExportFormat> = None;
+    ui.horizontal(|ui| {
+        ui.label(egui::RichText::new(format!("{}개 영역 표시", selected.len())).weak());
+        if ui.button("JSON 내보내기").clicked() {
+            export = Some(ExportFormat::Json);
+        }
+        if ui.button("CSV 내보내기").clicked() {
+            export = Some(ExportFormat::Csv);
+        }
+    });
     let colors = palette(app.theme);
     let selected_base = app.map_selected;
     let mut clicked_region: Option<MemoryRegion> = None;
@@ -290,6 +300,19 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 });
             });
     });
+    if let Some(format) = export {
+        let payload = ExportPayload::Map(map.regions.as_slice());
+        if let Some(dir) = crate::views::export::save_with_dialog(
+            pid,
+            "map",
+            format,
+            &payload,
+            app.config.last_output_dir.clone(),
+            &mut app.log,
+        ) {
+            app.config.last_output_dir = Some(dir);
+        }
+    }
     if let Some(region) = clicked_region.or(moved_region) {
         app.select_region(pid, region);
     }

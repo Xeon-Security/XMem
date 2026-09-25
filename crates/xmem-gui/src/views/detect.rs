@@ -5,6 +5,7 @@ use xmem_core::{Evidence, Finding};
 use crate::app::XMemApp;
 use crate::task::TaskState;
 use crate::theme::{confidence_dots, palette, severity_color, severity_label};
+use crate::views::export::{ExportFormat, ExportPayload};
 use crate::views::overview::failure_banner;
 
 fn evidence_location(evidence: &Evidence) -> String {
@@ -63,8 +64,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let colors = palette(app.theme);
     let selected = app.detect_selected;
     let mut clicked: Option<usize> = None;
+    let mut export: Option<ExportFormat> = None;
     if let Some(findings) = app.findings.as_ref() {
-        ui.label(egui::RichText::new(format!("{} findings", findings.len())).weak());
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(format!("{} findings", findings.len())).weak());
+            if ui.button("JSON 내보내기").clicked() {
+                export = Some(ExportFormat::Json);
+            }
+            if ui.button("CSV 내보내기").clicked() {
+                export = Some(ExportFormat::Csv);
+            }
+        });
         if findings.is_empty() {
             ui.label(
                 egui::RichText::new("no findings (absence of findings is not proof of safety)")
@@ -129,6 +139,19 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             },
         );
         crate::views::wrap_default(ui);
+        if let Some(format) = export {
+            let payload = ExportPayload::Detect(findings.as_slice());
+            if let Some(dir) = crate::views::export::save_with_dialog(
+                pid,
+                "detect",
+                format,
+                &payload,
+                app.config.last_output_dir.clone(),
+                &mut app.log,
+            ) {
+                app.config.last_output_dir = Some(dir);
+            }
+        }
     } else if !app.detect_task.is_running() {
         ui.label(egui::RichText::new("탐지를 실행하면 규칙 평가 결과가 표시됩니다").weak());
     } else {

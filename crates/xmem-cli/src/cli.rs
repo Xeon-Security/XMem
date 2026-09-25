@@ -37,6 +37,49 @@ pub struct PidArg {
     pub pid: u32,
 }
 
+/// 결과 파일 내보내기 형식.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum)]
+pub enum ExportFormat {
+    Json,
+    Csv,
+}
+
+impl ExportFormat {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            ExportFormat::Json => "json",
+            ExportFormat::Csv => "csv",
+        }
+    }
+}
+
+/// 결과 파일 저장 옵션. 미지정 시 기존처럼 표준 출력으로 보낸다.
+#[derive(Debug, Args)]
+pub struct OutputArgs {
+    /// 결과를 저장할 파일 (미지정 시 표준 출력)
+    #[arg(long)]
+    pub output: Option<String>,
+    /// 파일 저장 형식
+    #[arg(long, value_enum, default_value = "json")]
+    pub format: ExportFormat,
+}
+
+#[derive(Debug, Args)]
+pub struct MapArgs {
+    #[command(flatten)]
+    pub pid: PidArg,
+    #[command(flatten)]
+    pub output: OutputArgs,
+}
+
+#[derive(Debug, Args)]
+pub struct DetectArgs {
+    #[command(flatten)]
+    pub pid: PidArg,
+    #[command(flatten)]
+    pub output: OutputArgs,
+}
+
 #[derive(Debug, Args)]
 pub struct ModulesArgs {
     #[command(flatten)]
@@ -73,7 +116,7 @@ pub enum Command {
         cmd: DumpCmd,
     },
     /// Detection Rule 실행
-    Detect(PidArg),
+    Detect(DetectArgs),
     /// 분석 리포트 생성
     Report {
         #[command(flatten)]
@@ -100,7 +143,7 @@ pub enum ProcessCmd {
 #[derive(Debug, Subcommand)]
 pub enum MemoryCmd {
     /// Virtual Memory Map
-    Map(PidArg),
+    Map(MapArgs),
     /// 메모리에서 패턴/문자열을 검색한다.
     Scan(ScanArgs),
 }
@@ -146,6 +189,8 @@ pub struct ScanArgs {
     /// 대형 프로세스 정책을 해제하고 모든 committed 영역을 스캔
     #[arg(long)]
     pub all: bool,
+    #[command(flatten)]
+    pub output: OutputArgs,
 }
 
 #[derive(Debug, Subcommand)]
@@ -212,7 +257,53 @@ mod tests {
         else {
             panic!("expected memory map");
         };
-        assert_eq!(args.pid, 123);
+        assert_eq!(args.pid.pid, 123);
+        assert!(args.output.output.is_none());
+        assert_eq!(args.output.format, ExportFormat::Json);
+    }
+
+    #[test]
+    fn memory_map_parses_output_and_format() {
+        let cli = parse(&[
+            "xmem", "memory", "map", "--pid", "123", "--output", "out.csv", "--format", "csv",
+        ])
+        .unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Map(args),
+        } = cli.command
+        else {
+            panic!("expected memory map");
+        };
+        assert_eq!(args.output.output.as_deref(), Some("out.csv"));
+        assert_eq!(args.output.format, ExportFormat::Csv);
+        assert_eq!(args.output.format.as_str(), "csv");
+    }
+
+    #[test]
+    fn scan_and_detect_parse_output_flags() {
+        let cli = parse(&[
+            "xmem", "memory", "scan", "--pid", "42", "--string", "hi", "--output", "s.json",
+        ])
+        .unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Scan(args),
+        } = cli.command
+        else {
+            panic!("expected scan");
+        };
+        assert_eq!(args.output.output.as_deref(), Some("s.json"));
+        assert_eq!(args.output.format, ExportFormat::Json);
+
+        let cli = parse(&[
+            "xmem", "detect", "--pid", "42", "--output", "d.csv", "--format", "csv",
+        ])
+        .unwrap();
+        let Command::Detect(args) = cli.command else {
+            panic!("expected detect");
+        };
+        assert_eq!(args.pid.pid, 42);
+        assert_eq!(args.output.output.as_deref(), Some("d.csv"));
+        assert_eq!(args.output.format, ExportFormat::Csv);
     }
 
     #[test]

@@ -1,3 +1,4 @@
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -8,14 +9,31 @@ use xmem_memory::{
 };
 
 use crate::cli::{GlobalArgs, MemoryCmd, ScanArgs};
+use crate::commands::export::{ExportPayload, emit_export_saved, write_export};
 use crate::commands::render::{heur_short, human_size, truncate, truncate_tail};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
-        MemoryCmd::Map(pid_arg) => {
-            let live = LiveProcess::open(pid_arg.pid)?;
+        MemoryCmd::Map(args) => {
+            let live = LiveProcess::open(args.pid.pid)?;
             let map = live.region_map()?;
+            if let Some(output) = args.output.output.as_deref() {
+                let bytes = write_export(
+                    Path::new(output),
+                    args.output.format,
+                    &ExportPayload::Map(&map.regions),
+                )?;
+                emit_export_saved(
+                    output,
+                    args.output.format,
+                    bytes,
+                    map.regions.len(),
+                    "map",
+                    global,
+                );
+                return Ok(());
+            }
             match resolve_mode(global.json) {
                 OutputMode::Json => {
                     let value =
@@ -199,16 +217,33 @@ fn run_scan(args: &ScanArgs, global: &GlobalArgs) -> Result<()> {
     let cancelled = cancel_flag();
     cancelled.store(false, Ordering::SeqCst);
     let (live, report) = execute_scan(args.pid.pid, &pattern, &options, &cancelled)?;
-    match resolve_mode(global.json) {
-        OutputMode::Json => {
-            let value =
-                serde_json::to_value(scan_json_payload(&live.info, &pattern, &options, &report))
-                    .map_err(|e| XmemError::JsonError {
-                        reason: e.to_string(),
-                    })?;
-            emit_json(&success_envelope(value));
+    if let Some(output) = args.output.output.as_deref() {
+        let bytes = write_export(
+            Path::new(output),
+            args.output.format,
+            &ExportPayload::Scan(&report),
+        )?;
+        emit_export_saved(
+            output,
+            args.output.format,
+            bytes,
+            report.matches.len(),
+            "scan",
+            global,
+        );
+    } else {
+        match resolve_mode(global.json) {
+            OutputMode::Json => {
+                let value = serde_json::to_value(scan_json_payload(
+                    &live.info, &pattern, &options, &report,
+                ))
+                .map_err(|e| XmemError::JsonError {
+                    reason: e.to_string(),
+                })?;
+                emit_json(&success_envelope(value));
+            }
+            OutputMode::Human => emit(&render_scan(&live.info, &pattern, &options, &report)),
         }
-        OutputMode::Human => emit(&render_scan(&live.info, &pattern, &options, &report)),
     }
     if report.cancelled {
         tracing::warn!("scan cancelled by user");

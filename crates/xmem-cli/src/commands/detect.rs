@@ -1,15 +1,34 @@
+use std::path::Path;
+
 use serde_json::{Value, json};
 use xmem_core::{Finding, ProcessInfo, Result};
 use xmem_detection::detect_source;
 use xmem_memory::LiveProcess;
 
-use crate::cli::{GlobalArgs, PidArg};
+use crate::cli::{DetectArgs, GlobalArgs};
+use crate::commands::export::{ExportPayload, emit_export_saved, write_export};
 use crate::commands::render::opt_hex;
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
-pub fn run(args: &PidArg, global: &GlobalArgs) -> Result<()> {
-    let live = LiveProcess::open(args.pid)?;
+pub fn run(args: &DetectArgs, global: &GlobalArgs) -> Result<()> {
+    let live = LiveProcess::open(args.pid.pid)?;
     let findings = detect_source(&live)?;
+    if let Some(output) = args.output.output.as_deref() {
+        let bytes = write_export(
+            Path::new(output),
+            args.output.format,
+            &ExportPayload::Detect(&findings),
+        )?;
+        emit_export_saved(
+            output,
+            args.output.format,
+            bytes,
+            findings.len(),
+            "detect",
+            global,
+        );
+        return Ok(());
+    }
     match resolve_mode(global.json) {
         OutputMode::Json => {
             emit_json(&success_envelope(detect_json_payload(
