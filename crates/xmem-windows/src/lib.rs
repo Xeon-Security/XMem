@@ -8,6 +8,7 @@ pub mod elevate;
 pub mod error;
 pub mod handle;
 pub mod memory;
+pub mod path;
 pub mod process;
 pub mod read;
 pub mod remotemem;

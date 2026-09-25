@@ -124,14 +124,16 @@ pub fn walk_regions(
     Ok(RegionWalk { regions, truncated })
 }
 
-/// 매핑된 파일 이름(디바이스 경로). 실패(0)면 None. buf는 재사용 가능한 UTF-16 버퍼.
+/// 매핑된 파일 이름(드라이브 문자 경로로 정규화). 실패(0)면 None. buf는 재사용 가능한 UTF-16 버퍼.
 pub fn mapped_file_name(handle: &OwnedHandle, base: u64, buf: &mut [u16]) -> Option<String> {
     let len = unsafe { GetMappedFileNameW(handle.raw(), base as *const c_void, buf) };
     if len == 0 {
         return None;
     }
     let len = (len as usize).min(buf.len());
-    Some(utf16_z_to_string(&buf[..len]))
+    Some(crate::path::normalize_device_path(&utf16_z_to_string(
+        &buf[..len],
+    )))
 }
 
 /// 사용자 주소 공간 상한(GetNativeSystemInfo). walk 종료 조건으로 사용한다.
