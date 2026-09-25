@@ -1,22 +1,42 @@
 //! 좌측 프로세스 목록 패널.
 
-use xmem_core::ProcessInfo;
+use std::collections::HashSet;
+
+use xmem_core::{ProcessArch, ProcessInfo};
 
 use crate::app::XMemApp;
 use crate::task::TaskState;
 
-pub fn filter_processes(list: &[ProcessInfo], query: &str) -> Vec<usize> {
+pub fn filter_processes(
+    list: &[ProcessInfo],
+    query: &str,
+    accessible: &HashSet<u32>,
+    accessible_only: bool,
+    arch_filter: Option<ProcessArch>,
+) -> Vec<usize> {
     let query = query.trim().to_lowercase();
-    if query.is_empty() {
-        return (0..list.len()).collect();
-    }
     list.iter()
         .enumerate()
         .filter(|(_, info)| {
-            info.name.to_lowercase().contains(&query) || info.pid.to_string() == query
+            (query.is_empty()
+                || info.name.to_lowercase().contains(&query)
+                || info.pid.to_string() == query)
+                && (!accessible_only || accessible.contains(&info.pid))
+                && arch_filter.is_none_or(|arch| info.arch == arch)
         })
         .map(|(index, _)| index)
         .collect()
+}
+
+/// 아키텍처 필터 콤보 표시 문구.
+fn arch_filter_label(filter: Option<ProcessArch>) -> &'static str {
+    match filter {
+        None => "아키텍처: 전체",
+        Some(ProcessArch::X64) => "아키텍처: x64",
+        Some(ProcessArch::X86) => "아키텍처: x86",
+        Some(ProcessArch::Arm64) => "아키텍처: arm64",
+        Some(ProcessArch::Unknown) => "아키텍처: 기타",
+    }
 }
 
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
@@ -51,7 +71,23 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             .hint_text("이름 또는 PID 검색")
             .desired_width(f32::INFINITY),
     );
-    let filtered = filter_processes(&app.processes, &app.process_filter);
+    ui.horizontal(|ui| {
+        ui.checkbox(&mut app.process_accessible_only, "접근 가능만 보기");
+        egui::ComboBox::from_id_salt("process_arch_filter")
+            .selected_text(arch_filter_label(app.process_arch_filter))
+            .show_ui(ui, |ui| {
+                ui.selectable_value(&mut app.process_arch_filter, None, "전체");
+                ui.selectable_value(&mut app.process_arch_filter, Some(ProcessArch::X64), "x64");
+                ui.selectable_value(&mut app.process_arch_filter, Some(ProcessArch::X86), "x86");
+            });
+    });
+    let filtered = filter_processes(
+        &app.processes,
+        &app.process_filter,
+        &app.list_accessible,
+        app.process_accessible_only,
+        app.process_arch_filter,
+    );
     ui.label(
         egui::RichText::new(format!(
             "{}개 / 전체 {}개",
@@ -68,11 +104,15 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         .striped(true)
         .sense(egui::Sense::click())
         .column(egui_extras::Column::exact(56.0))
+        .column(egui_extras::Column::exact(64.0))
         .column(egui_extras::Column::initial(150.0).clip(true))
         .column(egui_extras::Column::remainder().clip(true))
         .header(18.0, |mut header| {
             header.col(|ui| {
                 ui.strong("PID");
+            });
+            header.col(|ui| {
+                ui.strong("접근");
             });
             header.col(|ui| {
                 ui.strong("이름");
@@ -90,6 +130,20 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 row.col(|ui| {
                     row_clicked |=
                         crate::views::table_cell(ui, egui::RichText::new(pid.to_string()));
+                });
+                row.col(|ui| {
+                    let accessible = app.list_accessible.contains(&pid);
+                    let text = if accessible {
+                        "가능"
+                    } else {
+                        "권한 필요"
+                    };
+                    let rich = if accessible {
+                        egui::RichText::new(text)
+                    } else {
+                        egui::RichText::new(text).color(crate::theme::palette(app.theme).warn)
+                    };
+                    row_clicked |= crate::views::table_cell(ui, rich);
                 });
                 row.col(|ui| {
                     row_clicked |= crate::views::table_cell(
@@ -131,7 +185,13 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
         egui::ComboBox::from_id_salt("process_dropdown")
             .selected_text(selected_text)
             .show_ui(ui, |ui| {
-                let filtered = filter_processes(&app.processes, &app.process_filter);
+                let filtered = filter_processes(
+                    &app.processes,
+                    &app.process_filter,
+                    &app.list_accessible,
+                    app.process_accessible_only,
+                    app.process_arch_filter,
+                );
                 let filtered_len = filtered.len();
                 for index in filtered.into_iter().take(200) {
                     let (name, pid) = (app.processes[index].name.clone(), app.processes[index].pid);
@@ -175,7 +235,6 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use xmem_core::ProcessArch;
 
     fn sample(pid: u32, name: &str) -> ProcessInfo {
         ProcessInfo {
@@ -197,10 +256,38 @@ mod tests {
     #[test]
     fn filter_matches_name_case_insensitive_and_pid() {
         let list = vec![sample(10, "pwsh.exe"), sample(20, "explorer.exe")];
-        assert_eq!(filter_processes(&list, "PWSH"), vec![0]);
-        assert_eq!(filter_processes(&list, "explorer"), vec![1]);
-        assert_eq!(filter_processes(&list, "20"), vec![1]);
-        assert_eq!(filter_processes(&list, ""), vec![0, 1]);
-        assert!(filter_processes(&list, "없는이름").is_empty());
+        let none = HashSet::new();
+        assert_eq!(filter_processes(&list, "PWSH", &none, false, None), vec![0]);
+        assert_eq!(
+            filter_processes(&list, "explorer", &none, false, None),
+            vec![1]
+        );
+        assert_eq!(filter_processes(&list, "20", &none, false, None), vec![1]);
+        assert_eq!(filter_processes(&list, "", &none, false, None), vec![0, 1]);
+        assert!(filter_processes(&list, "없는이름", &none, false, None).is_empty());
+    }
+
+    #[test]
+    fn filter_processes_applies_access_and_arch_filters() {
+        let mut x86 = sample(20, "two.exe");
+        x86.arch = ProcessArch::X86;
+        let list = vec![sample(10, "one.exe"), x86, sample(30, "three.exe")];
+        let accessible = HashSet::from([10]);
+        assert_eq!(
+            filter_processes(&list, "", &accessible, true, None),
+            vec![0]
+        );
+        assert_eq!(
+            filter_processes(&list, "", &accessible, false, None),
+            vec![0, 1, 2]
+        );
+        assert_eq!(
+            filter_processes(&list, "", &accessible, false, Some(ProcessArch::X86)),
+            vec![1]
+        );
+        assert_eq!(
+            filter_processes(&list, "", &accessible, true, Some(ProcessArch::X64)),
+            vec![0]
+        );
     }
 }

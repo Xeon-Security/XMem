@@ -1,5 +1,7 @@
 //! 앱 셸: 상단 바 + 탭 + 하단 로그.
 
+use std::collections::HashSet;
+
 use xmem_core::XmemError;
 
 use crate::config::GuiConfig;
@@ -106,8 +108,11 @@ pub struct XMemApp {
     pub tab: Tab,
     pub selected_pid: Option<u32>,
     pub log: LogBuffer,
-    pub list_task: BackgroundTask<Vec<xmem_core::ProcessInfo>>,
+    pub list_task: BackgroundTask<(Vec<xmem_core::ProcessInfo>, HashSet<u32>)>,
+    pub list_accessible: HashSet<u32>,
     pub process_filter: String,
+    pub process_accessible_only: bool,
+    pub process_arch_filter: Option<xmem_core::ProcessArch>,
     pub processes: Vec<xmem_core::ProcessInfo>,
     pub overview_task: BackgroundTask<(u32, xmem_core::ProcessInfo)>,
     pub overview_info: Option<xmem_core::ProcessInfo>,
@@ -196,7 +201,10 @@ impl XMemApp {
             selected_pid: None,
             log,
             list_task: BackgroundTask::idle(),
+            list_accessible: HashSet::new(),
             process_filter: String::new(),
+            process_accessible_only: false,
+            process_arch_filter: None,
             processes: Vec::new(),
             overview_task: BackgroundTask::idle(),
             overview_info: None,
@@ -259,8 +267,17 @@ impl XMemApp {
     }
 
     pub fn refresh_processes(&mut self) {
-        self.list_task =
-            BackgroundTask::spawn("프로세스 목록", |_| xmem_windows::list_processes());
+        // 메모리 읽기 가능 여부는 목록과 같은 백그라운드 태스크 안에서 조사한다
+        // (프로세스당 수 ms, UI 스레드 블로킹 방지).
+        self.list_task = BackgroundTask::spawn("프로세스 목록", |_| {
+            let list = xmem_windows::list_processes()?;
+            let accessible = list
+                .iter()
+                .filter(|info| xmem_windows::is_memory_readable(info.pid))
+                .map(|info| info.pid)
+                .collect();
+            Ok((list, accessible))
+        });
     }
 
     /// 실행 중인 태스크 라벨(상단 바 표시용).
@@ -722,9 +739,10 @@ impl eframe::App for XMemApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         let ctx = ui.ctx().clone();
         if self.list_task.poll()
-            && let Some(list) = self.list_task.take_done()
+            && let Some((list, accessible)) = self.list_task.take_done()
         {
             self.processes = list;
+            self.list_accessible = accessible;
         }
         if self.overview_task.poll()
             && let Some((task_pid, info)) = self.overview_task.take_done()
