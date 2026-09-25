@@ -1,10 +1,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use xmem_core::{
-    Heuristic, MemoryRegion, MemorySource, MemoryState, ModuleInfo, ProcessInfo, ReadOutcome,
-    RegionClass, Result, ThreadInfo, XmemError,
+    Heuristic, MemoryRegion, MemorySource, MemoryState, ModuleInfo, ProcessArch, ProcessInfo,
+    ReadOutcome, RegionClass, Result, ThreadInfo, XmemError,
 };
-use xmem_pe::{MemoryPeClass, PE_HEADER_PREFIX, classify_memory_pe};
+use xmem_pe::{MemoryPeClass, PE_HEADER_PREFIX, classify_memory_pe, looks_like_pe, parse_pe};
 use xmem_windows::{
     OwnedHandle, list_raw_modules, list_raw_threads, memory, open_for_query, open_for_read,
     open_thread_for_query, process_info, thread_priority, thread_start_address,
@@ -113,18 +113,42 @@ impl LiveProcess {
         }
     }
 
-    /// 로드된 모듈 목록. arch는 프로세스 arch를 상속한다(모듈별 arch는 PE 분석에서).
+    /// 로드된 모듈 목록. arch는 모듈 PE 헤더의 machine에서 얻고,
+    /// 읽기/파싱 실패 시 프로세스 arch로 폴백한다(WOW64 혼합 프로세스 대응).
     pub fn modules(&self) -> Result<Vec<ModuleInfo>> {
+        let mut buf = vec![0u8; PE_HEADER_PREFIX];
         Ok(list_raw_modules(self.pid)?
             .into_iter()
-            .map(|raw| ModuleInfo {
-                name: raw.name,
-                base: raw.base,
-                size: raw.size,
-                path: raw.path,
-                arch: Some(self.info.arch),
+            .map(|raw| {
+                let arch = self
+                    .module_arch(raw.base, raw.size, &mut buf)
+                    .or(Some(self.info.arch));
+                ModuleInfo {
+                    name: raw.name,
+                    base: raw.base,
+                    size: raw.size,
+                    path: raw.path,
+                    arch,
+                }
             })
             .collect())
+    }
+
+    /// 모듈 base의 PE 헤더 prefix에서 arch를 읽는다. 실패 시 None(호출자가 폴백).
+    fn module_arch(&self, base: u64, size: u64, buf: &mut [u8]) -> Option<ProcessArch> {
+        let len = size.min(buf.len() as u64) as usize;
+        if len < 64 {
+            return None;
+        }
+        let outcome = self.read(base, &mut buf[..len]).ok()?;
+        if outcome.bytes_read < 64 {
+            return None;
+        }
+        let bytes = &buf[..outcome.bytes_read];
+        if !looks_like_pe(bytes) {
+            return None;
+        }
+        parse_pe(bytes).ok().map(|pe| pe.arch)
     }
 
     /// 스레드 목록 + 시작 주소의 영역/모듈 상관관계. 개별 조회 실패는 None degrade.
@@ -290,6 +314,25 @@ mod tests {
                 .all(|m| !m.name.is_empty() && m.base > 0 && m.size > 0)
         );
         assert!(modules.iter().any(|m| m.path.is_some()));
+    }
+
+    #[test]
+    fn modules_of_self_have_machine_based_arch() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        let modules = live.modules().unwrap();
+        assert!(
+            modules
+                .iter()
+                .any(|module| module.arch == Some(ProcessArch::X64)),
+            "PE machine에서 arch를 얻은 x64 모듈이 최소 하나 필요"
+        );
+    }
+
+    #[test]
+    fn module_arch_falls_back_for_non_module_base() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        let mut buf = vec![0u8; PE_HEADER_PREFIX];
+        assert!(live.module_arch(0, 0x1000, &mut buf).is_none());
     }
 
     #[test]
