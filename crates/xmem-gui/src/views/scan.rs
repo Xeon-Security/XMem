@@ -230,10 +230,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         ui.label(
             egui::RichText::new(format!(
-                "{}건 · {}개 영역 검색({}개 건너뜀) · {} · {}ms · rss {}",
+                "{}건 · {}개 영역 검색({}개 건너뜀) · 읽기 실패 {} (denied {} / invalid {} / other {}) · {} · {}ms · rss {}",
                 report.matches.len(),
                 report.stats.regions_scanned,
                 report.stats.regions_skipped,
+                report.stats.read_failures,
+                report.stats.access_denied,
+                report.stats.invalid_address,
+                report.stats.other_failures,
                 human_size(report.stats.bytes_scanned),
                 report.stats.elapsed_ms,
                 human_size(report.stats.rss_bytes),

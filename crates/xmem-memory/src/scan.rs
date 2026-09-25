@@ -77,6 +77,12 @@ pub struct ScanStats {
     pub regions_skipped: usize,
     pub bytes_scanned: u64,
     pub read_failures: u64,
+    /// 읽기 실패 사유별 집계(AccessDenied).
+    pub access_denied: u64,
+    /// 읽기 실패 사유별 집계(InvalidAddress).
+    pub invalid_address: u64,
+    /// 그 외 읽기 실패(0바이트 읽기 포함).
+    pub other_failures: u64,
     pub partial_reads: u64,
     pub matches: usize,
     pub threads: usize,
@@ -98,7 +104,9 @@ pub struct ScanReport {
 struct RegionScan {
     matches: Vec<ScanMatch>,
     bytes: u64,
-    failures: u64,
+    access_denied: u64,
+    invalid_address: u64,
+    other_failures: u64,
     partials: u64,
     attempted: bool,
 }
@@ -212,8 +220,10 @@ fn scan_region<S: MemorySource + Sync>(
                     });
                 }
             }
-            Ok(_) => out.failures += 1,
-            Err(_) => out.failures += 1,
+            Ok(_) => out.other_failures += 1,
+            Err(XmemError::AccessDenied { .. }) => out.access_denied += 1,
+            Err(XmemError::InvalidAddress { .. }) => out.invalid_address += 1,
+            Err(_) => out.other_failures += 1,
         }
         off = end;
     }
@@ -273,7 +283,10 @@ pub fn scan<S: MemorySource + Sync>(
 
     let regions_scanned = results.iter().filter(|r| r.attempted).count();
     let bytes_scanned = results.iter().map(|r| r.bytes).sum();
-    let read_failures = results.iter().map(|r| r.failures).sum();
+    let access_denied: u64 = results.iter().map(|r| r.access_denied).sum();
+    let invalid_address: u64 = results.iter().map(|r| r.invalid_address).sum();
+    let other_failures: u64 = results.iter().map(|r| r.other_failures).sum();
+    let read_failures = access_denied + invalid_address + other_failures;
     let partial_reads = results.iter().map(|r| r.partials).sum();
     let matches: Vec<ScanMatch> = results.into_iter().flat_map(|r| r.matches).collect();
 
@@ -283,6 +296,9 @@ pub fn scan<S: MemorySource + Sync>(
         regions_skipped: regions_total.saturating_sub(regions_scanned),
         bytes_scanned,
         read_failures,
+        access_denied,
+        invalid_address,
+        other_failures,
         partial_reads,
         matches: matches.len(),
         threads,
@@ -341,11 +357,19 @@ mod tests {
         }
     }
 
+    /// 주입한 실패 종류. `other`는 PartialRead로 대표한다.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    enum FailKind {
+        AccessDenied,
+        InvalidAddress,
+        Other,
+    }
+
     struct MockSource {
         info: ProcessInfo,
         regions: Vec<MemoryRegion>,
         content: BTreeMap<u64, Vec<u8>>,
-        fail: Vec<u64>,
+        fail: Vec<(u64, FailKind)>,
     }
 
     impl MockSource {
@@ -382,9 +406,17 @@ mod tests {
         }
 
         fn read(&self, address: u64, buf: &mut [u8]) -> Result<ReadOutcome> {
-            if self.fail.contains(&address) {
-                return Err(XmemError::AccessDenied {
-                    context: "mock failure".to_string(),
+            if let Some((_, kind)) = self.fail.iter().find(|(addr, _)| *addr == address) {
+                return Err(match kind {
+                    FailKind::AccessDenied => XmemError::AccessDenied {
+                        context: "mock failure".to_string(),
+                    },
+                    FailKind::InvalidAddress => XmemError::InvalidAddress { address },
+                    FailKind::Other => XmemError::PartialRead {
+                        address,
+                        requested: buf.len(),
+                        read: 0,
+                    },
                 });
             }
             let Some(region) = self
@@ -630,13 +662,35 @@ mod tests {
         data[0x40..0x44].copy_from_slice(b"ABCD");
         content.insert(b.base, data);
         let mut source = MockSource::new(vec![a.clone(), b], content);
-        source.fail.push(a.base);
+        source.fail.push((a.base, FailKind::AccessDenied));
 
         let report = scan(&source, &pattern(), &ScanOptions::default(), &no_cancel()).unwrap();
 
         assert!(report.stats.read_failures >= 1);
+        assert_eq!(report.stats.access_denied, 1);
         assert_eq!(report.matches.len(), 1);
         assert_eq!(report.matches[0].region_base, 0x2000_0000);
+    }
+
+    #[test]
+    fn read_failures_counted_by_reason() {
+        let a = make_region(0x1000_0000, 0x1000, PAGE_RW, MemoryType::Private);
+        let b = make_region(0x2000_0000, 0x1000, PAGE_RW, MemoryType::Private);
+        let c = make_region(0x3000_0000, 0x1000, PAGE_RW, MemoryType::Private);
+        let mut source = MockSource::new(vec![a.clone(), b.clone(), c.clone()], BTreeMap::new());
+        source.fail = vec![
+            (a.base, FailKind::AccessDenied),
+            (b.base, FailKind::InvalidAddress),
+            (c.base, FailKind::Other),
+        ];
+
+        let report = scan(&source, &pattern(), &ScanOptions::default(), &no_cancel()).unwrap();
+
+        assert_eq!(report.stats.access_denied, 1);
+        assert_eq!(report.stats.invalid_address, 1);
+        assert_eq!(report.stats.other_failures, 1);
+        assert_eq!(report.stats.read_failures, 3);
+        assert!(report.matches.is_empty());
     }
 
     #[test]

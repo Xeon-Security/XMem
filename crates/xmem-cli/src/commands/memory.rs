@@ -369,13 +369,16 @@ fn render_scan(
         ));
     }
     out.push_str(&format!(
-        "{} matches; regions {}/{} scanned ({} skipped); bytes {}; read_failures {}; partial {}; elapsed {} ms; rss {}\n",
+        "{} matches; regions {}/{} scanned ({} skipped); bytes {}; read_failures {} (denied {} / invalid {} / other {}); partial {}; elapsed {} ms; rss {}\n",
         report.matches.len(),
         report.stats.regions_scanned,
         report.stats.regions_total,
         report.stats.regions_skipped,
         human_size(report.stats.bytes_scanned),
         report.stats.read_failures,
+        report.stats.access_denied,
+        report.stats.invalid_address,
+        report.stats.other_failures,
         report.stats.partial_reads,
         report.stats.elapsed_ms,
         human_size(report.stats.rss_bytes),
@@ -618,6 +621,9 @@ mod tests {
                 regions_skipped: 1,
                 bytes_scanned: 0x3000,
                 read_failures: 0,
+                access_denied: 0,
+                invalid_address: 0,
+                other_failures: 0,
                 partial_reads: 0,
                 matches: matches.len(),
                 threads: 2,
@@ -646,8 +652,28 @@ mod tests {
         assert!(out.contains("0x0000000000001000"));
         assert!(out.contains("+0x4"));
         assert!(out.contains("1 matches;"));
+        assert!(out.contains("read_failures 0 (denied 0 / invalid 0 / other 0)"));
         assert!(out.contains("result cap reached"));
         assert!(!out.contains("cancelled"));
+    }
+
+    #[test]
+    fn render_scan_shows_read_failure_reasons() {
+        let mut report = sample_report();
+        report.stats.read_failures = 5;
+        report.stats.access_denied = 3;
+        report.stats.invalid_address = 1;
+        report.stats.other_failures = 1;
+        let out = render_scan(
+            &sample_info(),
+            &ScanPattern::ascii("xmem").unwrap(),
+            &ScanOptions::default(),
+            &report,
+        );
+        assert!(
+            out.contains("read_failures 5 (denied 3 / invalid 1 / other 1)"),
+            "{out}"
+        );
     }
 
     #[test]
