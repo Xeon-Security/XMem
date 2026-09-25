@@ -107,6 +107,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         if app.map_task.is_running() {
             ui.spinner();
             ui.label("메모리 영역 열거 중...");
+            if ui.button("취소").clicked() {
+                app.map_task.cancel();
+            }
         }
         ui.separator();
         ui.checkbox(&mut app.map_filters.executable_only, "실행 가능만");

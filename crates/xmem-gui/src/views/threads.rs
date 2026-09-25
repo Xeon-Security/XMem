@@ -22,6 +22,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         if app.threads_task.is_running() {
             ui.spinner();
+            if ui.button("취소").clicked() {
+                app.threads_task.cancel();
+            }
         }
     });
     match app.threads_task.state() {

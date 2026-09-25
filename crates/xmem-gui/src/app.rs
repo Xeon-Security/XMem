@@ -1,7 +1,5 @@
 //! 앱 셸: 상단 바 + 탭 + 하단 로그.
 
-use std::sync::atomic::Ordering;
-
 use xmem_core::XmemError;
 
 use crate::config::GuiConfig;
@@ -451,11 +449,14 @@ impl XMemApp {
         self.module_selected = None;
         self.module_detail = None;
         let with_pe = self.modules_pe;
-        self.modules_task = BackgroundTask::spawn("모듈", move |_| {
+        self.modules_task = BackgroundTask::spawn("모듈", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
             let modules = live.modules()?;
+            crate::task::ensure_not_cancelled(cancel)?;
             let pe = if with_pe {
-                Some(crate::views::modules::collect_pe(&live, &modules))
+                let pe = crate::views::modules::collect_pe(&live, &modules);
+                crate::task::ensure_not_cancelled(cancel)?;
+                Some(pe)
             } else {
                 None
             };
@@ -468,8 +469,11 @@ impl XMemApp {
         self.threads = None;
         self.thread_selected = None;
         self.thread_detail = None;
-        self.threads_task = BackgroundTask::spawn("스레드", move |_| {
-            Ok((pid, xmem_memory::LiveProcess::open(pid)?.threads()?))
+        self.threads_task = BackgroundTask::spawn("스레드", move |cancel| {
+            let live = xmem_memory::LiveProcess::open(pid)?;
+            let threads = live.threads()?;
+            crate::task::ensure_not_cancelled(cancel)?;
+            Ok((pid, threads))
         })
         .with_pid(pid);
     }
@@ -546,23 +550,11 @@ impl XMemApp {
         self.detect_task = BackgroundTask::spawn("탐지", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
             let regions = live.region_map_cancellable(cancel)?.regions;
-            if cancel.load(Ordering::Relaxed) {
-                return Err(XmemError::Cancelled {
-                    reason: "user interrupt".into(),
-                });
-            }
+            crate::task::ensure_not_cancelled(cancel)?;
             let modules = live.modules()?;
-            if cancel.load(Ordering::Relaxed) {
-                return Err(XmemError::Cancelled {
-                    reason: "user interrupt".into(),
-                });
-            }
+            crate::task::ensure_not_cancelled(cancel)?;
             let threads = live.threads()?;
-            if cancel.load(Ordering::Relaxed) {
-                return Err(XmemError::Cancelled {
-                    reason: "user interrupt".into(),
-                });
-            }
+            crate::task::ensure_not_cancelled(cancel)?;
             Ok((
                 pid,
                 xmem_detection::detect(&xmem_detection::DetectionContext {

@@ -13,6 +13,16 @@ pub enum TaskState<T> {
     Cancelled,
 }
 
+/// 취소 플래그가 서 있으면 `Cancelled` 오류를 돌려준다(수집 단계 사이 검사용).
+pub fn ensure_not_cancelled(cancel: &AtomicBool) -> Result<()> {
+    if cancel.load(Ordering::Relaxed) {
+        return Err(XmemError::Cancelled {
+            reason: "user interrupt".into(),
+        });
+    }
+    Ok(())
+}
+
 enum TaskMessage<T> {
     Done(T),
     Failed(XmemError),
@@ -178,6 +188,18 @@ mod tests {
         });
         wait_polled(&mut task);
         assert!(matches!(task.state(), TaskState::Cancelled));
+    }
+
+    #[test]
+    fn ensure_not_cancelled_maps_flag_to_error() {
+        assert!(
+            matches!(
+                ensure_not_cancelled(&AtomicBool::new(true)),
+                Err(XmemError::Cancelled { .. })
+            ),
+            "취소 플래그가 서 있으면 Cancelled"
+        );
+        assert!(ensure_not_cancelled(&AtomicBool::new(false)).is_ok());
     }
 
     #[test]
