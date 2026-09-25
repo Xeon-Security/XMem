@@ -106,6 +106,35 @@ pub fn should_hscroll(available: f32, min_w: f32) -> bool {
     available >= min_w
 }
 
+/// ↑/↓ 키로 표 선택 행을 한 칸 옮긴다.
+///
+/// `current`는 현재 선택의 데이터 인덱스, `filtered_indices`는 표시 행 → 데이터
+/// 인덱스 매핑이다. 이동한 행의 데이터 인덱스를 돌려준다. 텍스트 입력 중이면
+/// None(검색어 입력 등에서 커서 이동을 가로채지 않는다).
+pub fn arrow_step(
+    ctx: &egui::Context,
+    len: usize,
+    current: Option<usize>,
+    filtered_indices: &[usize],
+) -> Option<usize> {
+    let len = len.min(filtered_indices.len());
+    if len == 0 || ctx.text_edit_focused() {
+        return None;
+    }
+    let up = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
+    let down = ctx.input(|i| i.key_pressed(egui::Key::ArrowDown));
+    if up == down {
+        return None;
+    }
+    let row = current.and_then(|index| filtered_indices.iter().position(|&i| i == index));
+    let next = match (up, row) {
+        (true, Some(row)) => row.saturating_sub(1),
+        (false, Some(row)) => (row + 1).min(len - 1),
+        (_, None) => 0,
+    };
+    filtered_indices.get(next).copied()
+}
+
 /// 가용 폭이 넉넉하면 표를 가로 ScrollArea에 담고, 좁으면 패널 폭에 맞춰 그린다.
 ///
 /// 항상 가로 스크롤로 감싸면 좁은 창에서 표가 패널보다 넓어져 표 자신의 세로
@@ -136,11 +165,81 @@ pub fn wrap_hscroll_if_wide<R>(
 mod tests {
     use super::*;
 
+    fn ctx_with_key(key: egui::Key) -> egui::Context {
+        let ctx = egui::Context::default();
+        ctx.input_mut(|input| {
+            input.events.push(egui::Event::Key {
+                key,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: egui::Modifiers::default(),
+            });
+        });
+        ctx
+    }
+
     #[test]
     fn should_hscroll_only_when_available_width_sufficient() {
         assert!(should_hscroll(910.0, 910.0));
         assert!(should_hscroll(1200.0, 910.0));
         assert!(!should_hscroll(909.9, 910.0));
         assert!(!should_hscroll(400.0, 910.0));
+    }
+
+    #[test]
+    fn arrow_step_moves_between_filtered_rows() {
+        let rows = [5usize, 3, 7];
+        let none = egui::Context::default();
+        assert_eq!(arrow_step(&none, rows.len(), None, &rows), None);
+        assert_eq!(
+            arrow_step(&ctx_with_key(egui::Key::ArrowDown), rows.len(), None, &rows),
+            Some(5)
+        );
+        assert_eq!(
+            arrow_step(
+                &ctx_with_key(egui::Key::ArrowUp),
+                rows.len(),
+                Some(5),
+                &rows
+            ),
+            Some(5)
+        );
+        assert_eq!(
+            arrow_step(
+                &ctx_with_key(egui::Key::ArrowDown),
+                rows.len(),
+                Some(5),
+                &rows
+            ),
+            Some(3)
+        );
+        assert_eq!(
+            arrow_step(
+                &ctx_with_key(egui::Key::ArrowDown),
+                rows.len(),
+                Some(7),
+                &rows
+            ),
+            Some(7)
+        );
+    }
+
+    #[test]
+    fn arrow_step_ignores_empty_rows_and_other_keys() {
+        let rows = [1usize, 2];
+        assert_eq!(
+            arrow_step(&ctx_with_key(egui::Key::ArrowDown), 0, None, &[]),
+            None
+        );
+        assert_eq!(
+            arrow_step(
+                &ctx_with_key(egui::Key::ArrowLeft),
+                rows.len(),
+                Some(1),
+                &rows
+            ),
+            None
+        );
     }
 }

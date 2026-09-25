@@ -56,6 +56,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     ui.label(egui::RichText::new(format!("{}개 스레드", threads.len())).weak());
     let selected_tid = app.thread_selected;
     let mut clicked_thread: Option<xmem_core::ThreadInfo> = None;
+    let mut moved_thread: Option<xmem_core::ThreadInfo> = None;
+    let rows: Vec<usize> = (0..threads.len()).collect();
+    if let Some(next) = crate::views::arrow_step(
+        ui.ctx(),
+        threads.len(),
+        selected_tid.and_then(|tid| threads.iter().position(|thread| thread.tid == tid)),
+        &rows,
+    ) && let Some(thread) = threads.get(next)
+    {
+        moved_thread = Some(thread.clone());
+    }
     crate::views::truncate_cells(ui);
     crate::views::wrap_hscroll_if_wide(ui, "threads_table_hscroll", 760.0, [false, false], |ui| {
         egui_extras::TableBuilder::new(ui)
@@ -115,7 +126,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 });
             });
     });
-    if let Some(thread) = clicked_thread {
+    if let Some(thread) = clicked_thread.or(moved_thread) {
         app.select_thread(pid, thread);
     }
 }

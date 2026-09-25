@@ -105,6 +105,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let show_pe = bundle.pe.is_some();
     let selected_base = app.module_selected;
     let mut clicked_module: Option<ModuleInfo> = None;
+    let mut moved_module: Option<ModuleInfo> = None;
+    let rows: Vec<usize> = (0..bundle.modules.len()).collect();
+    if let Some(next) = crate::views::arrow_step(
+        ui.ctx(),
+        bundle.modules.len(),
+        selected_base.and_then(|base| bundle.modules.iter().position(|module| module.base == base)),
+        &rows,
+    ) && let Some(module) = bundle.modules.get(next)
+    {
+        moved_module = Some(module.clone());
+    }
     crate::views::truncate_cells(ui);
     let min_w = if show_pe { 790.0 } else { 520.0 };
     crate::views::wrap_hscroll_if_wide(ui, "modules_table_hscroll", min_w, [false, false], |ui| {
@@ -209,7 +220,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 });
             });
     });
-    if let Some(module) = clicked_module {
+    if let Some(module) = clicked_module.or(moved_module) {
         app.select_module(pid, module);
     }
 }

@@ -169,6 +169,16 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let colors = palette(app.theme);
     let selected_base = app.map_selected;
     let mut clicked_region: Option<MemoryRegion> = None;
+    let mut moved_region: Option<MemoryRegion> = None;
+    if let Some(next) = crate::views::arrow_step(
+        ui.ctx(),
+        selected.len(),
+        selected_base.and_then(|base| map.regions.iter().position(|region| region.base == base)),
+        &selected,
+    ) && let Some(region) = map.regions.get(next)
+    {
+        moved_region = Some(region.clone());
+    }
     crate::views::truncate_cells(ui);
     crate::views::wrap_hscroll_if_wide(ui, "map_table_hscroll", 910.0, [false, false], |ui| {
         egui_extras::TableBuilder::new(ui)
@@ -277,7 +287,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 });
             });
     });
-    if let Some(region) = clicked_region {
+    if let Some(region) = clicked_region.or(moved_region) {
         app.select_region(pid, region);
     }
 }
