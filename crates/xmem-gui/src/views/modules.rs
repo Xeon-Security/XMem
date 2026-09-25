@@ -14,6 +14,95 @@ pub struct ModuleBundle {
     pub pe: Option<Vec<Option<PeInfo>>>,
 }
 
+/// 모듈 탭 필터. CLI `modules`의 `module_matches`와 같은 의미를 GUI에 옮긴 것
+/// (core에 ModuleFilter 타입이 없고 CLI/코어 수정이 금지되어 GUI에 둔다).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ModuleFilter {
+    pub query: String,
+    pub arch: Option<ProcessArch>,
+    pub unparsed_only: bool,
+}
+
+impl ModuleFilter {
+    /// 이름/경로 부분일치(대소문자 무시), 아키텍처, PE 파싱 실패만.
+    /// `pe`가 없으면(미수집) 파싱 실패로 간주한다 — CLI의 `--unparsed`와 동일.
+    pub fn matches(&self, module: &ModuleInfo, pe: Option<&Option<PeInfo>>) -> bool {
+        let needle = self.query.trim().to_lowercase();
+        if !needle.is_empty() {
+            let name_hit = module.name.to_lowercase().contains(&needle);
+            let path_hit = module
+                .path
+                .as_deref()
+                .is_some_and(|path| path.to_lowercase().contains(&needle));
+            if !name_hit && !path_hit {
+                return false;
+            }
+        }
+        if let Some(arch) = self.arch
+            && module.arch != Some(arch)
+        {
+            return false;
+        }
+        if self.unparsed_only && pe.is_some_and(|item| item.is_some()) {
+            return false;
+        }
+        true
+    }
+}
+
+/// 필터를 통과한 모듈 인덱스 목록.
+pub fn select_modules(
+    modules: &[ModuleInfo],
+    pe: Option<&Vec<Option<PeInfo>>>,
+    filter: &ModuleFilter,
+) -> Vec<usize> {
+    modules
+        .iter()
+        .enumerate()
+        .filter(|(index, module)| {
+            let item = pe.and_then(|list| list.get(*index));
+            filter.matches(module, item)
+        })
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn filter_active(app: &crate::app::XMemApp) -> bool {
+    !app.module_query.trim().is_empty()
+        || app.module_arch_filter.is_some()
+        || app.module_unparsed_only
+}
+
+fn arch_combo(ui: &mut egui::Ui, filter: &mut Option<ProcessArch>, id_salt: &str) {
+    egui::ComboBox::from_id_salt(id_salt)
+        .selected_text(match filter {
+            None => "아키텍처: 전체",
+            Some(ProcessArch::X64) => "아키텍처: x64",
+            Some(ProcessArch::X86) => "아키텍처: x86",
+            Some(ProcessArch::Arm64) => "아키텍처: arm64",
+            Some(ProcessArch::Unknown) => "아키텍처: 기타",
+        })
+        .show_ui(ui, |ui| {
+            ui.selectable_value(filter, None, "전체");
+            ui.selectable_value(filter, Some(ProcessArch::X64), "x64");
+            ui.selectable_value(filter, Some(ProcessArch::X86), "x86");
+        });
+}
+
+fn filter_contents(ui: &mut egui::Ui, app: &mut crate::app::XMemApp) {
+    ui.horizontal(|ui| {
+        ui.label("이름/경로");
+        ui.add(
+            egui::TextEdit::singleline(&mut app.module_query)
+                .hint_text("부분일치")
+                .desired_width(140.0),
+        );
+    });
+    arch_combo(ui, &mut app.module_arch_filter, "module_arch_filter_popup");
+    ui.checkbox(&mut app.module_unparsed_only, "PE 파싱 실패만")
+        .on_hover_text("PE 요약 수집이 필요합니다(자동으로 켜집니다)");
+}
+
 /// 모듈별 PE 헤더 prefix 파싱. 개별 실패는 None으로 degrade한다.
 pub fn collect_pe(live: &LiveProcess, modules: &[ModuleInfo]) -> Vec<Option<PeInfo>> {
     let mut buf = vec![0u8; PE_HEADER_PREFIX];
@@ -74,7 +163,25 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             app.modules_pe = pe;
             app.start_modules(pid);
         }
+        if !crate::views::narrow(ui) {
+            ui.separator();
+            ui.add(
+                egui::TextEdit::singleline(&mut app.module_query)
+                    .hint_text("이름/경로")
+                    .desired_width(120.0),
+            );
+            arch_combo(ui, &mut app.module_arch_filter, "module_arch_filter_inline");
+            ui.checkbox(&mut app.module_unparsed_only, "PE 파싱 실패만");
+        }
+        crate::views::filter_popup(ui, "module_filter_popup", filter_active(app), |ui| {
+            filter_contents(ui, app);
+        });
     });
+    // PE 파싱 실패 필터는 PE 수집이 없으면 평가할 수 없다 — 자동으로 켜고 다시 수집한다.
+    if app.module_unparsed_only && !app.modules_pe {
+        app.modules_pe = true;
+        app.start_modules(pid);
+    }
     match app.modules_task.state() {
         TaskState::Failed(err) => {
             let failure = crate::app::classify_open_failure(
@@ -104,15 +211,27 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new("모듈을 불러오는 중...").weak());
         return;
     };
-    ui.label(egui::RichText::new(format!("{}개 모듈", bundle.modules.len())).weak());
+    let filter = ModuleFilter {
+        query: app.module_query.clone(),
+        arch: app.module_arch_filter,
+        unparsed_only: app.module_unparsed_only,
+    };
+    let rows = select_modules(&bundle.modules, bundle.pe.as_ref(), &filter);
+    ui.label(
+        egui::RichText::new(if rows.len() == bundle.modules.len() {
+            format!("{}개 모듈", rows.len())
+        } else {
+            format!("{}개 / 전체 {}개 모듈", rows.len(), bundle.modules.len())
+        })
+        .weak(),
+    );
     let show_pe = bundle.pe.is_some();
     let selected_base = app.module_selected;
     let mut clicked_module: Option<ModuleInfo> = None;
     let mut moved_module: Option<ModuleInfo> = None;
-    let rows: Vec<usize> = (0..bundle.modules.len()).collect();
     if let Some(next) = crate::views::arrow_step(
         ui.ctx(),
-        bundle.modules.len(),
+        rows.len(),
         selected_base.and_then(|base| bundle.modules.iter().position(|module| module.base == base)),
         &rows,
     ) && let Some(module) = bundle.modules.get(next)
@@ -158,8 +277,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 }
             })
             .body(|body| {
-                body.rows(20.0, bundle.modules.len(), |mut row| {
-                    let index = row.index();
+                body.rows(20.0, rows.len(), |mut row| {
+                    let index = rows[row.index()];
                     let module = &bundle.modules[index];
                     row.set_selected(selected_base == Some(module.base));
                     let mut row_clicked = false;
@@ -231,6 +350,101 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use xmem_core::{ModuleInfo, ProcessArch};
+
+    fn module(name: &str, path: Option<&str>) -> ModuleInfo {
+        ModuleInfo {
+            name: name.to_string(),
+            base: 0x1000,
+            size: 0x1000,
+            path: path.map(str::to_string),
+            arch: Some(ProcessArch::X64),
+        }
+    }
+
+    #[test]
+    fn module_filter_matches_name_path_arch_and_unparsed() {
+        let kernel = module("kernel32.dll", Some(r"C:\Windows\System32\kernel32.dll"));
+        assert!(ModuleFilter::default().matches(&kernel, None));
+        let by_name = ModuleFilter {
+            query: "KERNEL".into(),
+            ..ModuleFilter::default()
+        };
+        assert!(by_name.matches(&kernel, None));
+        let by_path = ModuleFilter {
+            query: "system32".into(),
+            ..ModuleFilter::default()
+        };
+        assert!(by_path.matches(&kernel, None));
+        assert!(
+            !ModuleFilter {
+                query: "user32".into(),
+                ..ModuleFilter::default()
+            }
+            .matches(&kernel, None)
+        );
+        assert!(
+            !ModuleFilter {
+                arch: Some(ProcessArch::X86),
+                ..ModuleFilter::default()
+            }
+            .matches(&kernel, None)
+        );
+
+        let parsed = Some(xmem_pe::PeInfo {
+            is_64: true,
+            machine: 0x8664,
+            arch: ProcessArch::X64,
+            image_base: 0x1000,
+            entry_point: 0x1000,
+            size_of_image: 0x1000,
+            subsystem: 3,
+            characteristics: 0,
+            time_date_stamp: 0,
+            sections: Vec::new(),
+            import_count: 0,
+            import_library_count: 0,
+            libraries: Vec::new(),
+            export_count: 0,
+            relocation_count: 0,
+            tls_callback_count: 0,
+        });
+        let unparsed = ModuleFilter {
+            unparsed_only: true,
+            ..ModuleFilter::default()
+        };
+        assert!(!unparsed.matches(&kernel, Some(&parsed)));
+        let failed: Option<xmem_pe::PeInfo> = None;
+        assert!(unparsed.matches(&kernel, Some(&failed)));
+    }
+
+    #[test]
+    fn select_modules_maps_filtered_rows() {
+        let mut x86 = module("legacy.dll", None);
+        x86.arch = Some(ProcessArch::X86);
+        let modules = vec![
+            module("kernel32.dll", Some(r"C:\Windows\System32\kernel32.dll")),
+            x86,
+            module("user32.dll", None),
+        ];
+        let filter = ModuleFilter {
+            query: "kernel".into(),
+            arch: Some(ProcessArch::X64),
+            ..ModuleFilter::default()
+        };
+        assert_eq!(select_modules(&modules, None, &filter), vec![0]);
+        assert_eq!(
+            select_modules(
+                &modules,
+                None,
+                &ModuleFilter {
+                    arch: Some(ProcessArch::X86),
+                    ..ModuleFilter::default()
+                }
+            ),
+            vec![1]
+        );
+    }
 
     #[test]
     fn pe_arch_labels_match_cli() {

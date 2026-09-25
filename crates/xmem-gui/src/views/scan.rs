@@ -2,7 +2,8 @@
 
 use xmem_core::{MemorySource, ScanPattern, XmemError};
 use xmem_memory::{
-    DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RESULTS, LiveProcess, RegionFilters, ScanOptions,
+    DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RESULTS, LiveProcess, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE,
+    RegionFilters, ScanOptions,
 };
 
 use crate::app::XMemApp;
@@ -25,6 +26,12 @@ pub struct ScanUiState {
     pub executable_only: bool,
     pub private_only: bool,
     pub writable_only: bool,
+    pub range_start: String,
+    pub range_end: String,
+    pub max_region_size: String,
+    pub offset: String,
+    pub chunk_size: String,
+    pub all: bool,
     pub max_results: usize,
     pub threads: usize,
     pub selected_match: Option<usize>,
@@ -45,6 +52,12 @@ impl Default for ScanUiState {
             executable_only: false,
             private_only: false,
             writable_only: false,
+            range_start: String::new(),
+            range_end: String::new(),
+            max_region_size: String::new(),
+            offset: String::new(),
+            chunk_size: String::new(),
+            all: false,
             max_results: DEFAULT_MAX_RESULTS,
             threads: default_threads(),
             selected_match: None,
@@ -102,21 +115,97 @@ pub fn build_pattern(state: &ScanUiState) -> xmem_core::Result<ScanPattern> {
     }
 }
 
-pub fn build_options(state: &ScanUiState) -> ScanOptions {
-    ScanOptions {
+/// UI 상태를 CLI `memory scan`과 같은 의미의 옵션으로 만든다. 잘못된 텍스트는 오류.
+pub fn build_options(state: &ScanUiState) -> xmem_core::Result<ScanOptions> {
+    let invalid = |reason: String| XmemError::InvalidInput { reason };
+    let range =
+        crate::views::parse_range_text(&state.range_start, &state.range_end).map_err(invalid)?;
+    let max_region_size = crate::views::parse_size_text(&state.max_region_size).map_err(invalid)?;
+    let offset = crate::views::parse_u64_text(&state.offset).map_err(invalid)?;
+    let chunk_size = match crate::views::parse_size_text(&state.chunk_size).map_err(invalid)? {
+        Some(size) => {
+            let size = size as usize;
+            if !(MIN_CHUNK_SIZE..=MAX_CHUNK_SIZE).contains(&size) {
+                return Err(invalid(format!(
+                    "청크 크기는 {MIN_CHUNK_SIZE}~{MAX_CHUNK_SIZE} 바이트",
+                )));
+            }
+            size
+        }
+        None => DEFAULT_CHUNK_SIZE,
+    };
+    Ok(ScanOptions {
         filters: RegionFilters {
             executable_only: state.executable_only,
             private_only: state.private_only,
             writable_only: state.writable_only,
-            range: None,
-            max_region_size: None,
-            all: false,
+            range,
+            max_region_size,
+            all: state.all,
         },
-        chunk_size: DEFAULT_CHUNK_SIZE,
+        chunk_size,
         threads: state.threads.max(1),
         max_results: state.max_results.max(1),
-        offset: None,
-    }
+        offset,
+    })
+}
+
+fn filter_active(state: &ScanUiState) -> bool {
+    state.executable_only
+        || state.private_only
+        || state.writable_only
+        || state.all
+        || !state.range_start.trim().is_empty()
+        || !state.range_end.trim().is_empty()
+        || !state.max_region_size.trim().is_empty()
+        || !state.offset.trim().is_empty()
+        || !state.chunk_size.trim().is_empty()
+}
+
+fn filter_contents(ui: &mut egui::Ui, state: &mut ScanUiState) {
+    ui.checkbox(&mut state.executable_only, "실행 가능만");
+    ui.checkbox(&mut state.private_only, "Private만");
+    ui.checkbox(&mut state.writable_only, "쓰기 가능만");
+    ui.checkbox(&mut state.all, "대형 프로세스 정책 해제")
+        .on_hover_text("모든 committed 영역을 검색합니다(느림)");
+    ui.horizontal(|ui| {
+        ui.label("주소 범위");
+        ui.add(
+            egui::TextEdit::singleline(&mut state.range_start)
+                .hint_text("시작")
+                .desired_width(80.0),
+        );
+        ui.label("~");
+        ui.add(
+            egui::TextEdit::singleline(&mut state.range_end)
+                .hint_text("끝")
+                .desired_width(80.0),
+        );
+    });
+    ui.horizontal(|ui| {
+        ui.label("최대 영역 크기");
+        ui.add(
+            egui::TextEdit::singleline(&mut state.max_region_size)
+                .hint_text("8Mi")
+                .desired_width(70.0),
+        );
+    });
+    ui.horizontal(|ui| {
+        ui.label("오프셋");
+        ui.add(
+            egui::TextEdit::singleline(&mut state.offset)
+                .hint_text("N")
+                .desired_width(70.0),
+        );
+    });
+    ui.horizontal(|ui| {
+        ui.label("청크 크기");
+        ui.add(
+            egui::TextEdit::singleline(&mut state.chunk_size)
+                .hint_text("1Mi")
+                .desired_width(70.0),
+        );
+    });
 }
 
 /// 미리보기 바이트를 읽어 hex dump를 만든다(백그라운드 태스크에서 호출).
@@ -166,9 +255,13 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.radio_value(&mut app.scan_state.kind, NeedleKind::Wide, "UTF-16");
     });
     ui.horizontal(|ui| {
-        ui.checkbox(&mut app.scan_state.executable_only, "실행 가능만");
-        ui.checkbox(&mut app.scan_state.private_only, "Private만");
-        ui.checkbox(&mut app.scan_state.writable_only, "쓰기 가능만");
+        if !crate::views::narrow(ui) {
+            ui.checkbox(&mut app.scan_state.executable_only, "실행 가능만");
+            ui.checkbox(&mut app.scan_state.private_only, "Private만");
+            ui.checkbox(&mut app.scan_state.writable_only, "쓰기 가능만");
+            ui.separator();
+        }
+        ui.checkbox(&mut app.scan_state.all, "대형 프로세스 정책 해제");
         ui.separator();
         ui.label("최대 결과")
             .on_hover_text("최대 결과 수 (최대 1,000,000)");
@@ -183,6 +276,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 .range(1..=64)
                 .speed(0.2),
         );
+        let active = filter_active(&app.scan_state);
+        let state = &mut app.scan_state;
+        crate::views::filter_popup(ui, "scan_filter_popup", active, |ui| {
+            filter_contents(ui, state);
+        });
     });
     ui.horizontal(|ui| {
         let running = app.scan_task.is_running();
@@ -199,6 +297,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             }
         }
     });
+    if let Err(err) = build_options(&app.scan_state) {
+        ui.colored_label(palette(app.theme).danger, err.to_string());
+    }
     if let TaskState::Failed(err) = app.scan_task.state() {
         let failure = crate::app::classify_open_failure(
             err,
@@ -414,5 +515,59 @@ mod tests {
         state.kind = NeedleKind::Wide;
         let pattern = build_pattern(&state).unwrap();
         assert_eq!(pattern.kind, xmem_core::PatternKind::Wide);
+    }
+
+    #[test]
+    fn build_options_maps_cli_equivalent_fields() {
+        let state = ScanUiState {
+            range_start: "0x1000".into(),
+            range_end: "0x2000".into(),
+            max_region_size: "8Mi".into(),
+            offset: "4".into(),
+            chunk_size: "64Ki".into(),
+            all: true,
+            executable_only: true,
+            ..ScanUiState::default()
+        };
+        let options = build_options(&state).unwrap();
+        assert_eq!(options.filters.range, Some((0x1000, 0x2000)));
+        assert_eq!(options.filters.max_region_size, Some(8 * 1024 * 1024));
+        assert_eq!(options.offset, Some(4));
+        assert_eq!(options.chunk_size, 64 * 1024);
+        assert!(options.filters.all && options.filters.executable_only);
+        assert_eq!(build_options(&ScanUiState::default()).unwrap().offset, None);
+    }
+
+    #[test]
+    fn build_options_rejects_bad_range_and_chunk() {
+        let bad_range = ScanUiState {
+            range_start: "0x2000".into(),
+            range_end: "0x1000".into(),
+            ..ScanUiState::default()
+        };
+        assert!(build_options(&bad_range).is_err());
+        assert!(
+            build_options(&ScanUiState {
+                chunk_size: "2Ki".into(),
+                ..ScanUiState::default()
+            })
+            .is_err(),
+            "최소 4Ki 미만은 거부"
+        );
+        assert!(
+            build_options(&ScanUiState {
+                chunk_size: "32Mi".into(),
+                ..ScanUiState::default()
+            })
+            .is_err(),
+            "최대 16Mi 초과는 거부"
+        );
+        assert!(
+            build_options(&ScanUiState {
+                offset: "zz".into(),
+                ..ScanUiState::default()
+            })
+            .is_err()
+        );
     }
 }

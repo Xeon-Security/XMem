@@ -1,4 +1,7 @@
 //! 탭별 화면.
+//!
+//! 필터 텍스트 파서와 "필터" 팝업은 탭들이 공유한다. 좁은 창(<900px)에서도
+//! 모든 필터에 접근할 수 있도록 각 탭 툴바에 팝업을 둔다.
 pub mod detect;
 pub mod dump;
 pub mod export;
@@ -15,6 +18,111 @@ pub mod scan;
 pub mod snapshot;
 pub mod thread;
 pub mod threads;
+
+/// 좁은 창(뷰포트 폭 < 900px) 기준. 앱 셸과 같은 값을 쓴다.
+pub const NARROW_WIDTH: f32 = 900.0;
+
+/// 좁은 창 여부.
+pub fn narrow(ui: &egui::Ui) -> bool {
+    ui.ctx().input(|i| i.viewport_rect().width()) < NARROW_WIDTH
+}
+
+/// "0x"/"0X" 접두 hex 또는 10진 주소 파싱.
+pub fn parse_addr_text(input: &str) -> Option<u64> {
+    let text = input.trim();
+    if let Some(hex) = text.strip_prefix("0x").or_else(|| text.strip_prefix("0X")) {
+        u64::from_str_radix(hex, 16).ok()
+    } else {
+        text.parse().ok()
+    }
+}
+
+/// 크기 텍스트 파싱. 빈 값은 미지정(None), k/m/g(선택 `i`) 접미사는 1024 배수.
+pub fn parse_size_text(input: &str) -> Result<Option<u64>, String> {
+    let text = input.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    let lower = text.to_ascii_lowercase();
+    let lower = lower.strip_suffix('i').unwrap_or(&lower);
+    let (digits, mult) = match lower.chars().last() {
+        Some('k') => (&lower[..lower.len() - 1], 1024u64),
+        Some('m') => (&lower[..lower.len() - 1], 1024 * 1024),
+        Some('g') => (&lower[..lower.len() - 1], 1024 * 1024 * 1024),
+        _ => (lower, 1),
+    };
+    let value: u64 = digits
+        .trim()
+        .parse()
+        .map_err(|_| format!("크기 파싱 실패: '{input}'"))?;
+    value
+        .checked_mul(mult)
+        .map(Some)
+        .ok_or_else(|| format!("크기가 너무 큼: '{input}'"))
+}
+
+/// START:END 범위 파싱. 둘 다 비면 미지정(None), 한쪽만 있으면 오류.
+pub fn parse_range_text(start: &str, end: &str) -> Result<Option<(u64, u64)>, String> {
+    let (start, end) = (start.trim(), end.trim());
+    if start.is_empty() && end.is_empty() {
+        return Ok(None);
+    }
+    let parse = |text: &str, label: &str| {
+        parse_addr_text(text).ok_or_else(|| format!("{label} 주소 파싱 실패: '{text}'"))
+    };
+    let begin = parse(start, "시작")?;
+    let finish = parse(end, "끝")?;
+    if finish <= begin {
+        return Err(format!("끝 주소는 시작보다 커야 합니다: '{start}:{end}'"));
+    }
+    Ok(Some((begin, finish)))
+}
+
+/// u32 텍스트 파싱. 빈 값은 미지정(None).
+pub fn parse_u32_text(input: &str) -> Result<Option<u32>, String> {
+    parse_opt_text(input, str::parse::<u32>)
+}
+
+/// u64 텍스트 파싱. 빈 값은 미지정(None).
+pub fn parse_u64_text(input: &str) -> Result<Option<u64>, String> {
+    parse_opt_text(input, str::parse::<u64>)
+}
+
+fn parse_opt_text<T>(
+    input: &str,
+    parse: impl Fn(&str) -> Result<T, std::num::ParseIntError>,
+) -> Result<Option<T>, String> {
+    let text = input.trim();
+    if text.is_empty() {
+        return Ok(None);
+    }
+    parse(text)
+        .map(Some)
+        .map_err(|_| format!("숫자 파싱 실패: '{input}'"))
+}
+
+/// 툴바의 "필터" 팝업 버튼. 좁은 창에서도 모든 필터에 접근할 수 있게 한다.
+///
+/// 기본 메뉴는 클릭 한 번에 닫히므로 `CloseOnClickOutside`로 두어 체크박스를
+/// 여러 개 켜도 팝업이 유지된다.
+pub fn filter_popup<R>(
+    ui: &mut egui::Ui,
+    id_salt: &str,
+    active: bool,
+    add_contents: impl FnOnce(&mut egui::Ui) -> R,
+) -> egui::Response {
+    let label = if active { "필터 ●" } else { "필터" };
+    let button = ui.button(label);
+    egui::Popup::menu(&button)
+        .id(ui.id().with(id_salt).with("filter_popup"))
+        .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
+        .show(|ui| {
+            ui.set_min_width(240.0);
+            ui.label(egui::RichText::new("필터").strong());
+            add_contents(ui);
+        });
+    button
+}
 
 /// 마우스로 크기를 조절할 수 있는 내용 영역(오른쪽 아래 모서리 드래그).
 ///
@@ -242,5 +350,42 @@ mod tests {
             ),
             None
         );
+    }
+
+    #[test]
+    fn parse_addr_text_accepts_hex_and_decimal() {
+        assert_eq!(parse_addr_text("0x1000"), Some(0x1000));
+        assert_eq!(parse_addr_text("0X20"), Some(0x20));
+        assert_eq!(parse_addr_text("4096"), Some(4096));
+        assert_eq!(parse_addr_text(""), None);
+        assert_eq!(parse_addr_text("zz"), None);
+    }
+
+    #[test]
+    fn parse_size_text_units_and_errors() {
+        assert_eq!(parse_size_text(""), Ok(None));
+        assert_eq!(parse_size_text("512"), Ok(Some(512)));
+        assert_eq!(parse_size_text("4k"), Ok(Some(4096)));
+        assert_eq!(parse_size_text("2M"), Ok(Some(2 * 1024 * 1024)));
+        assert_eq!(parse_size_text("16Mi"), Ok(Some(16 * 1024 * 1024)));
+        assert!(parse_size_text("abc").is_err());
+    }
+
+    #[test]
+    fn parse_range_text_requires_both_ends_and_ascending() {
+        assert_eq!(parse_range_text("", ""), Ok(None));
+        assert_eq!(
+            parse_range_text("0x1000", "0x2000"),
+            Ok(Some((0x1000, 0x2000)))
+        );
+        assert!(parse_range_text("0x1000", "").is_err());
+        assert!(parse_range_text("0x2000", "0x1000").is_err());
+    }
+
+    #[test]
+    fn parse_u32_text_handles_empty_and_invalid() {
+        assert_eq!(parse_u32_text(""), Ok(None));
+        assert_eq!(parse_u32_text("42"), Ok(Some(42)));
+        assert!(parse_u32_text("x").is_err());
     }
 }

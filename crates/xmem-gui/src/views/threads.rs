@@ -1,9 +1,57 @@
 //! 스레드 탭.
 
+use xmem_core::ThreadFilter;
+
 use crate::app::XMemApp;
 use crate::task::TaskState;
 use crate::views::map::{opt_hex, opt_num};
 use crate::views::overview::failure_banner;
+
+/// core `ThreadFilter::matches`로 스레드 행을 고른다.
+pub fn select_threads(threads: &[xmem_core::ThreadInfo], filter: &ThreadFilter) -> Vec<usize> {
+    threads
+        .iter()
+        .enumerate()
+        .filter(|(_, thread)| filter.matches(thread))
+        .map(|(index, _)| index)
+        .collect()
+}
+
+fn effective_filter(app: &XMemApp) -> ThreadFilter {
+    ThreadFilter {
+        with_start_only: app.thread_filter.with_start_only,
+        suspicious_only: app.thread_filter.suspicious_only,
+        tid: crate::views::parse_u32_text(&app.thread_tid_filter).unwrap_or(None),
+    }
+}
+
+fn filter_active(app: &XMemApp) -> bool {
+    app.thread_filter.with_start_only
+        || app.thread_filter.suspicious_only
+        || !app.thread_tid_filter.trim().is_empty()
+}
+
+fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
+    ui.checkbox(&mut app.thread_filter.with_start_only, "시작 주소 있음만");
+    ui.checkbox(
+        &mut app.thread_filter.suspicious_only,
+        "의심(시작 주소 있고 모듈 없음)",
+    )
+    .on_hover_text("시작 주소가 조회되지만 소유 모듈이 없는 스레드");
+    ui.horizontal(|ui| {
+        ui.label("TID");
+        ui.add(
+            egui::TextEdit::singleline(&mut app.thread_tid_filter)
+                .hint_text("숫자")
+                .desired_width(60.0),
+        );
+    });
+    if let Err(err) = crate::views::parse_u32_text(&app.thread_tid_filter)
+        && !app.thread_tid_filter.trim().is_empty()
+    {
+        ui.colored_label(crate::theme::palette(app.theme).danger, err);
+    }
+}
 
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let Some(pid) = app.selected_pid else {
@@ -26,6 +74,20 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 app.threads_task.cancel();
             }
         }
+        if !crate::views::narrow(ui) {
+            ui.separator();
+            ui.checkbox(&mut app.thread_filter.with_start_only, "시작 주소 있음만");
+            ui.checkbox(&mut app.thread_filter.suspicious_only, "의심만");
+            ui.label("TID");
+            ui.add(
+                egui::TextEdit::singleline(&mut app.thread_tid_filter)
+                    .hint_text("숫자")
+                    .desired_width(50.0),
+            );
+        }
+        crate::views::filter_popup(ui, "thread_filter_popup", filter_active(app), |ui| {
+            filter_contents(ui, app);
+        });
     });
     match app.threads_task.state() {
         TaskState::Failed(err) => {
@@ -56,14 +118,21 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new("스레드를 불러오는 중...").weak());
         return;
     };
-    ui.label(egui::RichText::new(format!("{}개 스레드", threads.len())).weak());
+    let rows = select_threads(threads, &effective_filter(app));
+    ui.label(
+        egui::RichText::new(if rows.len() == threads.len() {
+            format!("{}개 스레드", rows.len())
+        } else {
+            format!("{}개 / 전체 {}개 스레드", rows.len(), threads.len())
+        })
+        .weak(),
+    );
     let selected_tid = app.thread_selected;
     let mut clicked_thread: Option<xmem_core::ThreadInfo> = None;
     let mut moved_thread: Option<xmem_core::ThreadInfo> = None;
-    let rows: Vec<usize> = (0..threads.len()).collect();
     if let Some(next) = crate::views::arrow_step(
         ui.ctx(),
-        threads.len(),
+        rows.len(),
         selected_tid.and_then(|tid| threads.iter().position(|thread| thread.tid == tid)),
         &rows,
     ) && let Some(thread) = threads.get(next)
@@ -89,8 +158,8 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 }
             })
             .body(|body| {
-                body.rows(20.0, threads.len(), |mut row| {
-                    let thread = &threads[row.index()];
+                body.rows(20.0, rows.len(), |mut row| {
+                    let thread = &threads[rows[row.index()]];
                     row.set_selected(selected_tid == Some(thread.tid));
                     let mut row_clicked = false;
                     row.col(|ui| {
@@ -131,5 +200,67 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     });
     if let Some(thread) = clicked_thread.or(moved_thread) {
         app.select_thread(pid, thread);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use xmem_core::{ThreadFilter, ThreadInfo};
+
+    fn thread(tid: u32, start: Option<u64>, module: Option<&str>) -> ThreadInfo {
+        ThreadInfo {
+            tid,
+            pid: 1,
+            priority: Some(8),
+            start_address: start,
+            start_region_base: start.map(|address| address & !0xfff),
+            start_module: module.map(str::to_string),
+        }
+    }
+
+    #[test]
+    fn select_threads_uses_core_filter() {
+        let threads = vec![
+            thread(100, Some(0x1000), Some("mod.dll")),
+            thread(200, Some(0x9000), None),
+            thread(300, None, None),
+        ];
+        assert_eq!(
+            select_threads(&threads, &ThreadFilter::default()),
+            vec![0, 1, 2]
+        );
+        assert_eq!(
+            select_threads(
+                &threads,
+                &ThreadFilter {
+                    suspicious_only: true,
+                    ..ThreadFilter::default()
+                }
+            ),
+            vec![1],
+            "의심 = 시작 주소가 있고 소유 모듈이 없음"
+        );
+        assert_eq!(
+            select_threads(
+                &threads,
+                &ThreadFilter {
+                    with_start_only: true,
+                    tid: Some(100),
+                    ..ThreadFilter::default()
+                }
+            ),
+            vec![0]
+        );
+        assert!(
+            select_threads(
+                &threads,
+                &ThreadFilter {
+                    tid: Some(999),
+                    ..ThreadFilter::default()
+                }
+            )
+            .is_empty()
+        );
     }
 }
