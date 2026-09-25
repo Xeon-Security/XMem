@@ -75,6 +75,19 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 export = Some(ExportFormat::Csv);
             }
         });
+        if let Some(format) = export {
+            let payload = ExportPayload::Detect(findings.as_slice());
+            if let Some(dir) = crate::views::export::save_with_dialog(
+                pid,
+                "detect",
+                format,
+                &payload,
+                app.config.last_output_dir.clone(),
+                &mut app.log,
+            ) {
+                app.config.last_output_dir = Some(dir);
+            }
+        }
         if findings.is_empty() {
             ui.label(
                 egui::RichText::new("no findings (absence of findings is not proof of safety)")
@@ -139,19 +152,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             },
         );
         crate::views::wrap_default(ui);
-        if let Some(format) = export {
-            let payload = ExportPayload::Detect(findings.as_slice());
-            if let Some(dir) = crate::views::export::save_with_dialog(
-                pid,
-                "detect",
-                format,
-                &payload,
-                app.config.last_output_dir.clone(),
-                &mut app.log,
-            ) {
-                app.config.last_output_dir = Some(dir);
-            }
-        }
     } else if !app.detect_task.is_running() {
         ui.label(egui::RichText::new("탐지를 실행하면 규칙 평가 결과가 표시됩니다").weak());
     } else {
