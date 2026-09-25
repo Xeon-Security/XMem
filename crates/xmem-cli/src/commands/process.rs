@@ -1,7 +1,7 @@
 use crate::cli::{ArchArg, GlobalArgs, PidArg, ProcessCmd, ProcessListArgs};
 use crate::commands::render::{opt_num, truncate};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
-use xmem_core::{ProcessArch, ProcessFilter, ProcessInfo, Result, XmemError};
+use xmem_core::{ProcessArch, ProcessFilter, ProcessInfo, Result, XmemError, pad_display};
 
 pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
@@ -97,17 +97,27 @@ fn access_str(accessible: bool) -> &'static str {
     }
 }
 
+/// ACCESS 열 표시 폭. "권한 필요"가 전각 2칸×4 + 공백 1 = 9칸이다.
+const ACCESS_WIDTH: usize = 9;
+
 pub fn render_list(rows: &[(ProcessInfo, bool)]) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "{:>6}  {:<7}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
-        "PID", "ACCESS", "PPID", "THREADS", "SESSION", "ARCH", "NAME", "PATH"
+        "{:>6}  {}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
+        "PID",
+        pad_display("ACCESS", ACCESS_WIDTH),
+        "PPID",
+        "THREADS",
+        "SESSION",
+        "ARCH",
+        "NAME",
+        "PATH"
     ));
     for (info, accessible) in rows {
         out.push_str(&format!(
-            "{:>6}  {:<7}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
+            "{:>6}  {}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
             info.pid,
-            access_str(*accessible),
+            pad_display(access_str(*accessible), ACCESS_WIDTH),
             opt_num(info.ppid),
             opt_num(info.thread_count),
             opt_num(info.session_id),
@@ -241,6 +251,25 @@ mod tests {
         let out = render_list(&[row(10, true), row(20, false)]);
         assert!(out.contains("가능"), "{out}");
         assert!(out.contains("권한 필요"), "{out}");
+    }
+
+    #[test]
+    fn render_list_aligns_columns_with_wide_korean_access() {
+        let out = render_list(&[row(10, true), row(20, false)]);
+        let ppid_column = |line: &str| {
+            let index = line.find("1000").expect("PPID 1000이 표시되어야 함");
+            xmem_core::display_width(&line[..index])
+        };
+        let rows: Vec<&str> = out.lines().skip(1).collect();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(
+            ppid_column(rows[0]),
+            ppid_column(rows[1]),
+            "'권한 필요'(전각)가 다음 열을 밀지 않는다"
+        );
+        let header = out.lines().next().expect("헤더");
+        let header_ppid = xmem_core::display_width(&header[..header.find("PPID").unwrap()]);
+        assert_eq!(header_ppid, ppid_column(rows[0]), "헤더도 같은 열에 정렬");
     }
 
     #[test]
