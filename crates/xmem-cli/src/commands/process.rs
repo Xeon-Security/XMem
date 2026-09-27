@@ -10,7 +10,7 @@ pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
     }
 }
 
-fn build_filter(args: &ProcessListArgs) -> ProcessFilter {
+pub(crate) fn build_filter(args: &ProcessListArgs) -> ProcessFilter {
     ProcessFilter {
         accessible_only: args.accessible_only,
         name_contains: args.name.clone(),
@@ -83,7 +83,10 @@ fn list_rows(filter: &ProcessFilter) -> Result<Vec<(ProcessInfo, bool)>> {
 }
 
 #[cfg(test)]
-fn filter_rows(rows: Vec<(ProcessInfo, bool)>, filter: &ProcessFilter) -> Vec<(ProcessInfo, bool)> {
+pub(crate) fn filter_rows(
+    rows: Vec<(ProcessInfo, bool)>,
+    filter: &ProcessFilter,
+) -> Vec<(ProcessInfo, bool)> {
     rows.into_iter()
         .filter(|(info, accessible)| filter.matches(info, *accessible))
         .collect()

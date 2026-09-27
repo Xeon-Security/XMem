@@ -389,3 +389,183 @@ mod tests {
         assert!(parse_u32_text("x").is_err());
     }
 }
+
+/// GUI 경로(컨트롤 → core 필터 → `matches()`)가 대표 fixture에서 내는 행 수.
+/// 같은 fixture·조건을 쓰는 CLI 테스트(`xmem-cli` `commands::equivalence_tests`)와
+/// 수치가 같아야 한다.
+#[cfg(test)]
+mod equivalence_tests {
+    use std::collections::HashSet;
+
+    use xmem_core::{
+        Confidence, Evidence, Finding, FindingFilter, MemoryRegion, MemoryState, MemoryType,
+        ModuleFilter, ModuleInfo, ProcessArch, ProcessFilter, ProcessInfo, Protection, RegionClass,
+        RegionFilter, Severity, ThreadFilter, ThreadInfo,
+    };
+
+    use crate::views::detect::{DetectSort, select_and_sort_findings};
+    use crate::views::map::{MapSort, select_and_sort};
+    use crate::views::modules::{build_module_filter, select_modules};
+    use crate::views::process::filter_processes_core;
+    use crate::views::threads::select_threads;
+
+    fn region(base: u64, size: u64, raw: u32, class: RegionClass) -> MemoryRegion {
+        let protection = Protection::from_win32(raw);
+        MemoryRegion {
+            base,
+            size,
+            allocation_base: Some(base),
+            state: MemoryState::Commit,
+            protection,
+            allocation_protection: None,
+            region_type: Some(MemoryType::Private),
+            readable: protection.readable,
+            writable: protection.writable,
+            executable: protection.executable,
+            classification: class,
+            heuristics: Vec::new(),
+            mapped_file: None,
+        }
+    }
+
+    fn process(value: u32, name: &str, arch: ProcessArch, session: u32, ppid: u32) -> ProcessInfo {
+        ProcessInfo {
+            pid: value,
+            ppid: Some(ppid),
+            name: name.to_string(),
+            image_path: Some(format!(r"C:\lab\{name}")),
+            arch,
+            session_id: Some(session),
+            creation_time: None,
+            command_line: None,
+            user: Some("DOMAIN\\User".to_string()),
+            memory_stats: None,
+            thread_count: None,
+            module_count: None,
+        }
+    }
+
+    fn thread(tid: u32, start: Option<u64>, module: Option<&str>) -> ThreadInfo {
+        ThreadInfo {
+            tid,
+            pid: 1,
+            priority: Some(8),
+            start_address: start,
+            start_region_base: start.map(|address| address & !0xfff),
+            start_module: module.map(str::to_string),
+        }
+    }
+
+    fn finding(rule: &str, severity: Severity, confidence: Confidence) -> Finding {
+        Finding {
+            rule_id: rule.to_string(),
+            name: "fixture".to_string(),
+            severity,
+            confidence,
+            evidence: vec![Evidence::new("region").with_region_base(0x1000)],
+            heuristic: "fixture".to_string(),
+            interpretation: "fixture".to_string(),
+        }
+    }
+
+    fn module(name: &str, path: Option<&str>, arch: ProcessArch) -> ModuleInfo {
+        ModuleInfo {
+            name: name.to_string(),
+            base: 0x1000,
+            size: 0x1000,
+            path: path.map(str::to_string),
+            arch: Some(arch),
+        }
+    }
+
+    #[test]
+    fn filter_equivalence_counts_use_shared_core() {
+        let regions = [
+            region(0x1000, 0x1000, 0x40, RegionClass::Private),
+            region(0x2000, 0x2000, 0x20, RegionClass::Image),
+            region(0x1_0000, 0x1000, 0x04, RegionClass::Mapped),
+            region(0x2_0000, 0x100, 0x02, RegionClass::Private),
+            region(0x3_0000, 0x2000, 0x01, RegionClass::Reserved),
+        ];
+        let filter = RegionFilter {
+            readable_only: true,
+            executable_only: true,
+            ..RegionFilter::default()
+        };
+        assert_eq!(
+            select_and_sort(&regions, &filter, MapSort::AddressAsc, &[]).len(),
+            2,
+            "readable+executable"
+        );
+
+        let rows = vec![
+            (process(1, "target.exe", ProcessArch::X64, 1, 4), true),
+            (process(2, "svc.exe", ProcessArch::X64, 2, 4), false),
+            (process(3, "legacy.exe", ProcessArch::X86, 1, 7), true),
+        ];
+        let accessible: HashSet<u32> = rows
+            .iter()
+            .filter(|(_, accessible)| *accessible)
+            .map(|(info, _)| info.pid)
+            .collect();
+        let filter = ProcessFilter {
+            accessible_only: true,
+            arch: Some(ProcessArch::X64),
+            parent_pid: Some(4),
+            ..ProcessFilter::default()
+        };
+        let processes: Vec<ProcessInfo> = rows.into_iter().map(|(info, _)| info).collect();
+        assert_eq!(
+            filter_processes_core(&processes, "", &accessible, &filter).len(),
+            1,
+            "x64+ppid4+접근"
+        );
+
+        let threads = [
+            thread(100, Some(0x1000), Some("mod.dll")),
+            thread(200, Some(0x9000), None),
+            thread(300, None, None),
+        ];
+        let filter = ThreadFilter {
+            with_start_only: true,
+            suspicious_only: true,
+            ..ThreadFilter::default()
+        };
+        assert_eq!(select_threads(&threads, &filter).len(), 1, "의심 스레드");
+
+        let findings = [
+            finding("XMEM-001", Severity::High, Confidence::High),
+            finding("XMEM-002", Severity::Medium, Confidence::Medium),
+            finding("XMEM-003", Severity::Low, Confidence::Low),
+        ];
+        let filter = FindingFilter {
+            min_severity: Some(Severity::Medium),
+            ..FindingFilter::default()
+        };
+        assert_eq!(
+            select_and_sort_findings(&findings, &filter, DetectSort::Rule).len(),
+            2,
+            "Medium 이상"
+        );
+
+        let modules = [
+            module(
+                "kernel32.dll",
+                Some(r"C:\Windows\System32\kernel32.dll"),
+                ProcessArch::X64,
+            ),
+            module("legacy.dll", None, ProcessArch::X86),
+            module(
+                "user32.dll",
+                Some(r"C:\Windows\System32\user32.dll"),
+                ProcessArch::X64,
+            ),
+        ];
+        let filter: ModuleFilter = build_module_filter("dll", Some(ProcessArch::X64), false);
+        assert_eq!(
+            select_modules(&modules, None, &filter).len(),
+            2,
+            "x64 이름 일치"
+        );
+    }
+}

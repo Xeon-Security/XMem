@@ -1,5 +1,5 @@
 use serde_json::{Value, json};
-use xmem_core::{MemorySource, ModuleInfo, ProcessArch, ProcessInfo, Result};
+use xmem_core::{MemorySource, ModuleFilter, ModuleInfo, ProcessArch, ProcessInfo, Result};
 use xmem_memory::LiveProcess;
 use xmem_pe::{PE_HEADER_PREFIX, PeInfo, parse_pe};
 
@@ -12,16 +12,17 @@ pub fn run(args: &ModulesArgs, global: &GlobalArgs) -> Result<()> {
     let modules = live.modules()?;
     // --unparsed는 PE 파싱 결과가 필요하므로 --pe 없이도 수집만 수행한다(표시 컬럼은 --pe일 때만).
     let all_pe = (args.pe || args.unparsed).then(|| collect_pe(&live, &modules));
+    let filter = build_filter(args);
+    let pe_ok = |index: usize| {
+        all_pe
+            .as_ref()
+            .and_then(|list| list.get(index))
+            .is_some_and(|item| item.is_some())
+    };
     let selected: Vec<usize> = modules
         .iter()
         .enumerate()
-        .filter(|(index, module)| {
-            module_matches(
-                module,
-                all_pe.as_ref().and_then(|list| list.get(*index)),
-                args,
-            )
-        })
+        .filter(|(index, module)| filter.matches(module, pe_ok(*index)))
         .map(|(index, _)| index)
         .collect();
     let filtered: Vec<ModuleInfo> = selected
@@ -54,28 +55,13 @@ pub fn run(args: &ModulesArgs, global: &GlobalArgs) -> Result<()> {
     Ok(())
 }
 
-/// 수집 후 필터. `--unparsed`는 PE 파싱 결과가 없으면(실패) 매칭한다.
-fn module_matches(module: &ModuleInfo, pe: Option<&Option<PeInfo>>, args: &ModulesArgs) -> bool {
-    if let Some(needle) = args.filter.as_deref() {
-        let needle = needle.to_lowercase();
-        let name_hit = module.name.to_lowercase().contains(&needle);
-        let path_hit = module
-            .path
-            .as_deref()
-            .is_some_and(|path| path.to_lowercase().contains(&needle));
-        if !name_hit && !path_hit {
-            return false;
-        }
+/// CLI 플래그를 core `ModuleFilter`로 변환한다.
+pub(crate) fn build_filter(args: &ModulesArgs) -> ModuleFilter {
+    ModuleFilter {
+        name_contains: args.filter.clone(),
+        arch: args.arch.map(|arch| arch.to_arch()),
+        unparsed_only: args.unparsed,
     }
-    if let Some(arch) = args.arch
-        && module.arch != Some(arch.to_arch())
-    {
-        return false;
-    }
-    if args.unparsed && pe.is_some_and(|item| item.is_some()) {
-        return false;
-    }
-    true
 }
 
 /// 모듈별 PE 헤더 prefix 파싱. 개별 실패는 None으로 degrade한다.
@@ -300,56 +286,47 @@ mod tests {
     }
 
     #[test]
-    fn module_matches_name_path_arch_and_unparsed() {
+    fn module_filter_matches_name_path_arch_and_unparsed() {
         let module = sample_module(
             "kernel32.dll",
             0x7ffb_0000,
             Some(r"C:\Windows\System32\kernel32.dll"),
         );
-        assert!(module_matches(
-            &module,
-            None,
-            &filter_args(Some("KERNEL"), None, false)
+        let matches = |filter: &ModuleFilter, pe_ok: bool| filter.matches(&module, pe_ok);
+        assert!(matches(
+            &build_filter(&filter_args(Some("KERNEL"), None, false)),
+            false
         ));
-        assert!(module_matches(
-            &module,
-            None,
-            &filter_args(Some("system32"), None, false)
+        assert!(matches(
+            &build_filter(&filter_args(Some("system32"), None, false)),
+            false
         ));
-        assert!(!module_matches(
-            &module,
-            None,
-            &filter_args(Some("user32"), None, false)
+        assert!(!matches(
+            &build_filter(&filter_args(Some("user32"), None, false)),
+            false
         ));
 
         use crate::cli::ArchArg;
-        assert!(module_matches(
-            &module,
-            None,
-            &filter_args(None, Some(ArchArg::X64), false)
+        assert!(matches(
+            &build_filter(&filter_args(None, Some(ArchArg::X64), false)),
+            false
         ));
-        assert!(!module_matches(
-            &module,
-            None,
-            &filter_args(None, Some(ArchArg::X86), false)
+        assert!(!matches(
+            &build_filter(&filter_args(None, Some(ArchArg::X86), false)),
+            false
         ));
 
-        let parsed = Some(sample_pe());
-        assert!(module_matches(
-            &module,
-            Some(&parsed),
-            &filter_args(None, None, false)
+        assert!(matches(
+            &build_filter(&filter_args(None, None, false)),
+            true
         ));
-        assert!(!module_matches(
-            &module,
-            Some(&parsed),
-            &filter_args(None, None, true)
+        assert!(!matches(
+            &build_filter(&filter_args(None, None, true)),
+            true
         ));
-        let unparsed: Option<xmem_pe::PeInfo> = None;
-        assert!(module_matches(
-            &module,
-            Some(&unparsed),
-            &filter_args(None, None, true)
+        assert!(matches(
+            &build_filter(&filter_args(None, None, true)),
+            false
         ));
     }
 

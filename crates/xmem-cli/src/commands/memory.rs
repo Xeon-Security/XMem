@@ -25,7 +25,7 @@ pub fn run(cmd: &MemoryCmd, global: &GlobalArgs) -> Result<()> {
 }
 
 /// CLI 플래그를 core `RegionFilter`로 변환한다. 값 파싱 오류는 프로세스 open 전에 낸다.
-fn build_map_filter(args: &MapArgs) -> Result<RegionFilter> {
+pub(crate) fn build_map_filter(args: &MapArgs) -> Result<RegionFilter> {
     Ok(RegionFilter {
         readable_only: args.readable_only,
         writable_only: args.writable_only,

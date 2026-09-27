@@ -1,6 +1,6 @@
 //! 모듈 탭 (PE 요약 포함).
 
-use xmem_core::{MemorySource, ModuleInfo, ProcessArch};
+use xmem_core::{MemorySource, ModuleFilter, ModuleInfo, ProcessArch};
 use xmem_memory::LiveProcess;
 use xmem_pe::{PE_HEADER_PREFIX, PeInfo, parse_pe};
 
@@ -14,43 +14,21 @@ pub struct ModuleBundle {
     pub pe: Option<Vec<Option<PeInfo>>>,
 }
 
-/// 모듈 탭 필터. CLI `modules`의 `module_matches`와 같은 의미를 GUI에 옮긴 것
-/// (core에 ModuleFilter 타입이 없고 CLI/코어 수정이 금지되어 GUI에 둔다).
-#[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct ModuleFilter {
-    pub query: String,
-    pub arch: Option<ProcessArch>,
-    pub unparsed_only: bool,
-}
-
-impl ModuleFilter {
-    /// 이름/경로 부분일치(대소문자 무시), 아키텍처, PE 파싱 실패만.
-    /// `pe`가 없으면(미수집) 파싱 실패로 간주한다 — CLI의 `--unparsed`와 동일.
-    pub fn matches(&self, module: &ModuleInfo, pe: Option<&Option<PeInfo>>) -> bool {
-        let needle = self.query.trim().to_lowercase();
-        if !needle.is_empty() {
-            let name_hit = module.name.to_lowercase().contains(&needle);
-            let path_hit = module
-                .path
-                .as_deref()
-                .is_some_and(|path| path.to_lowercase().contains(&needle));
-            if !name_hit && !path_hit {
-                return false;
-            }
-        }
-        if let Some(arch) = self.arch
-            && module.arch != Some(arch)
-        {
-            return false;
-        }
-        if self.unparsed_only && pe.is_some_and(|item| item.is_some()) {
-            return false;
-        }
-        true
+/// app 상태에서 core `ModuleFilter`를 만든다. 공백뿐인 검색어는 조건 없음으로 본다.
+pub fn build_module_filter(
+    query: &str,
+    arch: Option<ProcessArch>,
+    unparsed_only: bool,
+) -> ModuleFilter {
+    let query = query.trim();
+    ModuleFilter {
+        name_contains: (!query.is_empty()).then(|| query.to_string()),
+        arch,
+        unparsed_only,
     }
 }
 
-/// 필터를 통과한 모듈 인덱스 목록.
+/// 필터를 통과한 모듈 인덱스 목록. PE를 수집하지 않았으면 파싱 실패로 본다.
 pub fn select_modules(
     modules: &[ModuleInfo],
     pe: Option<&Vec<Option<PeInfo>>>,
@@ -60,8 +38,10 @@ pub fn select_modules(
         .iter()
         .enumerate()
         .filter(|(index, module)| {
-            let item = pe.and_then(|list| list.get(*index));
-            filter.matches(module, item)
+            let pe_ok = pe
+                .and_then(|list| list.get(*index))
+                .is_some_and(|item| item.is_some());
+            filter.matches(module, pe_ok)
         })
         .map(|(index, _)| index)
         .collect()
@@ -211,11 +191,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(egui::RichText::new("모듈을 불러오는 중...").weak());
         return;
     };
-    let filter = ModuleFilter {
-        query: app.module_query.clone(),
-        arch: app.module_arch_filter,
-        unparsed_only: app.module_unparsed_only,
-    };
+    let filter = build_module_filter(
+        &app.module_query,
+        app.module_arch_filter,
+        app.module_unparsed_only,
+    );
     let rows = select_modules(&bundle.modules, bundle.pe.as_ref(), &filter);
     ui.label(
         egui::RichText::new(if rows.len() == bundle.modules.len() {
@@ -363,35 +343,49 @@ mod tests {
     }
 
     #[test]
-    fn module_filter_matches_name_path_arch_and_unparsed() {
-        let kernel = module("kernel32.dll", Some(r"C:\Windows\System32\kernel32.dll"));
-        assert!(ModuleFilter::default().matches(&kernel, None));
-        let by_name = ModuleFilter {
-            query: "KERNEL".into(),
-            ..ModuleFilter::default()
-        };
-        assert!(by_name.matches(&kernel, None));
-        let by_path = ModuleFilter {
-            query: "system32".into(),
-            ..ModuleFilter::default()
-        };
-        assert!(by_path.matches(&kernel, None));
-        assert!(
-            !ModuleFilter {
-                query: "user32".into(),
-                ..ModuleFilter::default()
-            }
-            .matches(&kernel, None)
+    fn build_module_filter_trims_query_and_maps_fields() {
+        assert_eq!(
+            build_module_filter("   ", None, false),
+            ModuleFilter::default(),
+            "공백뿐인 검색어는 조건 없음"
         );
-        assert!(
-            !ModuleFilter {
-                arch: Some(ProcessArch::X86),
-                ..ModuleFilter::default()
+        assert_eq!(
+            build_module_filter(" kernel ", Some(ProcessArch::X64), true),
+            ModuleFilter {
+                name_contains: Some("kernel".to_string()),
+                arch: Some(ProcessArch::X64),
+                unparsed_only: true,
             }
-            .matches(&kernel, None)
         );
+    }
 
-        let parsed = Some(xmem_pe::PeInfo {
+    #[test]
+    fn select_modules_maps_filtered_rows() {
+        let mut x86 = module("legacy.dll", None);
+        x86.arch = Some(ProcessArch::X86);
+        let modules = vec![
+            module("kernel32.dll", Some(r"C:\Windows\System32\kernel32.dll")),
+            x86,
+            module("user32.dll", None),
+        ];
+        let filter = build_module_filter("kernel", Some(ProcessArch::X64), false);
+        assert_eq!(select_modules(&modules, None, &filter), vec![0]);
+        let x86_filter = build_module_filter("legacy", Some(ProcessArch::X86), false);
+        assert_eq!(select_modules(&modules, None, &x86_filter), vec![1]);
+    }
+
+    #[test]
+    fn select_modules_unparsed_only_uses_pe_success() {
+        let modules = vec![module("kernel32.dll", None), module("other.dll", None)];
+        let pe = vec![None, None];
+        let filter = build_module_filter("", None, true);
+        assert_eq!(select_modules(&modules, Some(&pe), &filter), vec![0, 1]);
+        let pe = vec![Some(sample_pe()), None];
+        assert_eq!(select_modules(&modules, Some(&pe), &filter), vec![1]);
+    }
+
+    fn sample_pe() -> xmem_pe::PeInfo {
+        xmem_pe::PeInfo {
             is_64: true,
             machine: 0x8664,
             arch: ProcessArch::X64,
@@ -408,42 +402,7 @@ mod tests {
             export_count: 0,
             relocation_count: 0,
             tls_callback_count: 0,
-        });
-        let unparsed = ModuleFilter {
-            unparsed_only: true,
-            ..ModuleFilter::default()
-        };
-        assert!(!unparsed.matches(&kernel, Some(&parsed)));
-        let failed: Option<xmem_pe::PeInfo> = None;
-        assert!(unparsed.matches(&kernel, Some(&failed)));
-    }
-
-    #[test]
-    fn select_modules_maps_filtered_rows() {
-        let mut x86 = module("legacy.dll", None);
-        x86.arch = Some(ProcessArch::X86);
-        let modules = vec![
-            module("kernel32.dll", Some(r"C:\Windows\System32\kernel32.dll")),
-            x86,
-            module("user32.dll", None),
-        ];
-        let filter = ModuleFilter {
-            query: "kernel".into(),
-            arch: Some(ProcessArch::X64),
-            ..ModuleFilter::default()
-        };
-        assert_eq!(select_modules(&modules, None, &filter), vec![0]);
-        assert_eq!(
-            select_modules(
-                &modules,
-                None,
-                &ModuleFilter {
-                    arch: Some(ProcessArch::X86),
-                    ..ModuleFilter::default()
-                }
-            ),
-            vec![1]
-        );
+        }
     }
 
     #[test]

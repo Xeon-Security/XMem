@@ -10,13 +10,18 @@ use crate::commands::export::{ExportPayload, emit_export_saved, write_export};
 use crate::commands::render::opt_hex;
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
-pub fn run(args: &DetectArgs, global: &GlobalArgs) -> Result<()> {
-    let live = LiveProcess::open(args.pid.pid)?;
-    let filter = FindingFilter {
+/// CLI 플래그를 core `FindingFilter`로 변환한다.
+pub(crate) fn build_filter(args: &DetectArgs) -> FindingFilter {
+    FindingFilter {
         min_severity: args.min_severity.map(SeverityArg::to_severity),
         min_confidence: args.min_confidence.map(ConfidenceArg::to_confidence),
         rule_id: args.rule.clone(),
-    };
+    }
+}
+
+pub fn run(args: &DetectArgs, global: &GlobalArgs) -> Result<()> {
+    let live = LiveProcess::open(args.pid.pid)?;
+    let filter = build_filter(args);
     let mut findings: Vec<Finding> = detect_source(&live)?
         .into_iter()
         .filter(|finding| filter.matches(finding))

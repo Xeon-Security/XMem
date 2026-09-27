@@ -126,6 +126,40 @@ fn overlaps(module: &ModuleInfo, region: &MemoryRegion) -> bool {
     module.base < region_end && region.base < module_end
 }
 
+/// 모듈 필터. 이름/경로 검색은 대소문자를 구분하지 않는다.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct ModuleFilter {
+    pub name_contains: Option<String>,
+    pub arch: Option<ProcessArch>,
+    pub unparsed_only: bool,
+}
+
+impl ModuleFilter {
+    /// `pe_ok`는 PE 파싱 성공 여부. `unparsed_only`는 파싱 실패(`!pe_ok`)만 매칭한다.
+    /// PE를 수집하지 않은 경우(`pe_ok = false`)도 파싱 실패로 본다(CLI `--unparsed`와 동일).
+    pub fn matches(&self, module: &ModuleInfo, pe_ok: bool) -> bool {
+        if let Some(needle) = &self.name_contains {
+            let name_hit = contains_ci(&module.name, needle);
+            let path_hit = module
+                .path
+                .as_deref()
+                .is_some_and(|path| contains_ci(path, needle));
+            if !name_hit && !path_hit {
+                return false;
+            }
+        }
+        if let Some(arch) = self.arch
+            && module.arch != Some(arch)
+        {
+            return false;
+        }
+        if self.unparsed_only && pe_ok {
+            return false;
+        }
+        true
+    }
+}
+
 /// 프로세스 필터. 이름/사용자 검색은 대소문자를 구분하지 않는다.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct ProcessFilter {
@@ -295,8 +329,8 @@ pub fn pad_display(text: &str, width: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        FindingFilter, ProcessFilter, ProtectionMask, RegionFilter, ThreadFilter, confidence_rank,
-        display_width, pad_display, severity_rank,
+        FindingFilter, ModuleFilter, ProcessFilter, ProtectionMask, RegionFilter, ThreadFilter,
+        confidence_rank, display_width, pad_display, severity_rank,
     };
     use crate::evidence::{Confidence, Evidence, Finding, Severity};
     use crate::model::RegionClass;
@@ -764,6 +798,101 @@ mod tests {
             .matches(&medium)
         );
         assert!(FindingFilter::default().matches(&medium));
+    }
+
+    fn named_module(name: &str, path: Option<&str>, arch: ProcessArch) -> ModuleInfo {
+        ModuleInfo {
+            name: name.to_string(),
+            base: 0x1000,
+            size: 0x1000,
+            path: path.map(str::to_string),
+            arch: Some(arch),
+        }
+    }
+
+    #[test]
+    fn module_filter_matches_name_path_arch_and_unparsed() {
+        let kernel = named_module(
+            "kernel32.dll",
+            Some(r"C:\Windows\System32\kernel32.dll"),
+            ProcessArch::X64,
+        );
+        assert!(ModuleFilter::default().matches(&kernel, true));
+        assert!(ModuleFilter::default().matches(&kernel, false));
+
+        let by_name = ModuleFilter {
+            name_contains: Some("KERNEL".to_string()),
+            ..Default::default()
+        };
+        assert!(by_name.matches(&kernel, false));
+        let by_path = ModuleFilter {
+            name_contains: Some("system32".to_string()),
+            ..Default::default()
+        };
+        assert!(by_path.matches(&kernel, false));
+        assert!(
+            !ModuleFilter {
+                name_contains: Some("user32".to_string()),
+                ..Default::default()
+            }
+            .matches(&kernel, false)
+        );
+
+        let x64 = ModuleFilter {
+            arch: Some(ProcessArch::X64),
+            ..Default::default()
+        };
+        assert!(x64.matches(&kernel, false));
+        assert!(
+            !ModuleFilter {
+                arch: Some(ProcessArch::X86),
+                ..Default::default()
+            }
+            .matches(&kernel, false)
+        );
+
+        let unparsed = ModuleFilter {
+            unparsed_only: true,
+            ..Default::default()
+        };
+        assert!(unparsed.matches(&kernel, false), "PE 파싱 실패는 매칭");
+        assert!(!unparsed.matches(&kernel, true), "PE 파싱 성공은 제외");
+    }
+
+    #[test]
+    fn module_filter_combined_conditions_are_conjunctive() {
+        let hit = named_module("app.dll", None, ProcessArch::X64);
+        let filter = ModuleFilter {
+            name_contains: Some("app".to_string()),
+            arch: Some(ProcessArch::X64),
+            unparsed_only: true,
+        };
+        assert!(filter.matches(&hit, false));
+        assert!(!filter.matches(&hit, true), "unparsed_only 위반");
+        assert!(
+            !filter.matches(&named_module("app.dll", None, ProcessArch::X86), false),
+            "arch 위반"
+        );
+        assert!(
+            !filter.matches(&named_module("other.dll", None, ProcessArch::X64), false),
+            "이름 위반"
+        );
+        assert!(
+            ModuleFilter {
+                name_contains: Some(String::new()),
+                ..Default::default()
+            }
+            .matches(&hit, true),
+            "빈 검색어는 조건 없음"
+        );
+        assert!(
+            !ModuleFilter {
+                name_contains: Some("nx".to_string()),
+                ..Default::default()
+            }
+            .matches(&hit, false),
+            "path가 None이면 이름만 본다"
+        );
     }
 
     #[test]

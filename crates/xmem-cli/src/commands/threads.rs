@@ -5,13 +5,18 @@ use crate::cli::{GlobalArgs, ThreadsArgs};
 use crate::commands::render::{opt_hex, opt_num};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
-pub fn run(args: &ThreadsArgs, global: &GlobalArgs) -> Result<()> {
-    let live = LiveProcess::open(args.pid.pid)?;
-    let filter = ThreadFilter {
+/// CLI 플래그를 core `ThreadFilter`로 변환한다.
+pub(crate) fn build_filter(args: &ThreadsArgs) -> ThreadFilter {
+    ThreadFilter {
         with_start_only: args.with_start,
         suspicious_only: args.suspicious,
         tid: args.tid,
-    };
+    }
+}
+
+pub fn run(args: &ThreadsArgs, global: &GlobalArgs) -> Result<()> {
+    let live = LiveProcess::open(args.pid.pid)?;
+    let filter = build_filter(args);
     let threads: Vec<ThreadInfo> = live
         .threads()?
         .into_iter()
