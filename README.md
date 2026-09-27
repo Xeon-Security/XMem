@@ -138,6 +138,34 @@ xmem experiment run <NAME>
 | `--threads <N>` | worker 스레드 수 (기본 min(논리CPU-1, 4)) |
 | `--all` | committed > 4 GiB 정책 해제 |
 
+`memory map` 필터/정렬 (기본 없음 — 전체 표시, 여러 조건은 AND):
+
+| 옵션 | 설명 |
+|---|---|
+| `--readable-only` / `--writable-only` / `--executable-only` | 권한 기준 영역 필터 |
+| `--state <commit\|reserve\|free>` | 메모리 상태 |
+| `--class <image\|mapped\|private>` | 분류 |
+| `--prot <rwx\|r-x\|rw-\|r--\|--->` | 보호 속성 |
+| `--heuristic <exec-private\|exec-anon\|pe-like\|wx>` | heuristic 태그 |
+| `--pe-like` | PE-like private executable 영역만 |
+| `--outside-modules` | 로드된 모듈 범위 밖 영역만 (모듈 목록이 비면 매칭 없음) |
+| `--mapped-only` | 파일 백킹이 관찰된 영역만 |
+| `--range <START:END>` | 주소 범위 겹침 |
+| `--min-size <N>` / `--max-size <N>` | 영역 크기(바이트) |
+| `--sort <addr\|addr-desc\|size-desc>` | 정렬 (기본 addr) |
+
+다른 분석 명령의 필터 플래그 (모두 기본 없음, 결과 수집 후 적용):
+
+| 명령 | 플래그 |
+|---|---|
+| `process list` | `--name <SUBSTR>` (이름), `--arch <x64\|x86>`, `--session <N>`, `--user <SUBSTR>`, `--protected` (중요 프로세스 보호 목록), `--ppid <N>` (+기존 `--accessible-only`) |
+| `modules` | `--filter <SUBSTR>` (이름/경로), `--arch <x64\|x86>` (모듈 아키텍처), `--unparsed` (PE 파싱 실패 모듈만) |
+| `threads` | `--with-start` (시작 주소 조회 가능), `--suspicious` (모듈 밖 시작 주소), `--tid <N>` |
+| `detect` | `--min-severity <info\|low\|medium\|high\|critical>`, `--min-confidence <low\|medium\|high>`, `--rule <ID>`, `--sort <severity\|address\|rule>` (기본 rule) |
+| `snapshot diff` | `--only <regions,content,modules,threads,detections>` (콤마 목록, 미지정 시 전체) |
+
+필터 로직은 GUI와 CLI가 `xmem-core::filter`의 동일 구현(공유 `*Filter` + `matches()`)을 사용하며 플래그와 GUI 컨트롤은 1:1 대응이다.
+
 `snapshot create`는 XMEM 포맷 v1(`magic "XMEM" | format_version | flags | payload_len | JSON`)로 저장하며, committed + readable 영역을 executable/private 우선으로 최대 64 MiB까지 blake3 해싱한다(예산 초과 영역은 `partial: true`). 파일은 temp → 재파싱 검증 → atomic rename으로 기록되고, 생성 전 가용 디스크 공간(예상 크기 + 16 MiB)을 검사한다.
 
 `snapshot diff`는 region(base 키), module(name 키), thread(tid 키), content hash(base 키), finding(rule + 위치 키)을 매칭해 Added/Removed/Changed를 보고한다. 양쪽 모두 해시가 있는 영역만 content 변화로 보고된다.
@@ -196,6 +224,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - GUI는 분석 기능만 제공한다(실험은 CLI 전용). 덤프 생성은 진행 중 취소를 지원하지 않으며, PPL 보호 프로세스는 관리자 권한으로도 열 수 없다. 검색은 진행률을 표시하지 않는다(취소는 가능). GUI는 시작할 때 `ShellExecuteW runas`로 자신을 관리자 권한으로 다시 띄우고(`--pid` 유지), UAC를 취소하면 표준 권한으로 계속 실행된다(상단 배지의 "관리자로 재시작"으로 다시 시도 가능). 콘솔 창은 뜨지 않는다.
 - GUI 상세 패널(맵/모듈/스레드)은 행을 클릭하면 하단에 열리며, 조회 실패 시 원인을 사람이 읽을 수 있는 오류 라벨(`error_label`: 접근 거부·부분 읽기·잘못된 주소·Windows API 코드 등)로 표시한다. 맵 상세의 hex 뷰어는 4 KiB 페이지 단위로 읽고, 읽지 못한 페이지는 사유를 표시한다.
 - GUI는 좁은 창(820px)에서 표를 패널 폭에 맞춰 그려 세로 스크롤바를 유지한다(가로 스크롤 대신 일부 열이 잘릴 수 있다). 맵/모듈/스레드 표는 행을 클릭한 뒤 ↑/↓로 선택을 이동할 수 있고(텍스트 입력 중에는 동작하지 않음), 맵·모듈·스레드 수집은 취소할 수 있다(취소 시 "취소되었습니다" 표시).
+- 맵/프로세스/모듈/스레드/탐지 필터는 GUI와 CLI가 동일한 `xmem-core::filter` 구현을 공유한다(플래그 ↔ GUI 컨트롤 1:1, 결과 동일). 기본은 필터 없음(전체 표시)이며 여러 조건은 AND로 결합된다. GUI는 좁은 창에서도 각 탭의 "필터" 팝업으로 전체 필터에 접근할 수 있다(넓은 창에서는 인라인 컨트롤 유지).
 - 덤프에 모듈 목록이 없으면 그 한계를, 모듈 상세의 디스크 PE 파싱이 실패하면 실패 사유를 화면에 표시한다.
 
 ## Documentation
@@ -238,6 +267,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | v0.1.9 | 맵/프로세스 정밀 수정 (클릭 밴드 클립, 태스크 리셋, 팝업 레이어 가드, 헤더 레이아웃, 목록 스크롤 복구 등) | 완료 |
 | v0.2.0 | 기능 갭 Batch A (경로 변환, 실패 사유 집계, 모듈 arch, 덤프/모듈 안내, 좁은 창 스크롤, 방향키, 취소 확대, JSON/CSV 내보내기, PPL 비목표) | 완료 |
 | v0.2.1 | 접근 권한 표시·필터 (접근 열, 접근 가능만 보기, 아키텍처 필터, CLI --accessible-only, 테스트 플레이크 수정) | 완료 |
+| v0.2.2 | 필터 확장 (맵/프로세스/모듈/스레드/탐지 필터, GUI 필터 팝업, GUI·CLI 동등성, forensics 테스트 안정화) | 완료 |
 
 ## License
 

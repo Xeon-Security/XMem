@@ -1,6 +1,6 @@
 # XMem GUI 설계 스펙
 
-> 상태: 구현 완료(M13, 2026-09-23) · 상세 뷰어 추가(v0.1.2, 2026-09-23) · 가이드 개편(v0.1.3, 2026-09-23) · 내용 영역 크기 조절(v0.1.4, 2026-09-24) · 가독성 개선(v0.1.5, 2026-09-24) · 표/패널 사용성 수정(v0.1.6, 2026-09-24) · UI/UX 후속 수정(v0.1.7, 2026-09-24) · 보류 항목 해소(v0.1.8, 2026-09-24) · 맵/프로세스 정밀 수정(v0.1.9, 2026-09-24) · 기능 갭 Batch A(v0.2.0, 2026-09-24) · 접근 권한 표시·필터(v0.2.1, 2026-09-24)
+> 상태: 구현 완료(M13, 2026-09-23) · 상세 뷰어 추가(v0.1.2, 2026-09-23) · 가이드 개편(v0.1.3, 2026-09-23) · 내용 영역 크기 조절(v0.1.4, 2026-09-24) · 가독성 개선(v0.1.5, 2026-09-24) · 표/패널 사용성 수정(v0.1.6, 2026-09-24) · UI/UX 후속 수정(v0.1.7, 2026-09-24) · 보류 항목 해소(v0.1.8, 2026-09-24) · 맵/프로세스 정밀 수정(v0.1.9, 2026-09-24) · 기능 갭 Batch A(v0.2.0, 2026-09-24) · 접근 권한 표시·필터(v0.2.1, 2026-09-24) · 필터 확장(v0.2.2, 2026-09-26)
 > 관련 문서: `docs/architecture.md`(Core Analyzer 스펙), `docs/plans/milestone-13-gui.md`(구현 계획), `docs/plans/v0.1.2-detail-viewer.md`(상세 뷰어 계획)
 > 원칙: 이 스펙은 "무엇을/왜"를 정의한다. "어떻게"는 구현 계획이 담당한다.
 
@@ -62,20 +62,31 @@ CLI 기능을 그대로 노출하되 가이드 페이지와 실패 사유 안내
 └───────────────────────────────────────────────────────────────────────────┘
 ```
 
+모든 탭(프로세스/맵/검색/모듈/스레드/탐지)은 필터 컨트롤과 **"필터" 팝업**을 제공한다.
+팝업은 좁은 창에서도 전체 필터에 접근하게 하며(넓은 창에서는 인라인 컨트롤 유지), 기본은
+필터 없음(전체 표시), 조건은 AND로 결합된다. 필터 구현은 CLI와 같은 `xmem-core::filter`를
+쓴다(플래그 ↔ 컨트롤 1:1).
+
 ### 화면별 내용
 
-- **프로세스**: 검색(이름/PID), 표(PID/PPID/이름/아치/세션/스레드/모듈/경로), 새로고침.
+- **프로세스**: 검색(이름/PID), 필터(접근 가능/아치/세션/사용자/보호 프로세스/부모 PID),
+  표(PID/PPID/이름/아치/세션/스레드/모듈/경로), 새로고침.
   행 선택 시 오른쪽 탭이 해당 프로세스로 전환.
 - **개요**: `ProcessInfo` 전체(경로, arch, session, 생성 시각, 사용자, 명령줄, 메모리
   통계, 스레드/모듈 수) + 빠른 액션(탐지/스냅샷/덤프/리포트).
 - **메모리맵**: 열거 표(BASE/SIZE/STATE/TYPE/PROTECTION/CLASS/HEURISTICS/MAPPED FILE),
-  정렬(주소/크기), 필터(executable/private/writable), heuristic 강조, truncated 경고.
-- **검색**: needle 라디오(pattern/ASCII/wide), 필터(exec/private/writable/range/max-region),
-  max-results/threads, 결과 표. 행 클릭 → **주소 ±64바이트 hex+ASCII 미리보기 패널**.
-- **모듈**: 표(BASE/SIZE/NAME/PATH/ARCH) + `--pe` 토글(MACHINE/ENTRY/SECTIONS).
-- **스레드**: 표(TID/PRIORITY/START ADDRESS/REGION/MODULE).
-- **탐지**: findings 목록(severity 색 배지) + 상세(evidence observed, heuristic,
-  interpretation). 0건이면 "absence of findings is not proof of safety" 문구.
+  정렬(주소/크기), 필터(권한/state/class/prot/heuristic/pe-like/모듈 범위 밖/mapped/
+  주소 범위/크기), heuristic 강조, truncated 경고.
+- **검색**: needle 라디오(pattern/ASCII/wide), 필터(exec/private/writable/주소 범위/
+  최대 영역 크기/오프셋/청크 크기/대형 프로세스 정책 해제), max-results/threads,
+  결과 표. 행 클릭 → **주소 ±64바이트 hex+ASCII 미리보기 패널**.
+- **모듈**: 표(BASE/SIZE/NAME/PATH/ARCH) + `--pe` 토글(MACHINE/ENTRY/SECTIONS) +
+  필터(이름/경로, 아치, PE 파싱 실패만).
+- **스레드**: 표(TID/PRIORITY/START ADDRESS/REGION/MODULE) + 필터(시작 주소 있음만,
+  의심(모듈 밖)만, TID).
+- **탐지**: findings 목록(severity 색 배지) + 필터(최소 심각도/최소 신뢰도/rule) +
+  상세(evidence observed, heuristic, interpretation). 0건이면 "absence of findings is
+  not proof of safety" 문구.
 - **스냅샷**: create(경로 선택, 진행/취소) + diff(파일 2개 선택, 요약 카드 + 변화 목록:
   regions/content/modules/threads/detections).
 - **덤프**: create(`--full` 체크, 예상 크기·디스크 여유 표시) + analyze(요약 + findings).

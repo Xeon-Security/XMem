@@ -47,7 +47,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 
 | Crate | 책임 | 생성 |
 |---|---|---|
-| `xmem-core` | 데이터 모델, 에러, Evidence/Finding, Guard, MemorySource trait, Pattern 파서/매처, 버전 상수 | M1 |
+| `xmem-core` | 데이터 모델, 에러, Evidence/Finding, Guard, MemorySource trait, Pattern 파서/매처, 공유 필터 타입(`filter.rs` — Region/Process/Thread/Finding/ModuleFilter + `matches()`), 버전 상수 | M1 |
 | `xmem-windows` | Win32 FFI, RAII Handle, Win32→XmemError 매핑 | M1 |
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
 | `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner, 모듈/스레드 상관관계 | M3 (생성됨; scan 엔진 M4, 모듈/스레드 M5) |
@@ -263,6 +263,17 @@ xmem detect --pid <PID> [--output <FILE> --format json|csv] | report --pid <PID>
 xmem experiment list | run <NAME>
 ```
 
+```text
+필터 플래그(기본 없음 — 전체 표시, 여러 조건 AND; 구현은 xmem-core::filter 공유, v0.2.2):
+  memory map:    --readable-only --writable-only --executable-only --state --class --prot
+                 --heuristic --pe-like --outside-modules --mapped-only --range --min-size --max-size --sort
+  process list:  --name --arch --session --user --protected --ppid (+--accessible-only)
+  modules:       --filter --arch --unparsed
+  threads:       --with-start --suspicious --tid
+  detect:        --min-severity --min-confidence --rule --sort
+  snapshot diff: --only regions,content,modules,threads,detections
+```
+
 `--output` 미지정 시 기존처럼 표준 출력으로 보내며, 파일은 temp → 재읽기 검증 → rename으로 기록한다.
 
 ## 13. Safety / Host Stability
@@ -295,6 +306,7 @@ xmem experiment list | run <NAME>
 | M13 GUI(`xmem-gui` egui 단일 exe, 분석 탭 전체, 관리자 재시작, 가이드, 로그 패널, 다크/라이트) | Done |
 | v0.1.2 상세 뷰어(`MemoryRegion.allocation_base`, `PeInfo.time_date_stamp`+`parse_pe_file`, `thread_times`, ALLOC 컬럼, GUI 맵/모듈/스레드 상세 패널, `error_label`) | Done |
 | v0.2.0 Batch A(드라이브 경로 변환, 스캔 실패 사유별 집계, 모듈별 PE machine arch, 내보내기 `--output`/GUI, 좁은 창 세로 스크롤바, 표 방향키, 맵·모듈·스레드 취소, 한계 안내 문구, PPL 비목표) | Done |
+| v0.2.2 필터 확장(공유 core 필터 타입 + `matches()`, CLI 6개 명령 필터 플래그, 한글 열 정렬 전각 폭, GUI 전 탭 필터 컨트롤·"필터" 팝업, CLI/GUI 동등성 테스트, forensics 자기 덤프 테스트 분리) | Done |
 
 ## 15. Non-Goals
 
