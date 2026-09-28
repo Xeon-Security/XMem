@@ -1,5 +1,6 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use serde::Serialize;
 use xmem_core::{
     Heuristic, MemoryRegion, MemorySource, MemoryState, ModuleInfo, ProcessArch, ProcessInfo,
     ReadOutcome, RegionClass, Result, ThreadInfo, XmemError,
@@ -14,6 +15,19 @@ use xmem_windows::{
 pub struct RegionMap {
     pub regions: Vec<MemoryRegion>,
     pub truncated: bool,
+}
+
+/// 언로드(또는 수동 매핑) 이미지 후보. 모듈 목록 범위 밖의 PE-like private executable 영역.
+#[derive(Debug, Clone, Serialize)]
+pub struct UnloadedModule {
+    pub base: u64,
+    pub size: u64,
+    pub arch: ProcessArch,
+    pub entry_point: u64,
+    pub image_size: u32,
+    pub timestamp: u32,
+    pub sections: usize,
+    pub imports: usize,
 }
 
 /// 취소를 지원하지 않는 호출자(`region_map`)용 상시 false 플래그.
@@ -113,6 +127,56 @@ impl LiveProcess {
         }
     }
 
+    /// 모듈 목록 범위 밖의 PE-like private executable 영역을 언로드 모듈 후보로 수집한다.
+    /// 후보 판정: 앞 4 KiB를 읽어 `looks_like_pe` + `parse_pe` 성공. 읽기·파싱 실패는
+    /// 건너뛰고 base 오름차순으로 정렬한다(언로드 모듈 탐지 휴리스틱).
+    pub fn unloaded_module_candidates(&self) -> Result<Vec<UnloadedModule>> {
+        let regions = self.region_map()?.regions;
+        let modules = self.modules()?;
+        let mut buf = vec![0u8; PE_HEADER_PREFIX];
+        let mut candidates = Vec::new();
+        for region in regions.iter().filter(|region| {
+            region.classification == RegionClass::Private
+                && region.executable
+                && region
+                    .heuristics
+                    .contains(&Heuristic::PrivateExecutablePeLike)
+        }) {
+            if modules.iter().any(|module| overlaps_module(module, region)) {
+                continue;
+            }
+            let len = region.size.min(buf.len() as u64) as usize;
+            if len < 64 {
+                continue;
+            }
+            let Ok(outcome) = self.read(region.base, &mut buf[..len]) else {
+                continue;
+            };
+            if outcome.bytes_read < 64 {
+                continue;
+            }
+            let bytes = &buf[..outcome.bytes_read];
+            if !looks_like_pe(bytes) {
+                continue;
+            }
+            let Ok(pe) = parse_pe(bytes) else {
+                continue;
+            };
+            candidates.push(UnloadedModule {
+                base: region.base,
+                size: region.size,
+                arch: pe.arch,
+                entry_point: pe.entry_point,
+                image_size: pe.size_of_image,
+                timestamp: pe.time_date_stamp,
+                sections: pe.sections.len(),
+                imports: pe.import_count,
+            });
+        }
+        candidates.sort_by_key(|candidate| candidate.base);
+        Ok(candidates)
+    }
+
     /// 로드된 모듈 목록. arch는 모듈 PE 헤더의 machine에서 얻고,
     /// 읽기/파싱 실패 시 프로세스 arch로 폴백한다(WOW64 혼합 프로세스 대응).
     pub fn modules(&self) -> Result<Vec<ModuleInfo>> {
@@ -193,6 +257,13 @@ fn contains(region: &MemoryRegion, address: u64) -> bool {
 
 fn contains_module(module: &ModuleInfo, address: u64) -> bool {
     address >= module.base && address < module.base.saturating_add(module.size)
+}
+
+/// 모듈 범위와 영역이 겹치는지(saturating). 언로드 후보 제외 판정에 쓴다.
+fn overlaps_module(module: &ModuleInfo, region: &MemoryRegion) -> bool {
+    let module_end = module.base.saturating_add(module.size);
+    let region_end = region.base.saturating_add(region.size);
+    module.base < region_end && region.base < module_end
 }
 
 fn pe_probe_heuristics(class: MemoryPeClass) -> Option<Heuristic> {
@@ -384,5 +455,36 @@ mod tests {
         {
             assert!(region.heuristics.contains(&Heuristic::ExecutablePrivate));
         }
+    }
+
+    #[test]
+    fn unloaded_candidates_of_self_do_not_overlap_modules() {
+        let live = LiveProcess::open(xmem_windows::current_pid()).unwrap();
+        let modules = live.modules().unwrap();
+        let map = live.region_map().unwrap();
+        let candidates = live.unloaded_module_candidates().unwrap();
+        for candidate in &candidates {
+            assert!(candidate.base > 0);
+            let candidate_end = candidate.base.saturating_add(candidate.size);
+            assert!(
+                modules.iter().all(|module| {
+                    let module_end = module.base.saturating_add(module.size);
+                    !(module.base < candidate_end && candidate.base < module_end)
+                }),
+                "후보 {:#x}가 모듈 범위와 겹친다",
+                candidate.base
+            );
+            let region = map
+                .regions
+                .iter()
+                .find(|region| region.base == candidate.base)
+                .expect("후보 base는 region_map에 존재해야 한다");
+            assert_eq!(region.classification, RegionClass::Private);
+            assert!(region.executable);
+        }
+        let bases: Vec<u64> = candidates.iter().map(|candidate| candidate.base).collect();
+        let mut sorted = bases.clone();
+        sorted.sort_unstable();
+        assert_eq!(bases, sorted, "base 오름차순 정렬");
     }
 }

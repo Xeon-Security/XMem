@@ -46,6 +46,27 @@ fn wait_for_report(path: &Path) -> serde_json::Value {
 }
 
 #[test]
+fn unloaded_candidates_detect_pe_like_scenario() {
+    let dir = temp_dir("unloaded");
+    let report_path = dir.join("report.json");
+    let mut child = spawn_target("pe-like", &report_path);
+    let report = wait_for_report(&report_path);
+    let pid = report["pid"].as_u64().unwrap() as u32;
+    let pe_base = report["artifacts"]["pe-like"]["base"].as_u64().unwrap();
+
+    let live = LiveProcess::open(pid).unwrap();
+    let candidates = live.unloaded_module_candidates().unwrap();
+    assert!(
+        candidates.iter().any(|candidate| candidate.base == pe_base),
+        "pe-like base {pe_base:#x}가 언로드 후보에 없다: {candidates:?}"
+    );
+
+    child.kill().unwrap();
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn all_scenario_matches_ground_truth() {
     let dir = temp_dir("all");
     let report_path = dir.join("report.json");

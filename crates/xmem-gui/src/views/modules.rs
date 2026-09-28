@@ -1,7 +1,7 @@
 //! 모듈 탭 (PE 요약 포함).
 
 use xmem_core::{MemorySource, ModuleFilter, ModuleInfo, ProcessArch};
-use xmem_memory::LiveProcess;
+use xmem_memory::{LiveProcess, UnloadedModule};
 use xmem_pe::{PE_HEADER_PREFIX, PeInfo, parse_pe};
 
 use crate::app::XMemApp;
@@ -12,6 +12,16 @@ use crate::views::overview::failure_banner;
 pub struct ModuleBundle {
     pub modules: Vec<ModuleInfo>,
     pub pe: Option<Vec<Option<PeInfo>>>,
+    pub unloaded: Option<Vec<UnloadedModule>>,
+}
+
+/// 언로드 후보 섹션 라벨: 수집 여부와 후보 수를 한 줄로 요약한다.
+pub fn unloaded_summary(unloaded: Option<&[UnloadedModule]>) -> String {
+    match unloaded {
+        None => "언로드 모듈 후보: 수집 안 함".to_string(),
+        Some([]) => "언로드 모듈 후보: 후보 없음".to_string(),
+        Some(list) => format!("언로드 모듈 후보: {}개", list.len()),
+    }
 }
 
 /// app 상태에서 core `ModuleFilter`를 만든다. 공백뿐인 검색어는 조건 없음으로 본다.
@@ -123,11 +133,39 @@ pub fn collect_pe(live: &LiveProcess, modules: &[ModuleInfo]) -> Vec<Option<PeIn
 }
 
 pub(crate) fn pe_arch(pe: &PeInfo) -> &'static str {
-    match pe.arch {
+    arch_name(pe.arch)
+}
+
+pub(crate) fn arch_name(arch: ProcessArch) -> &'static str {
+    match arch {
         ProcessArch::X64 => "x64",
         ProcessArch::X86 => "x86",
         ProcessArch::Arm64 => "arm64",
         ProcessArch::Unknown => "unknown",
+    }
+}
+
+/// 언로드 후보 섹션. 수집하지 않았으면 아무것도 그리지 않는다.
+fn unloaded_section(ui: &mut egui::Ui, unloaded: Option<&[UnloadedModule]>) {
+    let Some(list) = unloaded else {
+        return;
+    };
+    ui.separator();
+    ui.label(egui::RichText::new(unloaded_summary(Some(list))).strong());
+    for candidate in list.iter().take(200) {
+        ui.label(format!(
+            "{:#018x}  {:>10}  {}  entry {:#x}  sections {}  imports {}  timestamp {:#010x}",
+            candidate.base,
+            human_size(candidate.size),
+            arch_name(candidate.arch),
+            candidate.entry_point,
+            candidate.sections,
+            candidate.imports,
+            candidate.timestamp,
+        ));
+    }
+    if list.len() > 200 {
+        ui.label(egui::RichText::new(format!("... {}개 더 있음", list.len() - 200)).weak());
     }
 }
 
@@ -161,6 +199,18 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             .changed()
         {
             app.modules_pe = pe;
+            app.start_modules(pid);
+        }
+        let mut unloaded = app.modules_unloaded;
+        if ui
+            .add_enabled(
+                !app.modules_task.is_running(),
+                egui::Checkbox::new(&mut unloaded, "언로드 모듈 후보"),
+            )
+            .on_hover_text("모듈 범위 밖 PE-like private executable 영역")
+            .changed()
+        {
+            app.modules_unloaded = unloaded;
             app.start_modules(pid);
         }
         if !crate::views::narrow(ui) {
@@ -233,6 +283,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             )
             .color(crate::theme::palette(app.theme).muted),
         );
+        unloaded_section(ui, bundle.unloaded.as_deref());
         return;
     }
     let show_pe = bundle.pe.is_some();
@@ -361,6 +412,12 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     if let Some(module) = clicked_module.or(moved_module) {
         app.select_module(pid, module);
     }
+    unloaded_section(
+        ui,
+        app.modules_bundle
+            .as_ref()
+            .and_then(|bundle| bundle.unloaded.as_deref()),
+    );
 }
 
 #[cfg(test)]
@@ -474,5 +531,22 @@ mod tests {
         let mut unparsed = true;
         reset_filter(&mut query, &mut arch, &mut unparsed);
         assert!(query.is_empty() && arch.is_none() && !unparsed);
+    }
+
+    #[test]
+    fn unloaded_summary_reports_collection_state() {
+        assert_eq!(unloaded_summary(None), "언로드 모듈 후보: 수집 안 함");
+        assert_eq!(unloaded_summary(Some(&[])), "언로드 모듈 후보: 후보 없음");
+        let list = vec![xmem_memory::UnloadedModule {
+            base: 0x1000,
+            size: 0x1000,
+            arch: ProcessArch::X64,
+            entry_point: 0x1000,
+            image_size: 0x2000,
+            timestamp: 0,
+            sections: 1,
+            imports: 0,
+        }];
+        assert!(unloaded_summary(Some(&list)).contains('1'));
     }
 }

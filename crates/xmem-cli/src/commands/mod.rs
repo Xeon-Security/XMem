@@ -232,6 +232,7 @@ mod equivalence_tests {
             filter: Some("dll".to_string()),
             arch: Some(ArchArg::X64),
             unparsed: false,
+            unloaded: false,
         });
         let pe_ok = [true, false, true];
         assert_eq!(

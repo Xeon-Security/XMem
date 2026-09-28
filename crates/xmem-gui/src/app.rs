@@ -140,6 +140,7 @@ pub struct XMemApp {
     pub module_detail: Option<ModuleDetail>,
     pub module_detail_task: BackgroundTask<(u64, ModuleDetail)>,
     pub modules_pe: bool,
+    pub modules_unloaded: bool,
     pub module_query: String,
     pub module_arch_filter: Option<xmem_core::ProcessArch>,
     pub module_unparsed_only: bool,
@@ -256,6 +257,7 @@ impl XMemApp {
             module_detail: None,
             module_detail_task: BackgroundTask::idle(),
             modules_pe: false,
+            modules_unloaded: false,
             module_query: String::new(),
             module_arch_filter: None,
             module_unparsed_only: false,
@@ -518,6 +520,7 @@ impl XMemApp {
         self.module_selected = None;
         self.module_detail = None;
         let with_pe = self.modules_pe;
+        let with_unloaded = self.modules_unloaded;
         self.modules_task = BackgroundTask::spawn("모듈", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
             let modules = live.modules()?;
@@ -529,7 +532,21 @@ impl XMemApp {
             } else {
                 None
             };
-            Ok((pid, ModuleBundle { modules, pe }))
+            let unloaded = if with_unloaded {
+                let candidates = live.unloaded_module_candidates()?;
+                crate::task::ensure_not_cancelled(cancel)?;
+                Some(candidates)
+            } else {
+                None
+            };
+            Ok((
+                pid,
+                ModuleBundle {
+                    modules,
+                    pe,
+                    unloaded,
+                },
+            ))
         })
         .with_pid(pid);
     }

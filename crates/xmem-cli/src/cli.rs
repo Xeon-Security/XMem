@@ -337,6 +337,9 @@ pub struct ModulesArgs {
     /// PE 파싱에 실패한 모듈만
     #[arg(long)]
     pub unparsed: bool,
+    /// 모듈 범위 밖 PE-like private executable 영역(언로드 후보)도 수집한다
+    #[arg(long)]
+    pub unloaded: bool,
 }
 
 #[derive(Debug, Subcommand)]
@@ -1069,6 +1072,21 @@ mod tests {
             panic!("modules 명령이 아님");
         };
         assert!(!args.pe);
+    }
+
+    #[test]
+    fn modules_parses_unloaded_flag() {
+        let cli = parse(&["xmem", "modules", "--pid", "42"]).unwrap();
+        let Command::Modules(args) = cli.command else {
+            panic!("modules 명령이 아님");
+        };
+        assert!(!args.unloaded);
+
+        let cli = parse(&["xmem", "modules", "--pid", "42", "--unloaded"]).unwrap();
+        let Command::Modules(args) = cli.command else {
+            panic!("modules 명령이 아님");
+        };
+        assert!(args.unloaded);
     }
 
     #[test]

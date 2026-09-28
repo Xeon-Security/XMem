@@ -3,7 +3,7 @@ use xmem_core::{
     MemorySource, ModuleFilter, ModuleInfo, ProcessArch, ProcessInfo, Result, pad_display,
     truncate_display,
 };
-use xmem_memory::LiveProcess;
+use xmem_memory::{LiveProcess, UnloadedModule};
 use xmem_pe::{PE_HEADER_PREFIX, PeInfo, parse_pe};
 
 use crate::cli::{GlobalArgs, ModulesArgs};
@@ -47,13 +47,32 @@ pub fn run(args: &ModulesArgs, global: &GlobalArgs) -> Result<()> {
     } else {
         None
     };
+    let unloaded = if args.unloaded {
+        // 후보 수집 실패는 모듈 목록 자체를 막지 않는다(경고 후 빈 목록).
+        match live.unloaded_module_candidates() {
+            Ok(candidates) => Some(candidates),
+            Err(err) => {
+                tracing::warn!("언로드 모듈 후보 수집 실패: {err}");
+                Some(Vec::new())
+            }
+        }
+    } else {
+        None
+    };
     match resolve_mode(global.json) {
         OutputMode::Json => emit_json(&success_envelope(json_payload(
             &live.info,
             &filtered,
             pe.as_deref(),
+            unloaded.as_deref(),
         ))),
-        OutputMode::Human => emit(&render_modules(&live.info, &filtered, pe.as_deref())),
+        OutputMode::Human => {
+            let mut text = render_modules(&live.info, &filtered, pe.as_deref());
+            if let Some(candidates) = unloaded.as_deref() {
+                text.push_str(&render_unloaded_section(candidates));
+            }
+            emit(&text);
+        }
     }
     Ok(())
 }
@@ -87,12 +106,46 @@ fn collect_pe(live: &LiveProcess, modules: &[ModuleInfo]) -> Vec<Option<PeInfo>>
 }
 
 fn pe_arch(pe: &PeInfo) -> &'static str {
-    match pe.arch {
+    arch_label(pe.arch)
+}
+
+fn arch_label(arch: ProcessArch) -> &'static str {
+    match arch {
         ProcessArch::X64 => "x64",
         ProcessArch::X86 => "x86",
         ProcessArch::Arm64 => "arm64",
         ProcessArch::Unknown => "unknown",
     }
+}
+
+/// 언로드 모듈 후보 섹션(사람 출력). 후보가 없으면 안내 한 줄만 낸다.
+pub(crate) fn render_unloaded_section(candidates: &[UnloadedModule]) -> String {
+    let mut out = String::new();
+    out.push_str(&format!(
+        "\nUNLOADED IMAGE CANDIDATES ({})\n",
+        candidates.len()
+    ));
+    if candidates.is_empty() {
+        out.push_str("no candidates\n");
+        return out;
+    }
+    out.push_str(&format!(
+        "{:<18} {:>10} {:6} {:18} {:>8} {:>7} {:>10}\n",
+        "BASE", "SIZE", "ARCH", "ENTRY", "SECTIONS", "IMPORTS", "TIMESTAMP"
+    ));
+    for candidate in candidates {
+        out.push_str(&format!(
+            "0x{:016x} {:>10} {:6} {:#18x} {:>8} {:>7} {:#010x}\n",
+            candidate.base,
+            human_size(candidate.size),
+            arch_label(candidate.arch),
+            candidate.entry_point,
+            candidate.sections,
+            candidate.imports,
+            candidate.timestamp,
+        ));
+    }
+    out
 }
 
 fn render_modules(
@@ -173,6 +226,7 @@ fn json_payload(
     info: &ProcessInfo,
     modules: &[ModuleInfo],
     pe: Option<&[Option<PeInfo>]>,
+    unloaded: Option<&[UnloadedModule]>,
 ) -> Value {
     let items: Vec<Value> = modules
         .iter()
@@ -189,11 +243,15 @@ fn json_payload(
             value
         })
         .collect();
-    json!({
+    let mut payload = json!({
         "process": { "pid": info.pid, "name": info.name },
         "module_count": modules.len(),
         "modules": items,
-    })
+    });
+    if let Some(candidates) = unloaded {
+        payload["unloaded"] = json!(candidates);
+    }
+    payload
 }
 
 #[cfg(test)]
@@ -244,7 +302,7 @@ mod tests {
     #[test]
     fn modules_json_payload_shape() {
         let modules = vec![sample_module("target.exe", 0x0001_4000_0000, None)];
-        let value = json_payload(&sample_info(), &modules, None);
+        let value = json_payload(&sample_info(), &modules, None, None);
         assert_eq!(value["process"]["pid"], 1234);
         assert_eq!(value["module_count"], 1);
         assert_eq!(value["modules"][0]["name"], "target.exe");
@@ -300,6 +358,7 @@ mod tests {
             filter: filter.map(str::to_string),
             arch,
             unparsed,
+            unloaded: false,
         }
     }
 
@@ -351,7 +410,7 @@ mod tests {
     #[test]
     fn filtered_modules_json_keeps_schema_keys() {
         let filtered = vec![sample_module("a.dll", 0x1000, None)];
-        let value = json_payload(&sample_info(), &filtered, None);
+        let value = json_payload(&sample_info(), &filtered, None, None);
         assert_eq!(value["module_count"], 1);
         assert_eq!(value["modules"].as_array().unwrap().len(), 1);
         assert!(
@@ -368,11 +427,54 @@ mod tests {
             sample_module("b.dll", 0x2000, None),
         ];
         let pe = vec![Some(sample_pe()), None];
-        let payload = json_payload(&info, &modules, Some(&pe));
+        let payload = json_payload(&info, &modules, Some(&pe), None);
         assert_eq!(payload["module_count"], 2);
         assert_eq!(payload["modules"][0]["pe"]["arch"], "x64");
         assert!(payload["modules"][1]["pe"].is_null());
-        let payload_without = json_payload(&info, &modules, None);
+        let payload_without = json_payload(&info, &modules, None, None);
         assert!(payload_without["modules"][0].get("pe").is_none());
+    }
+
+    fn sample_unloaded() -> UnloadedModule {
+        UnloadedModule {
+            base: 0x0000_0001_4000_0000,
+            size: 0x1000,
+            arch: ProcessArch::X64,
+            entry_point: 0x0000_0001_4000_1234,
+            image_size: 0x2000,
+            timestamp: 0x1234_5678,
+            sections: 3,
+            imports: 5,
+        }
+    }
+
+    #[test]
+    fn render_unloaded_section_lists_rows() {
+        let text = render_unloaded_section(&[sample_unloaded()]);
+        assert!(text.contains("UNLOADED IMAGE CANDIDATES"));
+        assert!(text.contains("BASE"));
+        assert!(text.contains("TIMESTAMP"));
+        assert!(text.contains("0x0000000140000000"));
+        assert!(text.contains("x64"));
+        assert!(text.contains("0x140001234"));
+        assert!(text.contains("0x12345678"));
+        let empty = render_unloaded_section(&[]);
+        assert!(empty.contains("UNLOADED IMAGE CANDIDATES"));
+        assert!(empty.contains("no candidates"));
+    }
+
+    #[test]
+    fn modules_json_includes_unloaded_only_when_flag() {
+        let modules = vec![sample_module("a.dll", 0x1000, None)];
+        let unloaded = vec![sample_unloaded()];
+        let with = json_payload(&sample_info(), &modules, None, Some(&unloaded));
+        assert_eq!(with["unloaded"].as_array().unwrap().len(), 1);
+        assert_eq!(with["unloaded"][0]["base"], 0x0000_0001_4000_0000u64);
+        assert_eq!(with["unloaded"][0]["sections"], 3);
+        let without = json_payload(&sample_info(), &modules, None, None);
+        assert!(
+            without.get("unloaded").is_none(),
+            "--unloaded 없이는 키도 없다"
+        );
     }
 }
