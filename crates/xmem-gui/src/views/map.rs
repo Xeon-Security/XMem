@@ -76,15 +76,29 @@ pub fn select_and_sort(
     indices
 }
 
-/// 모듈 목록이 필요한 필터가 켜져 있는데 목록이 없으면 끈다. 변경 여부를 돌려준다.
+/// 모듈 목록이 없으면 `outside_modules_only`만 끈다. 변경 여부를 돌려준다.
+/// `pe_like_only`는 영역 휴리스틱만 보므로 모듈 목록과 무관하다(코어 `RegionFilter::matches`와 동일).
 pub fn enforce_module_filters(filter: &mut RegionFilter, has_modules: bool) -> bool {
-    if has_modules {
+    if has_modules || !filter.outside_modules_only {
         return false;
     }
-    let changed = filter.outside_modules_only || filter.pe_like_only;
     filter.outside_modules_only = false;
-    filter.pe_like_only = false;
-    changed
+    true
+}
+
+/// 팝업 버튼 활성 표시: 구조화 필터 또는 텍스트(범위/크기) 조건이 있으면 활성.
+fn filter_active(
+    filter: &RegionFilter,
+    range_start: &str,
+    range_end: &str,
+    min_size: &str,
+    max_size: &str,
+) -> bool {
+    *filter != RegionFilter::default()
+        || !range_start.trim().is_empty()
+        || !range_end.trim().is_empty()
+        || !min_size.trim().is_empty()
+        || !max_size.trim().is_empty()
 }
 
 /// 텍스트 입력(주소 범위/최소·최대 크기)을 반영한 실제 적용 필터.
@@ -148,6 +162,7 @@ fn protection_label(filter: Option<ProtectionMask>) -> &'static str {
         Some(ProtectionMask::Rx) => "보호: RX",
         Some(ProtectionMask::Rw) => "보호: RW",
         Some(ProtectionMask::R) => "보호: R",
+        Some(ProtectionMask::X) => "보호: X",
         Some(ProtectionMask::None) => "보호: none",
     }
 }
@@ -193,6 +208,7 @@ fn protection_combo(ui: &mut egui::Ui, filter: &mut RegionFilter) {
             ui.selectable_value(&mut filter.protection, Some(ProtectionMask::Rx), "RX");
             ui.selectable_value(&mut filter.protection, Some(ProtectionMask::Rw), "RW");
             ui.selectable_value(&mut filter.protection, Some(ProtectionMask::R), "R");
+            ui.selectable_value(&mut filter.protection, Some(ProtectionMask::X), "X");
             ui.selectable_value(&mut filter.protection, Some(ProtectionMask::None), "none");
         });
 }
@@ -228,17 +244,12 @@ fn sort_combo(ui: &mut egui::Ui, sort: &mut MapSort, id_salt: &str) {
 }
 
 fn module_required_controls(ui: &mut egui::Ui, app: &mut XMemApp, pid: u32, has_modules: bool) {
+    ui.checkbox(&mut app.map_filter.pe_like_only, "PE-like만");
     if has_modules {
-        ui.checkbox(&mut app.map_filter.pe_like_only, "PE-like만");
         ui.checkbox(&mut app.map_filter.outside_modules_only, "모듈 범위 밖만");
         return;
     }
     let hint = "모듈 목록이 필요합니다 — 모듈 탭에서 먼저 불러오세요";
-    ui.add_enabled(
-        false,
-        egui::Checkbox::new(&mut app.map_filter.pe_like_only, "PE-like만"),
-    )
-    .on_disabled_hover_text(hint);
     ui.add_enabled(
         false,
         egui::Checkbox::new(&mut app.map_filter.outside_modules_only, "모듈 범위 밖만"),
@@ -302,7 +313,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     if enforce_module_filters(&mut app.map_filter, has_modules) {
         app.log.push(
             LogLevel::Warn,
-            "PE-like/모듈 범위 밖 필터는 모듈 목록이 필요합니다 — 모듈 탭에서 먼저 불러오세요",
+            "모듈 범위 밖 필터는 모듈 목록이 필요합니다 — 모듈 탭에서 먼저 불러오세요",
         );
     }
     let (effective, errors) = build_region_filter(
@@ -335,7 +346,13 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             ui.separator();
             sort_combo(ui, &mut app.map_sort, "map_sort_inline");
         }
-        let active = app.map_filter != RegionFilter::default();
+        let active = filter_active(
+            &app.map_filter,
+            &app.map_range_start,
+            &app.map_range_end,
+            &app.map_min_size,
+            &app.map_max_size,
+        );
         crate::views::filter_popup(ui, "map_filter_popup", active, |ui| {
             filter_contents(ui, app, pid, has_modules);
         });
@@ -686,7 +703,7 @@ mod tests {
     }
 
     #[test]
-    fn enforce_module_filters_resets_without_modules() {
+    fn enforce_module_filters_resets_only_outside_modules() {
         let mut filter = RegionFilter {
             outside_modules_only: true,
             pe_like_only: true,
@@ -698,10 +715,30 @@ mod tests {
         );
         assert!(filter.outside_modules_only && filter.pe_like_only);
         assert!(enforce_module_filters(&mut filter, false));
-        assert!(!filter.outside_modules_only && !filter.pe_like_only);
+        assert!(!filter.outside_modules_only, "모듈 범위 밖만 리셋");
+        assert!(filter.pe_like_only, "PE-like는 모듈 목록이 필요 없어 유지");
         assert!(
             !enforce_module_filters(&mut filter, false),
             "이미 꺼져 있으면 변경 없음"
         );
+    }
+
+    #[test]
+    fn filter_active_reflects_text_conditions() {
+        let base = RegionFilter::default();
+        assert!(!filter_active(&base, "", "", "", ""));
+        assert!(filter_active(&base, "0x1000", "", "", ""));
+        assert!(filter_active(&base, "", "0x2000", "", ""));
+        assert!(filter_active(&base, "", "", "4Ki", ""));
+        assert!(filter_active(&base, "", "", "", "8Mi"));
+        assert!(
+            !filter_active(&base, "  ", " ", " ", "  "),
+            "공백만이면 비활성"
+        );
+        let structured = RegionFilter {
+            readable_only: true,
+            ..RegionFilter::default()
+        };
+        assert!(filter_active(&structured, "", "", "", ""));
     }
 }
