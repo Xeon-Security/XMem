@@ -145,13 +145,13 @@ xmem experiment run <NAME>
 | `--readable-only` / `--writable-only` / `--executable-only` | 권한 기준 영역 필터 |
 | `--state <commit\|reserve\|free>` | 메모리 상태 |
 | `--class <image\|mapped\|private>` | 분류 |
-| `--prot <rwx\|r-x\|rw-\|r--\|--->` | 보호 속성 |
+| `--prot <rwx\|r-x\|rw-\|r--\|x\|--->` | 보호 속성 (`x` = 실행 전용, `---` = 없음) |
 | `--heuristic <exec-private\|exec-anon\|pe-like\|wx>` | heuristic 태그 |
 | `--pe-like` | PE-like private executable 영역만 |
 | `--outside-modules` | 로드된 모듈 범위 밖 영역만 (모듈 목록이 비면 매칭 없음) |
 | `--mapped-only` | 파일 백킹이 관찰된 영역만 |
 | `--range <START:END>` | 주소 범위 겹침 |
-| `--min-size <N>` / `--max-size <N>` | 영역 크기(바이트) |
+| `--min-size <SIZE>` / `--max-size <SIZE>` | 영역 크기 — 접미사 허용(예: `4096`, `4Ki`, `8Mi`) |
 | `--sort <addr\|addr-desc\|size-desc>` | 정렬 (기본 addr) |
 
 다른 분석 명령의 필터 플래그 (모두 기본 없음, 결과 수집 후 적용):
@@ -224,7 +224,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - GUI는 분석 기능만 제공한다(실험은 CLI 전용). 덤프 생성은 진행 중 취소를 지원하지 않으며, PPL 보호 프로세스는 관리자 권한으로도 열 수 없다. 검색은 진행률을 표시하지 않는다(취소는 가능). GUI는 시작할 때 `ShellExecuteW runas`로 자신을 관리자 권한으로 다시 띄우고(`--pid` 유지), UAC를 취소하면 표준 권한으로 계속 실행된다(상단 배지의 "관리자로 재시작"으로 다시 시도 가능). 콘솔 창은 뜨지 않는다.
 - GUI 상세 패널(맵/모듈/스레드)은 행을 클릭하면 하단에 열리며, 조회 실패 시 원인을 사람이 읽을 수 있는 오류 라벨(`error_label`: 접근 거부·부분 읽기·잘못된 주소·Windows API 코드 등)로 표시한다. 맵 상세의 hex 뷰어는 4 KiB 페이지 단위로 읽고, 읽지 못한 페이지는 사유를 표시한다.
 - GUI는 좁은 창(820px)에서 표를 패널 폭에 맞춰 그려 세로 스크롤바를 유지한다(가로 스크롤 대신 일부 열이 잘릴 수 있다). 맵/모듈/스레드 표는 행을 클릭한 뒤 ↑/↓로 선택을 이동할 수 있고(텍스트 입력 중에는 동작하지 않음), 맵·모듈·스레드 수집은 취소할 수 있다(취소 시 "취소되었습니다" 표시).
-- 맵/프로세스/모듈/스레드/탐지 필터는 GUI와 CLI가 동일한 `xmem-core::filter` 구현을 공유한다(플래그 ↔ GUI 컨트롤 1:1, 결과 동일). 기본은 필터 없음(전체 표시)이며 여러 조건은 AND로 결합된다. GUI는 좁은 창에서도 각 탭의 "필터" 팝업으로 전체 필터에 접근할 수 있다(넓은 창에서는 인라인 컨트롤 유지).
+- 맵/프로세스/모듈/스레드/탐지 필터는 GUI와 CLI가 동일한 `xmem-core::filter` 구현을 공유한다(플래그 ↔ GUI 컨트롤 1:1, 결과 동일). 기본은 필터 없음(전체 표시)이며 여러 조건은 AND로 결합된다. 맵 보호 콤보도 CLI `--prot`와 동일하게 X(실행 전용)·none을 제공한다. GUI는 좁은 창에서도 각 탭의 "필터" 팝업으로 전체 필터에 접근할 수 있다(넓은 창에서는 인라인 컨트롤 유지).
 - 덤프에 모듈 목록이 없으면 그 한계를, 모듈 상세의 디스크 PE 파싱이 실패하면 실패 사유를 화면에 표시한다.
 
 ## Documentation

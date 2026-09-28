@@ -274,6 +274,8 @@ xmem experiment list | run <NAME>
   snapshot diff: --only regions,content,modules,threads,detections
 ```
 
+`--prot` 값은 `rwx|r-x|rw-|r--|x|---`(v0.2.2에서 실행 전용 `x` 추가), `--min-size/--max-size`는 K/M/G(1024 기반, 선택적 `i`) 접미사를 허용한다(예: `4Ki`, `8Mi`, `4096`).
+
 `--output` 미지정 시 기존처럼 표준 출력으로 보내며, 파일은 temp → 재읽기 검증 → rename으로 기록한다.
 
 ## 13. Safety / Host Stability
