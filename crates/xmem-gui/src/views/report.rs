@@ -102,8 +102,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             }
         }
     });
-    if let TaskState::Failed(err) = app.report_task.state() {
-        ui.label(egui::RichText::new(err.to_string()).color(colors.danger));
+    match app.report_task.state() {
+        TaskState::Failed(err) => {
+            ui.label(egui::RichText::new(err.to_string()).color(colors.danger));
+        }
+        TaskState::Cancelled => {
+            ui.label(egui::RichText::new("취소되었습니다").color(palette(app.theme).warn));
+        }
+        _ => {}
     }
     if let Some((path, bytes)) = app.report_saved.clone() {
         ui.label(format!("저장 완료: {path} ({})", human_size(bytes)));
