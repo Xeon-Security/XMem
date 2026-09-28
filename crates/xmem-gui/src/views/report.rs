@@ -1,5 +1,7 @@
 //! 리포트 탭.
 
+use std::sync::atomic::AtomicBool;
+
 use xmem_core::Result;
 
 use crate::app::XMemApp;
@@ -7,12 +9,18 @@ use crate::task::TaskState;
 use crate::theme::palette;
 use crate::views::map::human_size;
 
-pub fn build_report_data(pid: u32) -> Result<xmem_forensics::ReportData> {
+/// 리포트 데이터 수집. 단계 사이에 취소를 확인한다.
+pub fn build_report_data(pid: u32, cancel: &AtomicBool) -> Result<xmem_forensics::ReportData> {
     let live = xmem_memory::LiveProcess::open(pid)?;
+    crate::task::ensure_not_cancelled(cancel)?;
     let regions = live.region_map()?.regions;
+    crate::task::ensure_not_cancelled(cancel)?;
     let modules = live.modules()?;
+    crate::task::ensure_not_cancelled(cancel)?;
     let threads = live.threads()?;
+    crate::task::ensure_not_cancelled(cancel)?;
     let findings = xmem_detection::detect_source(&live)?;
+    crate::task::ensure_not_cancelled(cancel)?;
     Ok(xmem_forensics::ReportData::new(
         live.info.clone(),
         regions,
@@ -89,6 +97,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         if running {
             ui.spinner();
             ui.label("수집 및 저장 중...");
+            if ui.button("취소").clicked() {
+                app.report_task.cancel();
+            }
         }
     });
     if let TaskState::Failed(err) = app.report_task.state() {
@@ -112,8 +123,18 @@ mod tests {
 
     #[test]
     fn report_data_of_self_has_regions_and_summary() {
-        let data = build_report_data(std::process::id()).unwrap();
+        let cancel = AtomicBool::new(false);
+        let data = build_report_data(std::process::id(), &cancel).unwrap();
         assert!(!data.regions.is_empty());
         assert_eq!(data.summary.regions_total, data.regions.len());
+    }
+
+    #[test]
+    fn report_data_stops_when_cancelled() {
+        let cancel = AtomicBool::new(true);
+        assert!(
+            build_report_data(std::process::id(), &cancel).is_err(),
+            "취소 플래그가 서 있으면 수집을 시작하지 않는다"
+        );
     }
 }

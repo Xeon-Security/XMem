@@ -1,6 +1,7 @@
 //! 덤프 탭.
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use xmem_core::{Finding, Result, XmemError};
 use xmem_forensics::{DumpAnalysis, MinidumpSource};
@@ -82,9 +83,11 @@ pub fn missing_modules_note(module_count: usize) -> Option<&'static str> {
         .then_some("모듈 목록 없음 — 미니덤프에 모듈 정보가 없어 모듈 상세를 표시할 수 없습니다")
 }
 
-pub fn analyze_dump_file(path: &Path) -> Result<(DumpAnalysis, Vec<Finding>)> {
+pub fn analyze_dump_file(path: &Path, cancel: &AtomicBool) -> Result<(DumpAnalysis, Vec<Finding>)> {
     let source = MinidumpSource::open(path)?;
+    crate::task::ensure_not_cancelled(cancel)?;
     let findings = xmem_detection::detect_source(&source)?;
+    crate::task::ensure_not_cancelled(cancel)?;
     Ok((source.analysis(), findings))
 }
 
@@ -138,11 +141,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         app.dump_full = full;
     }
     let warning_dir = output_dir(app);
-    app.dump_full_warning = if app.dump_full {
-        full_dump_warning(pid, &warning_dir)
-    } else {
-        None
-    };
+    // 매 프레임 process_info/free_space를 호출하지 않는다 — 체크박스/출력 경로가
+    // 바뀔 때만 다시 계산한다(M8).
+    let warning_key = (pid, app.dump_full, warning_dir.clone());
+    if app.dump_full_warning_key.as_ref() != Some(&warning_key) {
+        app.dump_full_warning_key = Some(warning_key);
+        app.dump_full_warning = if app.dump_full {
+            full_dump_warning(pid, &warning_dir)
+        } else {
+            None
+        };
+    }
     if let Some(warning) = app.dump_full_warning.clone() {
         ui.label(egui::RichText::new(warning).color(colors.danger));
     }
@@ -203,10 +212,19 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         if running {
             ui.spinner();
+            if ui.button("취소").clicked() {
+                app.dump_analyze_task.cancel();
+            }
         }
     });
-    if let TaskState::Failed(err) = app.dump_analyze_task.state() {
-        ui.label(egui::RichText::new(err.to_string()).color(colors.danger));
+    match app.dump_analyze_task.state() {
+        TaskState::Failed(err) => {
+            ui.label(egui::RichText::new(err.to_string()).color(colors.danger));
+        }
+        TaskState::Cancelled => {
+            ui.label(egui::RichText::new("취소되었습니다").weak());
+        }
+        _ => {}
     }
     if let Some((path, analysis, findings)) = app.dump_analysis.as_ref() {
         ui.label(

@@ -257,10 +257,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         if running {
             ui.spinner();
+            if ui.button("취소").clicked() {
+                app.snapshot_diff_task.cancel();
+            }
         }
     });
-    if let TaskState::Failed(err) = app.snapshot_diff_task.state() {
-        error_label(ui, app, err);
+    match app.snapshot_diff_task.state() {
+        TaskState::Failed(err) => error_label(ui, app, err),
+        TaskState::Cancelled => {
+            ui.label(egui::RichText::new("취소되었습니다").color(palette(app.theme).warn));
+        }
+        _ => {}
     }
     if let Some(diff) = app.snapshot_diff.as_ref() {
         let text = render_diff(diff);
