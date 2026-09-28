@@ -518,6 +518,9 @@ pub enum DumpCmd {
         /// 전체 메모리 포함 (크고 느림, 디스크 사전 검사)
         #[arg(long)]
         full: bool,
+        /// 덤프 진행 상황을 stderr에 표시(10% 단위, 취소 불가)
+        #[arg(long)]
+        progress: bool,
     },
     /// 미니덤프 분석
     Analyze { file: String },
@@ -1000,11 +1003,40 @@ mod tests {
         let Command::Dump { cmd } = cli.command else {
             panic!("dump가 아님");
         };
-        let DumpCmd::Create { pid, output, full } = cmd else {
+        let DumpCmd::Create {
+            pid,
+            output,
+            full,
+            progress,
+        } = cmd
+        else {
             panic!("create가 아님");
         };
         assert_eq!(pid.pid, 42);
         assert_eq!(output, "t.dmp");
         assert!(full);
+        assert!(!progress);
+    }
+
+    #[test]
+    fn parses_dump_create_progress_flag() {
+        let cli = parse(&[
+            "xmem",
+            "dump",
+            "create",
+            "--pid",
+            "42",
+            "--output",
+            "t.dmp",
+            "--progress",
+        ])
+        .unwrap();
+        let Command::Dump { cmd } = cli.command else {
+            panic!("dump가 아님");
+        };
+        let DumpCmd::Create { progress, .. } = cmd else {
+            panic!("create가 아님");
+        };
+        assert!(progress);
     }
 }

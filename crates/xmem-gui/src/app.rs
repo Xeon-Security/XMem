@@ -175,6 +175,7 @@ pub struct XMemApp {
     pub dump_full_warning: Option<String>,
     /// `dump_full_warning`을 계산한 조건(pid, full, 출력 디렉터리). 매 프레임 재계산 방지.
     pub dump_full_warning_key: Option<(u32, bool, std::path::PathBuf)>,
+    pub dump_progress: Option<Arc<xmem_windows::DumpProgress>>,
     pub dump_create_task: BackgroundTask<(u32, (String, u64))>,
     pub dump_created: Option<(String, u64)>,
     pub dump_analyze_input: String,
@@ -287,6 +288,7 @@ impl XMemApp {
             dump_full: false,
             dump_full_warning: None,
             dump_full_warning_key: None,
+            dump_progress: None,
             dump_create_task: BackgroundTask::idle(),
             dump_created: None,
             dump_analyze_input: String::new(),
@@ -376,6 +378,7 @@ impl XMemApp {
         self.detect_task.reset();
         self.snapshot_create_task.reset();
         self.dump_create_task.reset();
+        self.dump_progress = None;
         self.report_task.reset();
         self.start_overview(pid);
         self.map = None;
@@ -731,8 +734,15 @@ impl XMemApp {
         }
         self.dump_created = None;
         let full = self.dump_full;
+        // 진행 표시용 예상 크기는 프로세스 commit이다. 조회 실패는 indeterminate(0)로 둔다.
+        let estimate = xmem_windows::process_info(pid)
+            .ok()
+            .and_then(|info| info.memory_stats.map(|stats| stats.commit))
+            .unwrap_or(0);
+        let progress = Arc::new(xmem_windows::DumpProgress::new(estimate));
+        self.dump_progress = Some(Arc::clone(&progress));
         self.dump_create_task = BackgroundTask::spawn("덤프 생성", move |_| {
-            let bytes = crate::views::dump::create_dump_file(pid, &output, full)?;
+            let bytes = crate::views::dump::create_dump_file(pid, &output, full, Some(&progress))?;
             Ok((pid, (output.to_string_lossy().into_owned(), bytes)))
         });
     }

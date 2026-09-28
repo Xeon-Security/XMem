@@ -5,7 +5,10 @@ use std::sync::atomic::AtomicBool;
 
 use xmem_core::{Finding, Result, XmemError};
 use xmem_forensics::{DumpAnalysis, MinidumpSource};
-use xmem_windows::{free_space_bytes, open_for_dump, process_info, write_minidump_file};
+use xmem_windows::{
+    DumpProgress, free_space_bytes, open_for_dump, process_info, write_minidump_file,
+    write_minidump_file_with_progress,
+};
 
 use crate::app::XMemApp;
 use crate::task::TaskState;
@@ -49,7 +52,12 @@ fn output_dir(app: &XMemApp) -> std::path::PathBuf {
         .unwrap_or_else(crate::config::default_output_dir)
 }
 
-pub fn create_dump_file(pid: u32, output: &Path, full: bool) -> Result<u64> {
+pub fn create_dump_file(
+    pid: u32,
+    output: &Path,
+    full: bool,
+    progress: Option<&DumpProgress>,
+) -> Result<u64> {
     // 존재하지 않는 PID를 ProcessExited로 보고하기 위해 process_info를 먼저 호출한다.
     let info = process_info(pid)?;
     let handle = open_for_dump(pid)?;
@@ -74,7 +82,19 @@ pub fn create_dump_file(pid: u32, output: &Path, full: bool) -> Result<u64> {
             ),
         });
     }
-    write_minidump_file(&handle, pid, output, full)
+    match progress {
+        Some(progress) => write_minidump_file_with_progress(&handle, pid, output, full, progress),
+        None => write_minidump_file(&handle, pid, output, full),
+    }
+}
+
+/// 진행바 옆 라벨. 예상 크기를 모르면 기록 바이트만 보여준다.
+pub fn dump_progress_text(progress: &DumpProgress) -> String {
+    let written = human_size(progress.bytes_written());
+    match progress.estimated_total() {
+        0 => format!("기록 {written} (예상 크기 미상)"),
+        total => format!("기록 {written} / 예상 {}", human_size(total)),
+    }
 }
 
 /// 덤프에 모듈 정보가 없을 때만 표시할 안내 문구.
@@ -174,6 +194,25 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             );
         }
     });
+    if app.dump_create_task.is_running()
+        && let Some(progress) = app.dump_progress.as_ref()
+    {
+        ui.horizontal(|ui| {
+            match progress.fraction() {
+                Some(fraction) => {
+                    ui.add(
+                        egui::ProgressBar::new(fraction)
+                            .desired_width(240.0)
+                            .show_percentage(),
+                    );
+                }
+                None => {
+                    ui.spinner();
+                }
+            }
+            ui.label(egui::RichText::new(dump_progress_text(progress)).weak());
+        });
+    }
     if let TaskState::Failed(err) = app.dump_create_task.state() {
         ui.label(egui::RichText::new(err.to_string()).color(colors.danger));
     }
@@ -275,6 +314,20 @@ mod tests {
     fn full_dump_blocks_when_disk_is_tight() {
         assert!(full_dump_blocked(100 * 1024 * 1024, 50 * 1024 * 1024).is_some());
         assert!(full_dump_blocked(100 * 1024 * 1024, 200 * 1024 * 1024).is_none());
+    }
+
+    #[test]
+    fn dump_progress_text_shows_written_and_estimate() {
+        let unknown = DumpProgress::new(0);
+        let text = dump_progress_text(&unknown);
+        assert!(text.contains("기록 0 B"), "{text}");
+        assert!(text.contains("예상 크기 미상"), "{text}");
+
+        let estimated = DumpProgress::new(1024);
+        assert_eq!(estimated.fraction(), Some(0.0));
+        let text = dump_progress_text(&estimated);
+        assert!(text.contains("기록 0 B"), "{text}");
+        assert!(text.contains("예상 1.0 KiB"), "{text}");
     }
 
     #[test]

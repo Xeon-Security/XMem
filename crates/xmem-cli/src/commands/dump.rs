@@ -1,9 +1,14 @@
 use std::path::Path;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use serde_json::{Value, json};
 use xmem_core::{Finding, Result, XmemError};
 use xmem_forensics::{DumpAnalysis, MinidumpSource};
-use xmem_windows::{free_space_bytes, open_for_dump, process_info, write_minidump_file};
+use xmem_windows::{
+    DumpProgress, free_space_bytes, open_for_dump, process_info, write_minidump_file,
+    write_minidump_file_with_progress,
+};
 
 use crate::cli::{DumpCmd, GlobalArgs};
 use crate::commands::detect::render_findings;
@@ -26,15 +31,80 @@ pub(crate) struct CreateSummary {
 
 pub fn run(cmd: &DumpCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
-        DumpCmd::Create { pid, output, full } => run_create(pid.pid, output, *full, global),
+        DumpCmd::Create {
+            pid,
+            output,
+            full,
+            progress,
+        } => run_create(pid.pid, output, *full, *progress, global),
         DumpCmd::Analyze { file } => run_analyze(file, global),
     }
 }
 
-fn run_create(pid: u32, output: &str, full: bool, global: &GlobalArgs) -> Result<()> {
+/// 덤프는 취소할 수 없고, 별도 스레드가 진행 카운터를 폴링해 10% 단위로 stderr에 찍는다.
+/// 일반 덤프는 예상(commit) 대비 크기가 작아 10%를 못 넘기므로, 끝나면 요약 한 줄을 보장한다.
+fn spawn_dump_monitor(
+    progress: Arc<DumpProgress>,
+    done: Arc<AtomicBool>,
+) -> std::thread::JoinHandle<()> {
+    std::thread::spawn(move || {
+        let mut last_bucket = 0u32;
+        let mut printed = false;
+        loop {
+            let finished = done.load(Ordering::Relaxed);
+            let pct = progress
+                .fraction()
+                .map(|fraction| (fraction * 100.0).round().clamp(0.0, 100.0) as u32);
+            let bucket = pct.map_or(0, |pct| pct / 10);
+            if bucket > last_bucket {
+                if let Some(pct) = pct {
+                    eprintln!(
+                        "dumping... {pct}% ({})",
+                        human_size(progress.bytes_written())
+                    );
+                    printed = true;
+                }
+                last_bucket = bucket;
+            }
+            if finished {
+                if !printed || last_bucket < 10 {
+                    eprintln!("dumping... done ({})", human_size(progress.bytes_written()));
+                }
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    })
+}
+
+fn run_create(
+    pid: u32,
+    output: &str,
+    full: bool,
+    progress_flag: bool,
+    global: &GlobalArgs,
+) -> Result<()> {
     let _cancel = cancel_flag();
     let started = std::time::Instant::now();
-    let mut summary = create_dump_file(pid, output, full)?;
+    // 진행 표시용 예상 크기는 프로세스 commit이다. 조회 실패는 indeterminate(0)로 둔다.
+    let progress = progress_flag.then(|| {
+        let commit = process_info(pid)
+            .ok()
+            .and_then(|info| info.memory_stats.map(|stats| stats.commit))
+            .unwrap_or(0);
+        Arc::new(DumpProgress::new(commit))
+    });
+    let done = Arc::new(AtomicBool::new(false));
+    let monitor = progress
+        .as_ref()
+        .map(|progress| spawn_dump_monitor(Arc::clone(progress), Arc::clone(&done)));
+    let result = create_dump_file(pid, output, full, progress.as_deref());
+    done.store(true, Ordering::SeqCst);
+    // 마지막 진행 줄이 프로세스 종료와 함께 사라지지 않도록 모니터를 합류시킨다.
+    if let Some(monitor) = monitor {
+        let _ = monitor.join();
+    }
+    let mut summary = result?;
     summary.elapsed_ms = started.elapsed().as_millis() as u64;
 
     match resolve_mode(global.json) {
@@ -64,7 +134,12 @@ fn run_create(pid: u32, output: &str, full: bool, global: &GlobalArgs) -> Result
     }
 }
 
-pub(crate) fn create_dump_file(pid: u32, output: &str, full: bool) -> Result<CreateSummary> {
+pub(crate) fn create_dump_file(
+    pid: u32,
+    output: &str,
+    full: bool,
+    progress: Option<&DumpProgress>,
+) -> Result<CreateSummary> {
     // 존재하지 않는 PID를 ProcessExited로 보고하기 위해 process_info를 먼저 호출한다.
     let info = process_info(pid)?;
     let handle = open_for_dump(pid)?;
@@ -80,7 +155,10 @@ pub(crate) fn create_dump_file(pid: u32, output: &str, full: bool) -> Result<Cre
     };
     ensure_disk_space(parent, needed)?;
 
-    let file_bytes = write_minidump_file(&handle, pid, path, full)?;
+    let file_bytes = match progress {
+        Some(progress) => write_minidump_file_with_progress(&handle, pid, path, full, progress)?,
+        None => write_minidump_file(&handle, pid, path, full)?,
+    };
     Ok(CreateSummary {
         output: output.to_string(),
         file_bytes,
@@ -246,7 +324,8 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("self.dmp");
 
-        let summary = create_dump_file(std::process::id(), &path.to_string_lossy(), false).unwrap();
+        let summary =
+            create_dump_file(std::process::id(), &path.to_string_lossy(), false, None).unwrap();
         assert!(summary.file_bytes > 0);
         let magic = std::fs::read(&path).unwrap();
         assert_eq!(&magic[..4], b"MDMP");

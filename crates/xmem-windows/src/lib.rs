@@ -22,7 +22,10 @@ pub mod util;
 pub(crate) mod test_support;
 
 pub use disk::free_space_bytes;
-pub use dump::{create_file_for_write, validate_minidump, write_minidump, write_minidump_file};
+pub use dump::{
+    DumpProgress, create_file_for_write, validate_minidump, write_minidump, write_minidump_file,
+    write_minidump_file_with_progress,
+};
 pub use elevate::{is_elevated, runas};
 pub use error::{error_from_win32, last_win32_error, map_win32, win32_code_from_hresult};
 pub use handle::OwnedHandle;
