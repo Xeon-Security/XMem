@@ -47,26 +47,39 @@ pub fn select_modules(
         .collect()
 }
 
-fn filter_active(app: &crate::app::XMemApp) -> bool {
-    !app.module_query.trim().is_empty()
-        || app.module_arch_filter.is_some()
-        || app.module_unparsed_only
+fn filter_count(app: &crate::app::XMemApp) -> usize {
+    usize::from(!app.module_query.trim().is_empty())
+        + usize::from(app.module_arch_filter.is_some())
+        + usize::from(app.module_unparsed_only)
 }
 
-fn arch_combo(ui: &mut egui::Ui, filter: &mut Option<ProcessArch>, id_salt: &str) {
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(match filter {
-            None => "아키텍처: 전체",
-            Some(ProcessArch::X64) => "아키텍처: x64",
-            Some(ProcessArch::X86) => "아키텍처: x86",
-            Some(ProcessArch::Arm64) => "아키텍처: arm64",
-            Some(ProcessArch::Unknown) => "아키텍처: 기타",
-        })
-        .show_ui(ui, |ui| {
-            ui.selectable_value(filter, None, "전체");
-            ui.selectable_value(filter, Some(ProcessArch::X64), "x64");
-            ui.selectable_value(filter, Some(ProcessArch::X86), "x86");
-        });
+fn reset_filter(query: &mut String, arch: &mut Option<ProcessArch>, unparsed_only: &mut bool) {
+    query.clear();
+    *arch = None;
+    *unparsed_only = false;
+}
+
+fn arch_label(filter: Option<ProcessArch>) -> &'static str {
+    match filter {
+        None => "아키텍처: 전체",
+        Some(ProcessArch::X64) => "아키텍처: x64",
+        Some(ProcessArch::X86) => "아키텍처: x86",
+        Some(ProcessArch::Arm64) => "아키텍처: arm64",
+        Some(ProcessArch::Unknown) => "아키텍처: 기타",
+    }
+}
+
+fn arch_options() -> [(Option<ProcessArch>, &'static str); 4] {
+    [
+        (None, "전체"),
+        (Some(ProcessArch::X64), "x64"),
+        (Some(ProcessArch::X86), "x86"),
+        (Some(ProcessArch::Arm64), "arm64"),
+    ]
+}
+
+fn arch_menu(ui: &mut egui::Ui, filter: &mut Option<ProcessArch>) {
+    crate::views::choice_menu(ui, arch_label(*filter), &arch_options(), filter);
 }
 
 fn filter_contents(ui: &mut egui::Ui, app: &mut crate::app::XMemApp) {
@@ -78,9 +91,16 @@ fn filter_contents(ui: &mut egui::Ui, app: &mut crate::app::XMemApp) {
                 .desired_width(140.0),
         );
     });
-    arch_combo(ui, &mut app.module_arch_filter, "module_arch_filter_popup");
+    arch_menu(ui, &mut app.module_arch_filter);
     ui.checkbox(&mut app.module_unparsed_only, "PE 파싱 실패만")
         .on_hover_text("PE 요약 수집이 필요합니다(자동으로 켜집니다)");
+    crate::views::filter_reset_button(ui, || {
+        reset_filter(
+            &mut app.module_query,
+            &mut app.module_arch_filter,
+            &mut app.module_unparsed_only,
+        );
+    });
 }
 
 /// 모듈별 PE 헤더 prefix 파싱. 개별 실패는 None으로 degrade한다.
@@ -150,14 +170,15 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     .hint_text("이름/경로")
                     .desired_width(120.0),
             );
-            arch_combo(ui, &mut app.module_arch_filter, "module_arch_filter_inline");
+            arch_menu(ui, &mut app.module_arch_filter);
             ui.checkbox(&mut app.module_unparsed_only, "PE 파싱 실패만");
         }
-        crate::views::filter_popup(ui, "module_filter_popup", filter_active(app), |ui| {
+        crate::views::filter_popup(ui, "module_filter_popup", filter_count(app), |ui| {
             filter_contents(ui, app);
         });
     });
     // PE 파싱 실패 필터는 PE 수집이 없으면 평가할 수 없다 — 자동으로 켜고 다시 수집한다.
+    // 진행 중 수집이 있으면 `start_modules`가 취소하고 새로 시작한다.
     if app.module_unparsed_only && !app.modules_pe {
         app.modules_pe = true;
         app.start_modules(pid);
@@ -205,22 +226,34 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         })
         .weak(),
     );
+    if rows.is_empty() {
+        ui.label(
+            egui::RichText::new(
+                "필터에 맞는 모듈이 없습니다 — 필터 팝업에서 조건을 바꾸거나 [필터 초기화]를 누르세요",
+            )
+            .color(crate::theme::palette(app.theme).muted),
+        );
+        return;
+    }
     let show_pe = bundle.pe.is_some();
     let selected_base = app.module_selected;
     let mut clicked_module: Option<ModuleInfo> = None;
     let mut moved_module: Option<ModuleInfo> = None;
+    let mut moved_row: Option<usize> = None;
     if let Some(next) = crate::views::arrow_step(
         ui.ctx(),
         rows.len(),
         selected_base.and_then(|base| bundle.modules.iter().position(|module| module.base == base)),
         &rows,
-    ) && let Some(module) = bundle.modules.get(next)
-    {
-        moved_module = Some(module.clone());
+    ) {
+        moved_row = rows.iter().position(|&index| index == next);
+        if let Some(module) = bundle.modules.get(next) {
+            moved_module = Some(module.clone());
+        }
     }
     crate::views::truncate_cells(ui);
     let min_w = if show_pe { 790.0 } else { 520.0 };
-    crate::views::wrap_hscroll_if_wide(ui, "modules_table_hscroll", min_w, [false, false], |ui| {
+    crate::views::wrap_hscroll(ui, "modules_table_hscroll", min_w, [false, false], |ui| {
         let mut builder = egui_extras::TableBuilder::new(ui)
             .min_scrolled_height(0.0)
             .striped(true)
@@ -236,6 +269,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         builder = builder
             .column(egui_extras::Column::initial(160.0).clip(true))
             .column(egui_extras::Column::remainder().clip(true));
+        if let Some(row) = moved_row {
+            builder = builder.scroll_to_row(row, None);
+        }
         builder
             .header(18.0, |mut header| {
                 for title in ["BASE", "SIZE"] {
@@ -263,7 +299,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     row.set_selected(selected_base == Some(module.base));
                     let mut row_clicked = false;
                     row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
+                        row_clicked |= crate::views::table_cell_focusable(
                             ui,
                             egui::RichText::new(opt_hex(Some(module.base))),
                         );
@@ -426,5 +462,17 @@ mod tests {
             tls_callback_count: 0,
         };
         assert_eq!(pe_arch(&pe), "x64");
+    }
+
+    #[test]
+    fn menu_labels_and_reset_cover_filter_fields() {
+        for (value, label) in arch_options() {
+            assert_eq!(arch_label(value).strip_prefix("아키텍처: "), Some(label));
+        }
+        let mut query = "kernel".to_string();
+        let mut arch = Some(ProcessArch::X64);
+        let mut unparsed = true;
+        reset_filter(&mut query, &mut arch, &mut unparsed);
+        assert!(query.is_empty() && arch.is_none() && !unparsed);
     }
 }

@@ -25,10 +25,15 @@ fn effective_filter(app: &XMemApp) -> ThreadFilter {
     }
 }
 
-fn filter_active(app: &XMemApp) -> bool {
-    app.thread_filter.with_start_only
-        || app.thread_filter.suspicious_only
-        || !app.thread_tid_filter.trim().is_empty()
+fn filter_count(with_start_only: bool, suspicious_only: bool, tid: &str) -> usize {
+    usize::from(with_start_only)
+        + usize::from(suspicious_only)
+        + usize::from(!tid.trim().is_empty())
+}
+
+fn reset_filter(filter: &mut ThreadFilter, tid: &mut String) {
+    *filter = ThreadFilter::default();
+    tid.clear();
 }
 
 fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
@@ -51,6 +56,9 @@ fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
     {
         ui.colored_label(crate::theme::palette(app.theme).danger, err);
     }
+    crate::views::filter_reset_button(ui, || {
+        reset_filter(&mut app.thread_filter, &mut app.thread_tid_filter);
+    });
 }
 
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
@@ -85,9 +93,18 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     .desired_width(50.0),
             );
         }
-        crate::views::filter_popup(ui, "thread_filter_popup", filter_active(app), |ui| {
-            filter_contents(ui, app);
-        });
+        crate::views::filter_popup(
+            ui,
+            "thread_filter_popup",
+            filter_count(
+                app.thread_filter.with_start_only,
+                app.thread_filter.suspicious_only,
+                &app.thread_tid_filter,
+            ),
+            |ui| {
+                filter_contents(ui, app);
+            },
+        );
     });
     match app.threads_task.state() {
         TaskState::Failed(err) => {
@@ -127,21 +144,33 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         })
         .weak(),
     );
+    if rows.is_empty() {
+        ui.label(
+            egui::RichText::new(
+                "필터에 맞는 스레드가 없습니다 — 필터 팝업에서 조건을 바꾸거나 [필터 초기화]를 누르세요",
+            )
+            .color(crate::theme::palette(app.theme).muted),
+        );
+        return;
+    }
     let selected_tid = app.thread_selected;
     let mut clicked_thread: Option<xmem_core::ThreadInfo> = None;
     let mut moved_thread: Option<xmem_core::ThreadInfo> = None;
+    let mut moved_row: Option<usize> = None;
     if let Some(next) = crate::views::arrow_step(
         ui.ctx(),
         rows.len(),
         selected_tid.and_then(|tid| threads.iter().position(|thread| thread.tid == tid)),
         &rows,
-    ) && let Some(thread) = threads.get(next)
-    {
-        moved_thread = Some(thread.clone());
+    ) {
+        moved_row = rows.iter().position(|&index| index == next);
+        if let Some(thread) = threads.get(next) {
+            moved_thread = Some(thread.clone());
+        }
     }
     crate::views::truncate_cells(ui);
-    crate::views::wrap_hscroll_if_wide(ui, "threads_table_hscroll", 760.0, [false, false], |ui| {
-        egui_extras::TableBuilder::new(ui)
+    crate::views::wrap_hscroll(ui, "threads_table_hscroll", 760.0, [false, false], |ui| {
+        let mut builder = egui_extras::TableBuilder::new(ui)
             .min_scrolled_height(0.0)
             .striped(true)
             .sense(egui::Sense::click())
@@ -149,7 +178,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             .column(egui_extras::Column::exact(80.0))
             .column(egui_extras::Column::exact(150.0))
             .column(egui_extras::Column::exact(150.0))
-            .column(egui_extras::Column::remainder().clip(true))
+            .column(egui_extras::Column::remainder().clip(true));
+        if let Some(row) = moved_row {
+            builder = builder.scroll_to_row(row, None);
+        }
+        builder
             .header(18.0, |mut header| {
                 for title in ["TID", "PRIORITY", "START ADDRESS", "REGION", "MODULE"] {
                     header.col(|ui| {
@@ -163,7 +196,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     row.set_selected(selected_tid == Some(thread.tid));
                     let mut row_clicked = false;
                     row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
+                        row_clicked |= crate::views::table_cell_focusable(
                             ui,
                             egui::RichText::new(thread.tid.to_string()),
                         );
@@ -262,5 +295,21 @@ mod tests {
             )
             .is_empty()
         );
+    }
+
+    #[test]
+    fn filter_count_and_reset_cover_conditions() {
+        assert_eq!(filter_count(false, false, ""), 0);
+        assert_eq!(filter_count(false, false, " "), 0, "공백만이면 비활성");
+        assert_eq!(filter_count(true, true, "100"), 3);
+        let mut filter = ThreadFilter {
+            with_start_only: true,
+            suspicious_only: true,
+            tid: Some(100),
+        };
+        let mut tid = "100".to_string();
+        reset_filter(&mut filter, &mut tid);
+        assert_eq!(filter, ThreadFilter::default());
+        assert!(tid.is_empty());
     }
 }

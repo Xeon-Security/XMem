@@ -56,77 +56,131 @@ pub fn select_and_sort_findings(
     indices
 }
 
-fn confidence_option_label(confidence: Option<Confidence>) -> &'static str {
-    match confidence {
-        None => "신뢰도: 전체",
-        Some(Confidence::Low) => "신뢰도: LOW",
-        Some(Confidence::Medium) => "신뢰도: MEDIUM",
-        Some(Confidence::High) => "신뢰도: HIGH",
+/// 최소 심각도 라벨. "HIGH"가 아니라 "HIGH 이상"으로 범위를 명시한다.
+fn severity_min_label(severity: Severity) -> &'static str {
+    match severity {
+        Severity::Info => "INFO 이상",
+        Severity::Low => "LOW 이상",
+        Severity::Medium => "MEDIUM 이상",
+        Severity::High => "HIGH 이상",
+        Severity::Critical => "CRITICAL 이상",
     }
 }
 
 fn severity_option_label(severity: Option<Severity>) -> &'static str {
     match severity {
         None => "심각도: 전체",
-        Some(severity) => severity_label(severity),
+        Some(Severity::Info) => "심각도: INFO 이상",
+        Some(Severity::Low) => "심각도: LOW 이상",
+        Some(Severity::Medium) => "심각도: MEDIUM 이상",
+        Some(Severity::High) => "심각도: HIGH 이상",
+        Some(Severity::Critical) => "심각도: CRITICAL 이상",
     }
 }
 
-fn filter_active(app: &XMemApp) -> bool {
-    app.detect_filter.min_severity.is_some()
-        || app.detect_filter.min_confidence.is_some()
-        || !app.detect_rule_filter.trim().is_empty()
+fn confidence_min_label(confidence: Confidence) -> &'static str {
+    match confidence {
+        Confidence::Low => "LOW 이상",
+        Confidence::Medium => "MEDIUM 이상",
+        Confidence::High => "HIGH 이상",
+    }
 }
 
-fn severity_combo(ui: &mut egui::Ui, app: &mut XMemApp, id_salt: &str) {
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(severity_option_label(app.detect_filter.min_severity))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut app.detect_filter.min_severity, None, "전체");
-            for severity in [
-                Severity::Info,
-                Severity::Low,
-                Severity::Medium,
-                Severity::High,
-                Severity::Critical,
-            ] {
-                ui.selectable_value(
-                    &mut app.detect_filter.min_severity,
-                    Some(severity),
-                    severity_label(severity),
-                );
-            }
-        });
+fn confidence_option_label(confidence: Option<Confidence>) -> &'static str {
+    match confidence {
+        None => "신뢰도: 전체",
+        Some(Confidence::Low) => "신뢰도: LOW 이상",
+        Some(Confidence::Medium) => "신뢰도: MEDIUM 이상",
+        Some(Confidence::High) => "신뢰도: HIGH 이상",
+    }
 }
 
-fn sort_combo(ui: &mut egui::Ui, sort: &mut DetectSort, id_salt: &str) {
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(match sort {
-            DetectSort::Rule => "정렬: 규칙",
-            DetectSort::Address => "정렬: 주소",
-            DetectSort::Severity => "정렬: 심각도 ↓",
-        })
-        .show_ui(ui, |ui| {
-            ui.selectable_value(sort, DetectSort::Rule, "규칙");
-            ui.selectable_value(sort, DetectSort::Address, "주소");
-            ui.selectable_value(sort, DetectSort::Severity, "심각도 ↓");
-        });
+fn severity_options() -> [(Option<Severity>, &'static str); 6] {
+    [
+        (None, "전체"),
+        (Some(Severity::Info), severity_min_label(Severity::Info)),
+        (Some(Severity::Low), severity_min_label(Severity::Low)),
+        (Some(Severity::Medium), severity_min_label(Severity::Medium)),
+        (Some(Severity::High), severity_min_label(Severity::High)),
+        (
+            Some(Severity::Critical),
+            severity_min_label(Severity::Critical),
+        ),
+    ]
+}
+
+fn confidence_options() -> [(Option<Confidence>, &'static str); 4] {
+    [
+        (None, "전체"),
+        (Some(Confidence::Low), confidence_min_label(Confidence::Low)),
+        (
+            Some(Confidence::Medium),
+            confidence_min_label(Confidence::Medium),
+        ),
+        (
+            Some(Confidence::High),
+            confidence_min_label(Confidence::High),
+        ),
+    ]
+}
+
+fn sort_label(sort: DetectSort) -> &'static str {
+    match sort {
+        DetectSort::Rule => "정렬: 규칙",
+        DetectSort::Address => "정렬: 주소",
+        DetectSort::Severity => "정렬: 심각도 ↓",
+    }
+}
+
+fn sort_options() -> [(DetectSort, &'static str); 3] {
+    [
+        (DetectSort::Rule, "규칙"),
+        (DetectSort::Address, "주소"),
+        (DetectSort::Severity, "심각도 ↓"),
+    ]
+}
+
+/// 팝업 버튼 활성 개수(구조화 조건 + 규칙 텍스트).
+fn filter_count(
+    min_severity: Option<Severity>,
+    min_confidence: Option<Confidence>,
+    rule: &str,
+) -> usize {
+    usize::from(min_severity.is_some())
+        + usize::from(min_confidence.is_some())
+        + usize::from(!rule.trim().is_empty())
+}
+
+fn severity_menu(ui: &mut egui::Ui, app: &mut XMemApp) {
+    crate::views::choice_menu(
+        ui,
+        severity_option_label(app.detect_filter.min_severity),
+        &severity_options(),
+        &mut app.detect_filter.min_severity,
+    );
+}
+
+fn confidence_menu(ui: &mut egui::Ui, app: &mut XMemApp) {
+    crate::views::choice_menu(
+        ui,
+        confidence_option_label(app.detect_filter.min_confidence),
+        &confidence_options(),
+        &mut app.detect_filter.min_confidence,
+    );
+}
+
+fn sort_menu(ui: &mut egui::Ui, sort: &mut DetectSort) {
+    crate::views::choice_menu(ui, sort_label(*sort), &sort_options(), sort);
+}
+
+fn reset_filter(filter: &mut FindingFilter, rule: &mut String) {
+    *filter = FindingFilter::default();
+    rule.clear();
 }
 
 fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
-    severity_combo(ui, app, "detect_min_severity_popup");
-    egui::ComboBox::from_id_salt("detect_min_confidence")
-        .selected_text(confidence_option_label(app.detect_filter.min_confidence))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut app.detect_filter.min_confidence, None, "전체");
-            for confidence in [Confidence::Low, Confidence::Medium, Confidence::High] {
-                ui.selectable_value(
-                    &mut app.detect_filter.min_confidence,
-                    Some(confidence),
-                    format!("{confidence:?}"),
-                );
-            }
-        });
+    severity_menu(ui, app);
+    confidence_menu(ui, app);
     ui.horizontal(|ui| {
         ui.label("규칙 ID");
         ui.add(
@@ -137,7 +191,10 @@ fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
     });
     ui.separator();
     ui.label(egui::RichText::new("정렬").weak());
-    sort_combo(ui, &mut app.detect_sort, "detect_sort_popup");
+    sort_menu(ui, &mut app.detect_sort);
+    crate::views::filter_reset_button(ui, || {
+        reset_filter(&mut app.detect_filter, &mut app.detect_rule_filter);
+    });
 }
 
 fn evidence_location(evidence: &Evidence) -> String {
@@ -185,12 +242,21 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         }
         if !crate::views::narrow(ui) {
             ui.separator();
-            severity_combo(ui, app, "detect_min_severity_inline");
-            sort_combo(ui, &mut app.detect_sort, "detect_sort_inline");
+            severity_menu(ui, app);
+            sort_menu(ui, &mut app.detect_sort);
         }
-        crate::views::filter_popup(ui, "detect_filter_popup", filter_active(app), |ui| {
-            filter_contents(ui, app);
-        });
+        crate::views::filter_popup(
+            ui,
+            "detect_filter_popup",
+            filter_count(
+                app.detect_filter.min_severity,
+                app.detect_filter.min_confidence,
+                &app.detect_rule_filter,
+            ),
+            |ui| {
+                filter_contents(ui, app);
+            },
+        );
     });
     if let TaskState::Failed(err) = app.detect_task.state() {
         let failure = crate::app::classify_open_failure(
@@ -228,8 +294,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             }
         });
         if let Some(format) = export {
+            app.export_error = None;
             let payload = ExportPayload::Detect(findings.as_slice());
-            if let Some(dir) = crate::views::export::save_with_dialog(
+            match crate::views::export::save_with_dialog(
                 pid,
                 "detect",
                 format,
@@ -237,9 +304,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 app.config.last_output_dir.clone(),
                 &mut app.log,
             ) {
-                app.config.last_output_dir = Some(dir);
+                Ok(Some(dir)) => app.config.last_output_dir = Some(dir),
+                Ok(None) => {}
+                Err(err) => {
+                    app.export_error = Some((
+                        crate::app::Tab::Detect,
+                        format!("내보내기 실패: {}", crate::error::error_label(&err)),
+                    ));
+                }
             }
         }
+        crate::views::export_error(ui, app, crate::app::Tab::Detect);
         if findings.is_empty() {
             ui.label(
                 egui::RichText::new("no findings (absence of findings is not proof of safety)")
@@ -248,65 +323,64 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             return;
         }
         if rows.is_empty() {
-            ui.label(egui::RichText::new("필터에 맞는 finding이 없습니다").color(colors.muted));
+            ui.label(
+                egui::RichText::new(
+                    "필터에 맞는 finding이 없습니다 — 필터 팝업에서 조건을 바꾸거나 [필터 초기화]를 누르세요",
+                )
+                .color(colors.muted),
+            );
             return;
         }
         crate::views::truncate_cells(ui);
         // finding 상세가 표 아래에 남아야 하므로 높이는 내용에 맞춘다.
-        crate::views::wrap_hscroll_if_wide(
-            ui,
-            "detect_findings_hscroll",
-            500.0,
-            [false, true],
-            |ui| {
-                egui_extras::TableBuilder::new(ui)
-                    .min_scrolled_height(0.0)
-                    .striped(true)
-                    .sense(egui::Sense::click())
-                    .column(egui_extras::Column::exact(90.0))
-                    .column(egui_extras::Column::exact(100.0))
-                    .column(egui_extras::Column::remainder().clip(true))
-                    .header(18.0, |mut header| {
-                        for title in ["SEVERITY", "RULE", "NAME"] {
-                            header.col(|ui| {
-                                ui.strong(title);
-                            });
-                        }
-                    })
-                    .body(|body| {
-                        body.rows(20.0, rows.len(), |mut row| {
-                            let index = rows[row.index()];
-                            let finding = &findings[index];
-                            if Some(index) == selected {
-                                row.set_selected(true);
-                            }
-                            let mut row_clicked = false;
-                            row.col(|ui| {
-                                row_clicked |= crate::views::table_cell(
-                                    ui,
-                                    egui::RichText::new(severity_label(finding.severity))
-                                        .color(severity_color(finding.severity, &colors)),
-                                );
-                            });
-                            row.col(|ui| {
-                                row_clicked |= crate::views::table_cell(
-                                    ui,
-                                    egui::RichText::new(finding.rule_id.as_str()),
-                                );
-                            });
-                            row.col(|ui| {
-                                row_clicked |= crate::views::table_cell(
-                                    ui,
-                                    egui::RichText::new(finding.name.as_str()),
-                                );
-                            });
-                            if row_clicked {
-                                clicked = Some(index);
-                            }
+        crate::views::wrap_hscroll(ui, "detect_findings_hscroll", 500.0, [false, true], |ui| {
+            egui_extras::TableBuilder::new(ui)
+                .min_scrolled_height(0.0)
+                .striped(true)
+                .sense(egui::Sense::click())
+                .column(egui_extras::Column::exact(90.0))
+                .column(egui_extras::Column::exact(100.0))
+                .column(egui_extras::Column::remainder().clip(true))
+                .header(18.0, |mut header| {
+                    for title in ["SEVERITY", "RULE", "NAME"] {
+                        header.col(|ui| {
+                            ui.strong(title);
                         });
+                    }
+                })
+                .body(|body| {
+                    body.rows(20.0, rows.len(), |mut row| {
+                        let index = rows[row.index()];
+                        let finding = &findings[index];
+                        if Some(index) == selected {
+                            row.set_selected(true);
+                        }
+                        let mut row_clicked = false;
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell_focusable(
+                                ui,
+                                egui::RichText::new(severity_label(finding.severity))
+                                    .color(severity_color(finding.severity, &colors)),
+                            );
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(finding.rule_id.as_str()),
+                            );
+                        });
+                        row.col(|ui| {
+                            row_clicked |= crate::views::table_cell(
+                                ui,
+                                egui::RichText::new(finding.name.as_str()),
+                            );
+                        });
+                        if row_clicked {
+                            clicked = Some(index);
+                        }
                     });
-            },
-        );
+                });
+        });
         crate::views::wrap_default(ui);
     } else if !app.detect_task.is_running() {
         ui.label(egui::RichText::new("탐지를 실행하면 규칙 평가 결과가 표시됩니다").weak());
@@ -334,7 +408,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.label(format!("interpretation: {}", finding.interpretation));
         if !finding.evidence.is_empty() {
             crate::views::truncate_cells(ui);
-            crate::views::wrap_hscroll_if_wide(
+            crate::views::wrap_hscroll(
                 ui,
                 "detect_evidence_hscroll",
                 680.0,
@@ -437,5 +511,46 @@ mod tests {
             select_and_sort_findings(&findings, &by_rule, DetectSort::Rule),
             vec![1]
         );
+    }
+
+    #[test]
+    fn menu_option_labels_cover_selected_texts() {
+        for (value, label) in severity_options() {
+            assert_eq!(
+                severity_option_label(value).strip_prefix("심각도: "),
+                Some(label),
+                "심각도 선택 문구는 '... 이상' 형식"
+            );
+        }
+        for (value, label) in confidence_options() {
+            assert_eq!(
+                confidence_option_label(value).strip_prefix("신뢰도: "),
+                Some(label)
+            );
+        }
+        for (value, label) in sort_options() {
+            assert_eq!(sort_label(value).strip_prefix("정렬: "), Some(label));
+        }
+        assert_eq!(severity_min_label(Severity::High), "HIGH 이상");
+        assert_eq!(confidence_min_label(Confidence::High), "HIGH 이상");
+    }
+
+    #[test]
+    fn filter_count_and_reset_cover_all_conditions() {
+        assert_eq!(filter_count(None, None, ""), 0);
+        assert_eq!(filter_count(None, None, "  "), 0, "공백만이면 비활성");
+        assert_eq!(
+            filter_count(Some(Severity::High), Some(Confidence::Medium), "XMEM-003"),
+            3
+        );
+        let mut filter = FindingFilter {
+            min_severity: Some(Severity::High),
+            min_confidence: Some(Confidence::Medium),
+            rule_id: Some("XMEM-003".into()),
+        };
+        let mut rule = "XMEM-003".to_string();
+        reset_filter(&mut filter, &mut rule);
+        assert_eq!(filter, FindingFilter::default());
+        assert!(rule.is_empty());
     }
 }

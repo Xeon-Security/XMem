@@ -104,15 +104,27 @@ fn parse_opt_text<T>(
 /// 툴바의 "필터" 팝업 버튼. 좁은 창에서도 모든 필터에 접근할 수 있게 한다.
 ///
 /// 기본 메뉴는 클릭 한 번에 닫히므로 `CloseOnClickOutside`로 두어 체크박스를
-/// 여러 개 켜도 팝업이 유지된다.
+/// 여러 개 켜도 팝업이 유지된다. 팝업 안의 값 선택은 `choice_menu`(메뉴
+/// 서브팝업)를 쓴다 — ComboBox 드롭다운은 별도 레이어라 클릭이 부모 팝업
+/// 바깥으로 잡혀 팝업이 닫히고 값을 고를 수 없었다(egui는 메뉴 서브팝업만
+/// 예외 처리한다: `popup.rs`의 `MenuState::is_deepest_open_sub_menu`).
 pub fn filter_popup<R>(
     ui: &mut egui::Ui,
     id_salt: &str,
-    active: bool,
+    active_count: usize,
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> egui::Response {
-    let label = if active { "필터 ●" } else { "필터" };
-    let button = ui.button(label);
+    let label = if active_count > 0 {
+        "필터 ●"
+    } else {
+        "필터"
+    };
+    let hover = if active_count > 0 {
+        format!("필터 {active_count}개 활성")
+    } else {
+        "필터 없음".to_string()
+    };
+    let button = ui.button(label).on_hover_text(hover);
     egui::Popup::menu(&button)
         .id(ui.id().with(id_salt).with("filter_popup"))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
@@ -122,6 +134,31 @@ pub fn filter_popup<R>(
             add_contents(ui);
         });
     button
+}
+
+/// 필터 팝업 안에서 ComboBox 대신 쓰는 값 선택 메뉴 버튼.
+///
+/// 팝업(메뉴) 안에서 `Ui::menu_button`은 서브메뉴로 열린다(egui 0.36
+/// `menu::is_in_menu`). 서브메뉴 팝업은 `PopupCloseBehavior::IgnoreClicks`로
+/// 열려(`SubMenu::show`) 부모 팝업의 "바깥 클릭" 판정을 만들지 않는다.
+/// 값이 바뀌면 true를 돌려준다.
+pub fn choice_menu<T: PartialEq + Copy>(
+    ui: &mut egui::Ui,
+    selected_text: impl Into<egui::WidgetText>,
+    options: &[(T, &'static str)],
+    selected: &mut T,
+) -> bool {
+    let mut changed = false;
+    ui.menu_button(selected_text, |ui| {
+        for (value, label) in options {
+            if ui.selectable_label(*selected == *value, *label).clicked() {
+                *selected = *value;
+                changed = true;
+                ui.close();
+            }
+        }
+    });
+    changed
 }
 
 /// 마우스로 크기를 조절할 수 있는 내용 영역(오른쪽 아래 모서리 드래그).
@@ -171,7 +208,20 @@ pub const ROW_HEIGHT: f32 = 20.0;
 /// 셀 내용이 길어 줄바꿈되면 셀 min_rect가 행 높이를 넘겨 행 클릭 영역이 어긋난다.
 /// 또한 egui_extras 셀 위젯은 포인터가 셀 안에 있어도 히트테스트에서 제외되어
 /// hover/click이 잡히지 않으므로, 입력에서 직접 클릭을 판정한다.
+///
+/// Tab 포커스는 행당 첫 열(`table_cell_focusable`)만 가진다 — 행 수만큼
+/// Tab 스톱이 늘어나는 것을 막는다.
 pub fn table_cell(ui: &mut egui::Ui, text: egui::RichText) -> bool {
+    cell_impl(ui, text, false)
+}
+
+/// 행의 대표(첫 열) 셀. Tab 포커스와 Enter 활성화를 담당하고,
+/// 포커스 중에는 선택색 배경으로 표시한다.
+pub fn table_cell_focusable(ui: &mut egui::Ui, text: egui::RichText) -> bool {
+    cell_impl(ui, text, true)
+}
+
+fn cell_impl(ui: &mut egui::Ui, text: egui::RichText, focusable: bool) -> bool {
     // 가로 ScrollArea 안에서 표가 패널보다 넓어질 수 있으므로 보이는 영역만 클릭 밴드로 쓴다.
     // 이렇게 하지 않으면 좌측 목록 행의 밴드가 중앙 패널까지 걸쳐, 맵을 클릭했는데
     // 프로세스 선택이 바뀌는 문제가 생긴다.
@@ -182,13 +232,21 @@ pub fn table_cell(ui: &mut egui::Ui, text: egui::RichText) -> bool {
     let on_table_layer = pos
         .is_some_and(|pos| band.contains(pos) && ui.ctx().layer_id_at(pos) == Some(ui.layer_id()));
     let clicked = on_table_layer && ui.input(|i| i.pointer.primary_clicked());
-    // 포커스 위젯은 추가적인 것이다. egui_extras 셀은 히트테스트가 불안정해
-    // 마우스 클릭은 위 입력 판정을 그대로 신뢰하고, 이 위젯은 Enter 활성화만 담당한다.
-    let resp = ui.interact(band, ui.id().with("cell_focus"), egui::Sense::click());
-    let activated = resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-    if clicked || activated {
-        resp.request_focus();
-    }
+    let activated = if focusable {
+        // 포커스 위젯은 추가적인 것이다. egui_extras 셀은 히트테스트가 불안정해
+        // 마우스 클릭은 위 입력 판정을 그대로 신뢰하고, 이 위젯은 Enter 활성화만 담당한다.
+        let resp = ui.interact(band, ui.id().with("cell_focus"), egui::Sense::click());
+        if clicked {
+            resp.request_focus();
+        }
+        if resp.has_focus() {
+            ui.painter()
+                .rect_filled(band, 2.0, ui.visuals().selection.bg_fill);
+        }
+        resp.has_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter))
+    } else {
+        false
+    };
     ui.add_sized(
         [ui.available_width(), ROW_HEIGHT],
         egui::Label::new(text).truncate(),
@@ -210,16 +268,12 @@ pub fn pane_hint(ui: &mut egui::Ui) {
     );
 }
 
-/// 표를 가로 스크롤로 감쌀지 판단한다. 가용 폭이 표 최소 폭 이상일 때만 감싼다.
-pub fn should_hscroll(available: f32, min_w: f32) -> bool {
-    available >= min_w
-}
-
 /// ↑/↓ 키로 표 선택 행을 한 칸 옮긴다.
 ///
 /// `current`는 현재 선택의 데이터 인덱스, `filtered_indices`는 표시 행 → 데이터
-/// 인덱스 매핑이다. 이동한 행의 데이터 인덱스를 돌려준다. 텍스트 입력 중이면
-/// None(검색어 입력 등에서 커서 이동을 가로채지 않는다).
+/// 인덱스 매핑이다. 이동한 행의 데이터 인덱스를 돌려준다. 텍스트 입력 중이거나
+/// 팝업/메뉴(필터 팝업 포함)가 열려 있으면 None — 커서 이동과 메뉴 탐색을
+/// 가로채지 않는다.
 pub fn arrow_step(
     ctx: &egui::Context,
     len: usize,
@@ -227,7 +281,7 @@ pub fn arrow_step(
     filtered_indices: &[usize],
 ) -> Option<usize> {
     let len = len.min(filtered_indices.len());
-    if len == 0 || ctx.text_edit_focused() {
+    if len == 0 || ctx.text_edit_focused() || ctx.any_popup_open() {
         return None;
     }
     let up = ctx.input(|i| i.key_pressed(egui::Key::ArrowUp));
@@ -244,30 +298,45 @@ pub fn arrow_step(
     filtered_indices.get(next).copied()
 }
 
-/// 가용 폭이 넉넉하면 표를 가로 ScrollArea에 담고, 좁으면 패널 폭에 맞춰 그린다.
+/// 필터 팝업 하단의 [필터 초기화] 버튼. 클릭하면 `reset`을 실행하고 팝업을 닫는다.
+pub fn filter_reset_button(ui: &mut egui::Ui, reset: impl FnOnce()) {
+    ui.separator();
+    if ui.button("필터 초기화").clicked() {
+        reset();
+        ui.close();
+    }
+}
+
+/// 해당 탭에서 난 내보내기 실패 문구를 탭 안에도 표시한다(하단 로그 외).
+pub fn export_error(ui: &mut egui::Ui, app: &crate::app::XMemApp, tab: crate::app::Tab) {
+    if let Some((stored_tab, message)) = &app.export_error
+        && *stored_tab == tab
+    {
+        ui.colored_label(crate::theme::palette(app.theme).danger, message);
+    }
+}
+
+/// 표를 가로 ScrollArea에 담는다. 좁은 창에서도 오른쪽 열에 접근할 수 있도록
+/// 항상 감싼다(내용이 가용 폭보다 좁으면 스크롤바는 생기지 않는다).
 ///
-/// 항상 가로 스크롤로 감싸면 좁은 창에서 표가 패널보다 넓어져 표 자신의 세로
-/// 스크롤바가 보이는 영역 밖으로 밀려난다. 좁을 때는 감싸지 않아 세로
-/// 스크롤바가 항상 보이게 한다(가로로는 열이 잘릴 수 있다).
-pub fn wrap_hscroll_if_wide<R>(
+/// 좁을 때 감싸지 않으면 오른쪽 열이 패널 밖으로 잘려 접근할 수 없다.
+/// 대신 좁은 창에서는 표의 세로 스크롤바가 표 오른쪽 끝에 있어 가로로
+/// 스크롤해야 보인다(세로 휠 스크롤은 그대로 동작).
+pub fn wrap_hscroll<R>(
     ui: &mut egui::Ui,
     id_salt: &str,
     min_w: f32,
     auto_shrink: [bool; 2],
     add_contents: impl FnOnce(&mut egui::Ui) -> R,
 ) -> R {
-    if should_hscroll(ui.available_width(), min_w) {
-        egui::ScrollArea::horizontal()
-            .id_salt(id_salt)
-            .auto_shrink(auto_shrink)
-            .show(ui, |ui| {
-                ui.set_min_width(min_w);
-                add_contents(ui)
-            })
-            .inner
-    } else {
-        add_contents(ui)
-    }
+    egui::ScrollArea::horizontal()
+        .id_salt(id_salt)
+        .auto_shrink(auto_shrink)
+        .show(ui, |ui| {
+            ui.set_min_width(min_w);
+            add_contents(ui)
+        })
+        .inner
 }
 
 #[cfg(test)]
@@ -288,12 +357,65 @@ mod tests {
         ctx
     }
 
+    fn headless_ctx() -> egui::Context {
+        let ctx = egui::Context::default();
+        ctx.set_fonts(egui::FontDefinitions::empty());
+        ctx.set_pixels_per_point(1.0);
+        ctx
+    }
+
     #[test]
-    fn should_hscroll_only_when_available_width_sufficient() {
-        assert!(should_hscroll(910.0, 910.0));
-        assert!(should_hscroll(1200.0, 910.0));
-        assert!(!should_hscroll(909.9, 910.0));
-        assert!(!should_hscroll(400.0, 910.0));
+    fn wrap_hscroll_keeps_min_width_in_narrow_viewport() {
+        let ctx = headless_ctx();
+        let mut outer_available = 0.0f32;
+        let mut inner_min = 0.0f32;
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 600.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                outer_available = ui.available_width();
+                wrap_hscroll(ui, "test_hscroll", 910.0, [false, false], |ui| {
+                    inner_min = ui.min_rect().width();
+                });
+            },
+        );
+        output.drop_without_applying_deltas();
+        assert!(
+            outer_available < 910.0,
+            "테스트 전제: 뷰포트가 표 최소 폭보다 좁아야 한다"
+        );
+        assert!(
+            inner_min >= 910.0,
+            "좁은 뷰포트에서도 표 최소 폭이 유지되어야 한다(가로 스크롤): {inner_min}"
+        );
+    }
+
+    #[test]
+    fn arrow_step_ignores_while_popup_is_open() {
+        let ctx = ctx_with_key(egui::Key::ArrowDown);
+        let rows = [1usize, 2];
+        let mut stepped = Some(999usize);
+        let output = ctx.run_ui(
+            egui::RawInput {
+                screen_rect: Some(egui::Rect::from_min_size(
+                    egui::Pos2::ZERO,
+                    egui::vec2(400.0, 300.0),
+                )),
+                ..Default::default()
+            },
+            |ui| {
+                let button = ui.button("열기");
+                egui::Popup::menu(&button).open(true).show(|_| {});
+                stepped = arrow_step(&ctx, rows.len(), None, &rows);
+            },
+        );
+        output.drop_without_applying_deltas();
+        assert_eq!(stepped, None, "팝업이 열려 있는 동안은 ↑/↓를 무시한다");
     }
 
     #[test]

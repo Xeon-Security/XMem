@@ -40,14 +40,17 @@ fn arch_filter_label(filter: Option<ProcessArch>) -> &'static str {
     }
 }
 
-fn arch_combo(ui: &mut egui::Ui, filter: &mut Option<ProcessArch>, id_salt: &str) {
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(arch_filter_label(*filter))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(filter, None, "전체");
-            ui.selectable_value(filter, Some(ProcessArch::X64), "x64");
-            ui.selectable_value(filter, Some(ProcessArch::X86), "x86");
-        });
+fn arch_options() -> [(Option<ProcessArch>, &'static str); 4] {
+    [
+        (None, "전체"),
+        (Some(ProcessArch::X64), "x64"),
+        (Some(ProcessArch::X86), "x86"),
+        (Some(ProcessArch::Arm64), "arm64"),
+    ]
+}
+
+fn arch_menu(ui: &mut egui::Ui, filter: &mut Option<ProcessArch>) {
+    crate::views::choice_menu(ui, arch_filter_label(*filter), &arch_options(), filter);
 }
 
 /// app 상태에서 core 필터를 만든다. 검색어는 `filter_processes_core`가 따로 처리한다.
@@ -64,13 +67,53 @@ fn core_filter(app: &XMemApp) -> ProcessFilter {
     }
 }
 
-fn filter_active(app: &XMemApp) -> bool {
-    app.process_accessible_only
-        || app.process_arch_filter.is_some()
-        || !app.process_session_filter.trim().is_empty()
-        || !app.process_user_filter.trim().is_empty()
-        || app.process_protected_only
-        || !app.process_ppid_filter.trim().is_empty()
+fn filter_count(
+    accessible_only: bool,
+    arch: Option<ProcessArch>,
+    session: &str,
+    user: &str,
+    protected_only: bool,
+    parent_pid: &str,
+) -> usize {
+    [
+        accessible_only,
+        arch.is_some(),
+        !session.trim().is_empty(),
+        !user.trim().is_empty(),
+        protected_only,
+        !parent_pid.trim().is_empty(),
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count()
+}
+
+/// 현재 앱 상태의 필터 활성 개수(팝업 버튼 툴팁/표시용).
+fn app_filter_count(app: &XMemApp) -> usize {
+    filter_count(
+        app.process_accessible_only,
+        app.process_arch_filter,
+        &app.process_session_filter,
+        &app.process_user_filter,
+        app.process_protected_only,
+        &app.process_ppid_filter,
+    )
+}
+
+fn reset_filter(
+    accessible_only: &mut bool,
+    arch: &mut Option<ProcessArch>,
+    session: &mut String,
+    user: &mut String,
+    protected_only: &mut bool,
+    parent_pid: &mut String,
+) {
+    *accessible_only = false;
+    *arch = None;
+    session.clear();
+    user.clear();
+    *protected_only = false;
+    parent_pid.clear();
 }
 
 fn filter_errors(app: &XMemApp) -> Vec<String> {
@@ -83,11 +126,7 @@ fn filter_errors(app: &XMemApp) -> Vec<String> {
 
 fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
     ui.checkbox(&mut app.process_accessible_only, "접근 가능만 보기");
-    arch_combo(
-        ui,
-        &mut app.process_arch_filter,
-        "process_arch_filter_popup",
-    );
+    arch_menu(ui, &mut app.process_arch_filter);
     ui.horizontal(|ui| {
         ui.label("세션");
         ui.add(
@@ -104,7 +143,14 @@ fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
                 .desired_width(120.0),
         );
     });
-    ui.checkbox(&mut app.process_protected_only, "보호 프로세스만");
+    ui.checkbox(
+        &mut app.process_protected_only,
+        "중요 프로세스만(이름 목록)",
+    )
+    .on_hover_text(format!(
+        "가드 이름 목록 기준(이름만 비교, PPL 보호 비트와 무관): {}",
+        xmem_core::guard::PROTECTED_PROCESS_NAMES.join(", ")
+    ));
     ui.horizontal(|ui| {
         ui.label("부모 PID");
         ui.add(
@@ -117,6 +163,16 @@ fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp) {
     for err in filter_errors(app) {
         ui.colored_label(danger, err);
     }
+    crate::views::filter_reset_button(ui, || {
+        reset_filter(
+            &mut app.process_accessible_only,
+            &mut app.process_arch_filter,
+            &mut app.process_session_filter,
+            &mut app.process_user_filter,
+            &mut app.process_protected_only,
+            &mut app.process_ppid_filter,
+        );
+    });
 }
 
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
@@ -139,13 +195,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         TaskState::Failed(err) => Some(crate::error::error_label(err)),
         _ => None,
     };
-    if let Some(message) = list_failure {
-        ui.label(egui::RichText::new(message).color(crate::theme::palette(app.theme).danger));
-        if ui.button("다시 시도").clicked() {
-            app.refresh_processes();
-        }
-        return;
-    }
+    // 목록 로드가 실패해도 검색/필터 UI는 유지한다 — 필터가 숨겨져 비어 보이는 것을 막는다.
     ui.add(
         egui::TextEdit::singleline(&mut app.process_filter)
             .hint_text("이름 또는 PID 검색")
@@ -153,17 +203,20 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     );
     ui.horizontal(|ui| {
         ui.checkbox(&mut app.process_accessible_only, "접근 가능만 보기");
-        arch_combo(
-            ui,
-            &mut app.process_arch_filter,
-            "process_arch_filter_inline",
-        );
-        crate::views::filter_popup(ui, "process_filter_popup", filter_active(app), |ui| {
+        arch_menu(ui, &mut app.process_arch_filter);
+        crate::views::filter_popup(ui, "process_filter_popup", app_filter_count(app), |ui| {
             filter_contents(ui, app);
         });
     });
     for err in filter_errors(app) {
         ui.colored_label(palette(app.theme).danger, err);
+    }
+    if let Some(message) = list_failure {
+        ui.label(egui::RichText::new(message).color(crate::theme::palette(app.theme).danger));
+        if ui.button("다시 시도").clicked() {
+            app.refresh_processes();
+        }
+        return;
     }
     let filtered = filter_processes_core(
         &app.processes,
@@ -179,6 +232,15 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ))
         .weak(),
     );
+    if filtered.is_empty() {
+        ui.label(
+            egui::RichText::new(
+                "필터에 맞는 프로세스가 없습니다 — 검색어를 지우거나 필터 팝업에서 [필터 초기화]를 누르세요",
+            )
+            .color(palette(app.theme).muted),
+        );
+        return;
+    }
     ui.separator();
     let row_height = 20.0;
     crate::views::truncate_cells(ui);
@@ -211,8 +273,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 row.set_selected(app.selected_pid == Some(pid));
                 let mut row_clicked = false;
                 row.col(|ui| {
-                    row_clicked |=
-                        crate::views::table_cell(ui, egui::RichText::new(pid.to_string()));
+                    row_clicked |= crate::views::table_cell_focusable(
+                        ui,
+                        egui::RichText::new(pid.to_string()),
+                    );
                 });
                 row.col(|ui| {
                     let accessible = app.list_accessible.contains(&pid);
@@ -263,18 +327,19 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
         .and_then(|pid| app.processes.iter().find(|p| p.pid == pid))
         .map(|p| format!("{} ({})", p.name, p.pid))
         .unwrap_or_else(|| "프로세스 선택".into());
+    let filtered = filter_processes_core(
+        &app.processes,
+        &app.process_filter,
+        &app.list_accessible,
+        &core_filter(app),
+    );
+    let filtered_count = filtered.len();
     ui.horizontal(|ui| {
         ui.label("프로세스");
         egui::ComboBox::from_id_salt("process_dropdown")
             .selected_text(selected_text)
             .show_ui(ui, |ui| {
-                let filtered = filter_processes_core(
-                    &app.processes,
-                    &app.process_filter,
-                    &app.list_accessible,
-                    &core_filter(app),
-                );
-                let filtered_len = filtered.len();
+                let filtered_len = filtered_count;
                 for index in filtered.into_iter().take(200) {
                     let (name, pid) = (app.processes[index].name.clone(), app.processes[index].pid);
                     let selected = app.selected_pid == Some(pid);
@@ -288,12 +353,15 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
                 if filtered_len > 200 {
                     ui.label(egui::RichText::new("상위 200개만 표시 (필터를 사용하세요)").weak());
                 }
+                if filtered_len == 0 {
+                    ui.label(egui::RichText::new("필터에 맞는 프로세스가 없습니다").weak());
+                }
             });
         // 좁은 레이아웃에도 같은 필터를 미러링한다.
         crate::views::filter_popup(
             ui,
             "process_dropdown_filter_popup",
-            filter_active(app),
+            app_filter_count(app),
             |ui| {
                 filter_contents(ui, app);
             },
@@ -311,6 +379,22 @@ pub fn dropdown(ui: &mut egui::Ui, app: &mut XMemApp) {
             ui.spinner();
         }
     });
+    ui.label(
+        egui::RichText::new(format!(
+            "{}개 / 전체 {}개",
+            filtered_count,
+            app.processes.len()
+        ))
+        .weak(),
+    );
+    if filtered_count == 0 && !app.processes.is_empty() {
+        ui.label(
+            egui::RichText::new(
+                "필터에 맞는 프로세스가 없습니다 — 검색어를 지우거나 필터 팝업에서 [필터 초기화]를 누르세요",
+            )
+            .color(palette(app.theme).muted),
+        );
+    }
     for err in filter_errors(app) {
         ui.colored_label(palette(app.theme).danger, err);
     }
@@ -450,6 +534,48 @@ mod tests {
                     ..ProcessFilter::default()
                 }
             ) == vec![1]
+        );
+    }
+
+    #[test]
+    fn menu_labels_cover_arch_options() {
+        for (value, label) in arch_options() {
+            assert_eq!(
+                arch_filter_label(value).strip_prefix("아키텍처: "),
+                Some(label)
+            );
+        }
+    }
+
+    #[test]
+    fn filter_count_and_reset_clear_all_conditions() {
+        assert_eq!(filter_count(false, None, "", "", false, ""), 0);
+        assert_eq!(filter_count(false, None, "  ", " ", false, " "), 0);
+        assert_eq!(
+            filter_count(true, Some(ProcessArch::X64), "1", "SYSTEM", true, "4"),
+            6
+        );
+        let mut accessible = true;
+        let mut arch = Some(ProcessArch::X64);
+        let mut session = "1".to_string();
+        let mut user = "SYSTEM".to_string();
+        let mut protected = true;
+        let mut ppid = "4".to_string();
+        reset_filter(
+            &mut accessible,
+            &mut arch,
+            &mut session,
+            &mut user,
+            &mut protected,
+            &mut ppid,
+        );
+        assert!(
+            !accessible
+                && arch.is_none()
+                && session.is_empty()
+                && user.is_empty()
+                && !protected
+                && ppid.is_empty()
         );
     }
 }

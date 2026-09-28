@@ -5,7 +5,6 @@ use xmem_core::{
 };
 
 use crate::app::XMemApp;
-use crate::log::LogLevel;
 use crate::task::TaskState;
 use crate::theme::palette;
 use crate::views::export::{ExportFormat, ExportPayload};
@@ -76,29 +75,49 @@ pub fn select_and_sort(
     indices
 }
 
-/// 모듈 목록이 없으면 `outside_modules_only`만 끈다. 변경 여부를 돌려준다.
-/// `pe_like_only`는 영역 휴리스틱만 보므로 모듈 목록과 무관하다(코어 `RegionFilter::matches`와 동일).
-pub fn enforce_module_filters(filter: &mut RegionFilter, has_modules: bool) -> bool {
-    if has_modules || !filter.outside_modules_only {
-        return false;
-    }
-    filter.outside_modules_only = false;
-    true
-}
-
-/// 팝업 버튼 활성 표시: 구조화 필터 또는 텍스트(범위/크기) 조건이 있으면 활성.
-fn filter_active(
+/// 팝업 버튼 활성 개수: 구조화 필터 항목 수 + 텍스트(범위/크기) 조건 수.
+fn filter_count(
     filter: &RegionFilter,
     range_start: &str,
     range_end: &str,
     min_size: &str,
     max_size: &str,
-) -> bool {
-    *filter != RegionFilter::default()
-        || !range_start.trim().is_empty()
-        || !range_end.trim().is_empty()
-        || !min_size.trim().is_empty()
-        || !max_size.trim().is_empty()
+) -> usize {
+    let structured = [
+        filter.readable_only,
+        filter.writable_only,
+        filter.executable_only,
+        filter.class.is_some(),
+        filter.state.is_some(),
+        filter.protection.is_some(),
+        filter.heuristic.is_some(),
+        filter.pe_like_only,
+        filter.outside_modules_only,
+        filter.mapped_only,
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count();
+    let text = [range_start, range_end, min_size, max_size]
+        .into_iter()
+        .filter(|text| !text.trim().is_empty())
+        .count();
+    structured + text
+}
+
+/// [필터 초기화]: 구조화 필터와 텍스트 조건을 모두 기본값으로 되돌린다.
+pub fn reset_region_filter(
+    filter: &mut RegionFilter,
+    range_start: &mut String,
+    range_end: &mut String,
+    min_size: &mut String,
+    max_size: &mut String,
+) {
+    *filter = RegionFilter::default();
+    range_start.clear();
+    range_end.clear();
+    min_size.clear();
+    max_size.clear();
 }
 
 /// 텍스트 입력(주소 범위/최소·최대 크기)을 반영한 실제 적용 필터.
@@ -155,6 +174,7 @@ fn state_label(filter: Option<MemoryState>) -> &'static str {
     }
 }
 
+/// 보호 속성 표기는 CLI `--prot ---`와 맞춘다.
 fn protection_label(filter: Option<ProtectionMask>) -> &'static str {
     match filter {
         None => "보호: 전체",
@@ -163,7 +183,7 @@ fn protection_label(filter: Option<ProtectionMask>) -> &'static str {
         Some(ProtectionMask::Rw) => "보호: RW",
         Some(ProtectionMask::R) => "보호: R",
         Some(ProtectionMask::X) => "보호: X",
-        Some(ProtectionMask::None) => "보호: none",
+        Some(ProtectionMask::None) => "보호: --- (none)",
     }
 }
 
@@ -177,70 +197,100 @@ fn heuristic_label(filter: Option<Heuristic>) -> &'static str {
     }
 }
 
-fn class_combo(ui: &mut egui::Ui, filter: &mut RegionFilter, id_salt: &str) {
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(class_label(filter.class))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut filter.class, None, "전체");
-            ui.selectable_value(&mut filter.class, Some(RegionClass::Image), "Image");
-            ui.selectable_value(&mut filter.class, Some(RegionClass::Mapped), "Mapped");
-            ui.selectable_value(&mut filter.class, Some(RegionClass::Private), "Private");
-        });
+fn class_options() -> [(Option<RegionClass>, &'static str); 4] {
+    [
+        (None, "전체"),
+        (Some(RegionClass::Image), "Image"),
+        (Some(RegionClass::Mapped), "Mapped"),
+        (Some(RegionClass::Private), "Private"),
+    ]
 }
 
-fn state_combo(ui: &mut egui::Ui, filter: &mut RegionFilter) {
-    egui::ComboBox::from_id_salt("map_state_filter")
-        .selected_text(state_label(filter.state))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut filter.state, None, "전체");
-            ui.selectable_value(&mut filter.state, Some(MemoryState::Commit), "Commit");
-            ui.selectable_value(&mut filter.state, Some(MemoryState::Reserve), "Reserve");
-            ui.selectable_value(&mut filter.state, Some(MemoryState::Free), "Free");
-        });
+fn state_options() -> [(Option<MemoryState>, &'static str); 4] {
+    [
+        (None, "전체"),
+        (Some(MemoryState::Commit), "Commit"),
+        (Some(MemoryState::Reserve), "Reserve"),
+        (Some(MemoryState::Free), "Free"),
+    ]
 }
 
-fn protection_combo(ui: &mut egui::Ui, filter: &mut RegionFilter) {
-    egui::ComboBox::from_id_salt("map_prot_filter")
-        .selected_text(protection_label(filter.protection))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut filter.protection, None, "전체");
-            ui.selectable_value(&mut filter.protection, Some(ProtectionMask::Rwx), "RWX");
-            ui.selectable_value(&mut filter.protection, Some(ProtectionMask::Rx), "RX");
-            ui.selectable_value(&mut filter.protection, Some(ProtectionMask::Rw), "RW");
-            ui.selectable_value(&mut filter.protection, Some(ProtectionMask::R), "R");
-            ui.selectable_value(&mut filter.protection, Some(ProtectionMask::X), "X");
-            ui.selectable_value(&mut filter.protection, Some(ProtectionMask::None), "none");
-        });
+fn protection_options() -> [(Option<ProtectionMask>, &'static str); 7] {
+    [
+        (None, "전체"),
+        (Some(ProtectionMask::Rwx), "RWX"),
+        (Some(ProtectionMask::Rx), "RX"),
+        (Some(ProtectionMask::Rw), "RW"),
+        (Some(ProtectionMask::R), "R"),
+        (Some(ProtectionMask::X), "X"),
+        (Some(ProtectionMask::None), "--- (none)"),
+    ]
 }
 
-fn heuristic_combo(ui: &mut egui::Ui, filter: &mut RegionFilter) {
-    egui::ComboBox::from_id_salt("map_heur_filter")
-        .selected_text(heuristic_label(filter.heuristic))
-        .show_ui(ui, |ui| {
-            ui.selectable_value(&mut filter.heuristic, None, "전체");
-            for (value, label) in [
-                (Heuristic::ExecutablePrivate, "exec-private"),
-                (Heuristic::ExecutableAnonymous, "exec-anon"),
-                (Heuristic::PrivateExecutablePeLike, "pe-like"),
-                (Heuristic::WritableExecutable, "wx"),
-            ] {
-                ui.selectable_value(&mut filter.heuristic, Some(value), label);
-            }
-        });
+fn heuristic_options() -> [(Option<Heuristic>, &'static str); 5] {
+    [
+        (None, "전체"),
+        (Some(Heuristic::ExecutablePrivate), "exec-private"),
+        (Some(Heuristic::ExecutableAnonymous), "exec-anon"),
+        (Some(Heuristic::PrivateExecutablePeLike), "pe-like"),
+        (Some(Heuristic::WritableExecutable), "wx"),
+    ]
 }
 
-fn sort_combo(ui: &mut egui::Ui, sort: &mut MapSort, id_salt: &str) {
-    egui::ComboBox::from_id_salt(id_salt)
-        .selected_text(match sort {
-            MapSort::AddressAsc => "주소 ↑",
-            MapSort::AddressDesc => "주소 ↓",
-            MapSort::SizeDesc => "크기 ↓",
-        })
-        .show_ui(ui, |ui| {
-            ui.selectable_value(sort, MapSort::AddressAsc, "주소 ↑");
-            ui.selectable_value(sort, MapSort::AddressDesc, "주소 ↓");
-            ui.selectable_value(sort, MapSort::SizeDesc, "크기 ↓");
-        });
+fn sort_label(sort: MapSort) -> &'static str {
+    match sort {
+        MapSort::AddressAsc => "정렬: 주소 ↑",
+        MapSort::AddressDesc => "정렬: 주소 ↓",
+        MapSort::SizeDesc => "정렬: 크기 ↓",
+    }
+}
+
+fn sort_options() -> [(MapSort, &'static str); 3] {
+    [
+        (MapSort::AddressAsc, "주소 ↑"),
+        (MapSort::AddressDesc, "주소 ↓"),
+        (MapSort::SizeDesc, "크기 ↓"),
+    ]
+}
+
+fn class_menu(ui: &mut egui::Ui, filter: &mut RegionFilter) {
+    crate::views::choice_menu(
+        ui,
+        class_label(filter.class),
+        &class_options(),
+        &mut filter.class,
+    );
+}
+
+fn state_menu(ui: &mut egui::Ui, filter: &mut RegionFilter) {
+    crate::views::choice_menu(
+        ui,
+        state_label(filter.state),
+        &state_options(),
+        &mut filter.state,
+    );
+}
+
+fn protection_menu(ui: &mut egui::Ui, filter: &mut RegionFilter) {
+    crate::views::choice_menu(
+        ui,
+        protection_label(filter.protection),
+        &protection_options(),
+        &mut filter.protection,
+    );
+}
+
+fn heuristic_menu(ui: &mut egui::Ui, filter: &mut RegionFilter) {
+    crate::views::choice_menu(
+        ui,
+        heuristic_label(filter.heuristic),
+        &heuristic_options(),
+        &mut filter.heuristic,
+    );
+}
+
+fn sort_menu(ui: &mut egui::Ui, sort: &mut MapSort) {
+    crate::views::choice_menu(ui, sort_label(*sort), &sort_options(), sort);
 }
 
 fn module_required_controls(ui: &mut egui::Ui, app: &mut XMemApp, pid: u32, has_modules: bool) {
@@ -249,7 +299,8 @@ fn module_required_controls(ui: &mut egui::Ui, app: &mut XMemApp, pid: u32, has_
         ui.checkbox(&mut app.map_filter.outside_modules_only, "모듈 범위 밖만");
         return;
     }
-    let hint = "모듈 목록이 필요합니다 — 모듈 탭에서 먼저 불러오세요";
+    let hint = "모듈 목록이 없어 이 조건은 매칭하지 않습니다 — 자동으로 불러오는 중이며, \
+                실패하면 모듈 탭에서 다시 불러오세요";
     ui.add_enabled(
         false,
         egui::Checkbox::new(&mut app.map_filter.outside_modules_only, "모듈 범위 밖만"),
@@ -265,12 +316,13 @@ fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp, pid: u32, has_modules: 
     ui.checkbox(&mut app.map_filter.readable_only, "읽기 가능만");
     ui.checkbox(&mut app.map_filter.writable_only, "쓰기 가능만");
     ui.checkbox(&mut app.map_filter.executable_only, "실행 가능만");
-    class_combo(ui, &mut app.map_filter, "map_class_filter_popup");
-    state_combo(ui, &mut app.map_filter);
-    protection_combo(ui, &mut app.map_filter);
-    heuristic_combo(ui, &mut app.map_filter);
+    class_menu(ui, &mut app.map_filter);
+    state_menu(ui, &mut app.map_filter);
+    protection_menu(ui, &mut app.map_filter);
+    heuristic_menu(ui, &mut app.map_filter);
     module_required_controls(ui, app, pid, has_modules);
-    ui.checkbox(&mut app.map_filter.mapped_only, "mapped_file 있음");
+    ui.checkbox(&mut app.map_filter.mapped_only, "파일 백킹 관찰")
+        .on_hover_text("CLI --mapped-only와 동일: mapped_file이 관찰된 영역만");
     ui.horizontal(|ui| {
         ui.label("주소 범위");
         ui.add(
@@ -301,7 +353,44 @@ fn filter_contents(ui: &mut egui::Ui, app: &mut XMemApp, pid: u32, has_modules: 
     });
     ui.separator();
     ui.label(egui::RichText::new("정렬").weak());
-    sort_combo(ui, &mut app.map_sort, "map_sort_popup");
+    sort_menu(ui, &mut app.map_sort);
+    let (filter, range_start, range_end, min_size, max_size) = (
+        &mut app.map_filter,
+        &mut app.map_range_start,
+        &mut app.map_range_end,
+        &mut app.map_min_size,
+        &mut app.map_max_size,
+    );
+    crate::views::filter_reset_button(ui, || {
+        reset_region_filter(filter, range_start, range_end, min_size, max_size);
+    });
+}
+
+/// 모듈 목록이 필요한 필터의 상태. 조용히 해제하는 대신 자동 재수집/안내한다.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleFilterStatus {
+    Ready,
+    NeedsCollect,
+    Collecting,
+    Failed,
+}
+
+pub fn module_filter_status(
+    filter_on: bool,
+    has_modules: bool,
+    collecting: bool,
+    failed: bool,
+) -> ModuleFilterStatus {
+    if !filter_on || has_modules {
+        return ModuleFilterStatus::Ready;
+    }
+    if collecting {
+        ModuleFilterStatus::Collecting
+    } else if failed {
+        ModuleFilterStatus::Failed
+    } else {
+        ModuleFilterStatus::NeedsCollect
+    }
 }
 
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
@@ -310,12 +399,6 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         return;
     };
     let has_modules = app.modules_bundle.is_some();
-    if enforce_module_filters(&mut app.map_filter, has_modules) {
-        app.log.push(
-            LogLevel::Warn,
-            "모듈 범위 밖 필터는 모듈 목록이 필요합니다 — 모듈 탭에서 먼저 불러오세요",
-        );
-    }
     let (effective, errors) = build_region_filter(
         &app.map_filter,
         &app.map_range_start,
@@ -342,11 +425,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             ui.checkbox(&mut app.map_filter.readable_only, "읽기 가능만");
             ui.checkbox(&mut app.map_filter.writable_only, "쓰기 가능만");
             ui.checkbox(&mut app.map_filter.executable_only, "실행 가능만");
-            class_combo(ui, &mut app.map_filter, "map_class_filter_inline");
+            class_menu(ui, &mut app.map_filter);
             ui.separator();
-            sort_combo(ui, &mut app.map_sort, "map_sort_inline");
+            sort_menu(ui, &mut app.map_sort);
         }
-        let active = filter_active(
+        let active = filter_count(
             &app.map_filter,
             &app.map_range_start,
             &app.map_range_end,
@@ -357,6 +440,31 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             filter_contents(ui, app, pid, has_modules);
         });
     });
+    match module_filter_status(
+        app.map_filter.outside_modules_only,
+        has_modules,
+        app.modules_task.is_running(),
+        matches!(app.modules_task.state(), TaskState::Failed(_)),
+    ) {
+        ModuleFilterStatus::NeedsCollect => {
+            app.start_modules(pid);
+            ui.label(
+                egui::RichText::new("모듈 범위 밖 필터에 필요한 모듈 목록을 불러오는 중...").weak(),
+            );
+        }
+        ModuleFilterStatus::Collecting => {
+            ui.label(
+                egui::RichText::new("모듈 범위 밖 필터에 필요한 모듈 목록을 불러오는 중...").weak(),
+            );
+        }
+        ModuleFilterStatus::Failed => {
+            ui.colored_label(
+                palette(app.theme).warn,
+                "모듈 범위 밖 필터를 평가할 수 없습니다 — 모듈 탭에서 모듈을 다시 불러오세요",
+            );
+        }
+        ModuleFilterStatus::Ready => {}
+    }
     for err in &errors {
         ui.colored_label(palette(app.theme).danger, err);
     }
@@ -415,22 +523,35 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             export = Some(ExportFormat::Csv);
         }
     });
+    if selected.is_empty() {
+        let message = if map.regions.is_empty() {
+            "메모리 영역이 없습니다"
+        } else {
+            "필터에 맞는 영역이 없습니다 — 필터 팝업에서 조건을 바꾸거나 [필터 초기화]를 누르세요"
+        };
+        ui.label(egui::RichText::new(message).color(palette(app.theme).muted));
+        crate::views::export_error(ui, app, crate::app::Tab::Map);
+        return;
+    }
     let colors = palette(app.theme);
     let selected_base = app.map_selected;
     let mut clicked_region: Option<MemoryRegion> = None;
     let mut moved_region: Option<MemoryRegion> = None;
+    let mut moved_row: Option<usize> = None;
     if let Some(next) = crate::views::arrow_step(
         ui.ctx(),
         selected.len(),
         selected_base.and_then(|base| map.regions.iter().position(|region| region.base == base)),
         &selected,
-    ) && let Some(region) = map.regions.get(next)
-    {
-        moved_region = Some(region.clone());
+    ) {
+        moved_row = selected.iter().position(|&index| index == next);
+        if let Some(region) = map.regions.get(next) {
+            moved_region = Some(region.clone());
+        }
     }
     crate::views::truncate_cells(ui);
-    crate::views::wrap_hscroll_if_wide(ui, "map_table_hscroll", 910.0, [false, false], |ui| {
-        egui_extras::TableBuilder::new(ui)
+    crate::views::wrap_hscroll(ui, "map_table_hscroll", 910.0, [false, false], |ui| {
+        let mut builder = egui_extras::TableBuilder::new(ui)
             .min_scrolled_height(0.0)
             .striped(true)
             .drag_to_scroll(egui::scroll_area::DragScroll::Never)
@@ -441,7 +562,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             .column(egui_extras::Column::exact(90.0))
             .column(egui_extras::Column::exact(120.0))
             .column(egui_extras::Column::exact(90.0))
-            .column(egui_extras::Column::remainder().clip(true))
+            .column(egui_extras::Column::remainder().clip(true));
+        if let Some(row) = moved_row {
+            builder = builder.scroll_to_row(row, None);
+        }
+        builder
             .header(18.0, |mut header| {
                 for title in [
                     "BASE",
@@ -464,7 +589,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                     row.set_selected(selected_base == Some(region.base));
                     let mut row_clicked = false;
                     row.col(|ui| {
-                        row_clicked |= crate::views::table_cell(
+                        row_clicked |= crate::views::table_cell_focusable(
                             ui,
                             egui::RichText::new(opt_hex(Some(region.base))),
                         );
@@ -537,8 +662,9 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             });
     });
     if let Some(format) = export {
+        app.export_error = None;
         let payload = ExportPayload::Map(map.regions.as_slice());
-        if let Some(dir) = crate::views::export::save_with_dialog(
+        match crate::views::export::save_with_dialog(
             pid,
             "map",
             format,
@@ -546,9 +672,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             app.config.last_output_dir.clone(),
             &mut app.log,
         ) {
-            app.config.last_output_dir = Some(dir);
+            Ok(Some(dir)) => app.config.last_output_dir = Some(dir),
+            Ok(None) => {}
+            Err(err) => {
+                app.export_error = Some((
+                    crate::app::Tab::Map,
+                    format!("내보내기 실패: {}", crate::error::error_label(&err)),
+                ));
+            }
         }
     }
+    crate::views::export_error(ui, app, crate::app::Tab::Map);
     if let Some(region) = clicked_region.or(moved_region) {
         app.select_region(pid, region);
     }
@@ -703,42 +837,94 @@ mod tests {
     }
 
     #[test]
-    fn enforce_module_filters_resets_only_outside_modules() {
-        let mut filter = RegionFilter {
-            outside_modules_only: true,
-            pe_like_only: true,
-            ..RegionFilter::default()
-        };
-        assert!(
-            !enforce_module_filters(&mut filter, true),
-            "모듈이 있으면 변경 없음"
+    fn module_filter_status_never_silently_resets() {
+        assert_eq!(
+            module_filter_status(false, false, false, false),
+            ModuleFilterStatus::Ready
         );
-        assert!(filter.outside_modules_only && filter.pe_like_only);
-        assert!(enforce_module_filters(&mut filter, false));
-        assert!(!filter.outside_modules_only, "모듈 범위 밖만 리셋");
-        assert!(filter.pe_like_only, "PE-like는 모듈 목록이 필요 없어 유지");
-        assert!(
-            !enforce_module_filters(&mut filter, false),
-            "이미 꺼져 있으면 변경 없음"
+        assert_eq!(
+            module_filter_status(true, true, false, false),
+            ModuleFilterStatus::Ready
+        );
+        assert_eq!(
+            module_filter_status(true, false, false, false),
+            ModuleFilterStatus::NeedsCollect,
+            "모듈이 없으면 조용히 끄지 않고 자동 재수집"
+        );
+        assert_eq!(
+            module_filter_status(true, false, true, false),
+            ModuleFilterStatus::Collecting
+        );
+        assert_eq!(
+            module_filter_status(true, false, false, true),
+            ModuleFilterStatus::Failed,
+            "수집 실패는 안내"
         );
     }
 
     #[test]
-    fn filter_active_reflects_text_conditions() {
+    fn filter_count_counts_structured_and_text_conditions() {
         let base = RegionFilter::default();
-        assert!(!filter_active(&base, "", "", "", ""));
-        assert!(filter_active(&base, "0x1000", "", "", ""));
-        assert!(filter_active(&base, "", "0x2000", "", ""));
-        assert!(filter_active(&base, "", "", "4Ki", ""));
-        assert!(filter_active(&base, "", "", "", "8Mi"));
-        assert!(
-            !filter_active(&base, "  ", " ", " ", "  "),
+        assert_eq!(filter_count(&base, "", "", "", ""), 0);
+        assert_eq!(filter_count(&base, "0x1000", "", "", ""), 1);
+        assert_eq!(filter_count(&base, "", "0x2000", "4Ki", "8Mi"), 3);
+        assert_eq!(
+            filter_count(&base, "  ", " ", " ", "  "),
+            0,
             "공백만이면 비활성"
         );
         let structured = RegionFilter {
             readable_only: true,
+            mapped_only: true,
             ..RegionFilter::default()
         };
-        assert!(filter_active(&structured, "", "", "", ""));
+        assert_eq!(filter_count(&structured, "", "", "", ""), 2);
+    }
+
+    #[test]
+    fn reset_region_filter_clears_defaults_and_texts() {
+        let mut filter = RegionFilter {
+            readable_only: true,
+            outside_modules_only: true,
+            ..RegionFilter::default()
+        };
+        let mut start = "0x1000".to_string();
+        let mut end = "0x2000".to_string();
+        let mut min = "4Ki".to_string();
+        let mut max = "8Mi".to_string();
+        reset_region_filter(&mut filter, &mut start, &mut end, &mut min, &mut max);
+        assert_eq!(filter, RegionFilter::default());
+        assert!(start.is_empty() && end.is_empty() && min.is_empty() && max.is_empty());
+    }
+
+    #[test]
+    fn menu_option_labels_cover_selected_texts() {
+        for (value, label) in protection_options() {
+            assert_eq!(protection_label(value), format!("보호: {label}"));
+        }
+        assert_eq!(
+            protection_label(Some(ProtectionMask::None)),
+            "보호: --- (none)",
+            "CLI --prot ---와 표기 통일"
+        );
+        for (value, label) in class_options() {
+            assert_eq!(
+                class_label(value).strip_prefix("분류: "),
+                Some(label),
+                "선택 문구와 옵션 라벨이 일치"
+            );
+        }
+        for (value, label) in state_options() {
+            assert_eq!(state_label(value).strip_prefix("상태: "), Some(label));
+        }
+        for (value, label) in heuristic_options() {
+            assert_eq!(
+                heuristic_label(value).strip_prefix("휴리스틱: "),
+                Some(label)
+            );
+        }
+        for (value, label) in sort_options() {
+            assert_eq!(sort_label(value).strip_prefix("정렬: "), Some(label));
+        }
     }
 }
