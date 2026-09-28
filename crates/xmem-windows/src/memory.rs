@@ -17,6 +17,14 @@ use crate::util::utf16_z_to_string;
 /// region walk 상한. 초과 시 truncated로 보고한다.
 pub const MAX_REGIONS: usize = 1_048_576;
 
+/// PAGE_EXECUTE (실행 전용). `VirtualAllocEx` 보호 인자로 쓴다.
+pub const PAGE_EXECUTE: u32 = 0x10;
+/// PAGE_EXECUTE_READWRITE.
+pub const PAGE_EXECUTE_READWRITE: u32 = 0x40;
+/// PAGE_EXECUTE_WRITECOPY. VirtualAllocEx는 내부적으로 PAGE_EXECUTE_READWRITE로
+/// 변환할 수 있다(copy-on-write는 섹션 매핑 전용). 실험은 관찰된 보호 속성을 따른다.
+pub const PAGE_EXECUTE_WRITECOPY: u32 = 0x80;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RawRegion {
     pub base: u64,

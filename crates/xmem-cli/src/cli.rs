@@ -541,6 +541,12 @@ pub enum ExperimentCmd {
     List,
     /// 실험 실행
     Run { name: String },
+    /// 실행 이력과 회귀
+    History {
+        /// machine-readable JSON 출력
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[cfg(test)]
@@ -1133,5 +1139,26 @@ mod tests {
             panic!("create가 아님");
         };
         assert!(progress);
+    }
+
+    #[test]
+    fn experiment_history_parses_json_flag() {
+        let cli = parse(&["xmem", "experiment", "history"]).unwrap();
+        let Command::Experiment { cmd } = cli.command else {
+            panic!("experiment가 아님");
+        };
+        let ExperimentCmd::History { json } = cmd else {
+            panic!("history가 아님");
+        };
+        assert!(!json);
+
+        let cli = parse(&["xmem", "experiment", "history", "--json"]).unwrap();
+        let Command::Experiment { cmd } = cli.command else {
+            panic!("experiment가 아님");
+        };
+        let ExperimentCmd::History { json } = cmd else {
+            panic!("history가 아님");
+        };
+        assert!(json);
     }
 }

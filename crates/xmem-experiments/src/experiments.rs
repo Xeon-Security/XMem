@@ -2,8 +2,8 @@
 
 use xmem_core::{Finding, Result, XmemError};
 use xmem_windows::{
-    OwnedHandle, alloc_remote, create_remote_thread, flush_instruction_cache, protect_remote,
-    thread_id, write_remote,
+    OwnedHandle, PAGE_EXECUTE, PAGE_EXECUTE_READWRITE, alloc_remote, create_remote_thread,
+    flush_instruction_cache, protect_remote, thread_id, write_remote,
 };
 
 use crate::TargetGuard;
@@ -49,6 +49,24 @@ pub const EXPERIMENTS: &[ExperimentMeta] = &[
         description: "원격 RX 메모리에 스텁 기록 + suspended CreateRemoteThread (XMEM-004)",
         scenario: "normal",
         expected_rule: "XMEM-004",
+    },
+    ExperimentMeta {
+        name: "multi-alloc",
+        description: "RWX 4 KiB를 두 번 할당해 두 번째 영역에서 관찰 (XMEM-001)",
+        scenario: "normal",
+        expected_rule: "XMEM-001",
+    },
+    ExperimentMeta {
+        name: "exec-only-alloc",
+        description: "PAGE_EXECUTE 4 KiB 할당 → Executable Private Memory (XMEM-001)",
+        scenario: "normal",
+        expected_rule: "XMEM-001",
+    },
+    ExperimentMeta {
+        name: "writecopy-alloc",
+        description: "writecopy 보호는 섹션 매핑 전용(VirtualAllocEx 오류 87) → RWX(0x40) 할당으로 보호 속성 이상 (XMEM-005)",
+        scenario: "normal",
+        expected_rule: "XMEM-005",
     },
 ];
 
@@ -121,6 +139,23 @@ pub fn execute_action(
             flush_instruction_cache(handle, base, 1)?;
             let thread = create_remote_thread(handle, base, true)?;
             Ok(Expectation::Tid(thread_id(&thread)))
+        }
+        "multi-alloc" => {
+            // 첫 영역은 그대로 남겨 두 번째 영역만 기대 아티팩트로 삼는다(결정적 위치).
+            let _first = alloc_remote(handle, 4096, PAGE_EXECUTE_READWRITE)?;
+            let second = alloc_remote(handle, 4096, PAGE_EXECUTE_READWRITE)?;
+            Ok(Expectation::Region(second))
+        }
+        "exec-only-alloc" => {
+            let base = alloc_remote(handle, 4096, PAGE_EXECUTE)?;
+            Ok(Expectation::Region(base))
+        }
+        "writecopy-alloc" => {
+            // VirtualAllocEx/VirtualProtect는 PAGE_EXECUTE_WRITECOPY(0x80)를 오류 87로
+            // 거부한다(writecopy는 섹션 매핑 전용). XMEM-005가 검사하는 관찰 가능한
+            // 등가 보호인 RWX(0x40)로 할당한다.
+            let base = alloc_remote(handle, 4096, PAGE_EXECUTE_READWRITE)?;
+            Ok(Expectation::Region(base))
         }
         other => Err(XmemError::InvalidInput {
             reason: format!("액션 미구현: {other}"),

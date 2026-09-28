@@ -3,7 +3,7 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Instant;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use xmem_core::{Result, XmemError};
 use xmem_forensics::{CollectOptions, collect, diff};
 use xmem_memory::LiveProcess;
@@ -13,7 +13,7 @@ use crate::experiments::{Expectation, execute_action, experiment, finding_matche
 use crate::target::{RunOptions, TargetGuard};
 
 /// 실험 실행 결과.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ExperimentReport {
     pub name: String,
     pub description: String,
