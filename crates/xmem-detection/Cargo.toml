@@ -10,3 +10,4 @@ workspace = true
 
 [dependencies]
 xmem-core.workspace = true
+serde.workspace = true

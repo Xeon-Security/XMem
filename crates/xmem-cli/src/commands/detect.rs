@@ -2,7 +2,7 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use xmem_core::{Finding, FindingFilter, ProcessInfo, Result, severity_rank};
-use xmem_detection::detect_source;
+use xmem_detection::{detect_source, risk_score};
 use xmem_memory::LiveProcess;
 
 use crate::cli::{ConfidenceArg, DetectArgs, DetectSortArg, GlobalArgs, SeverityArg};
@@ -63,12 +63,15 @@ pub fn run(args: &DetectArgs, global: &GlobalArgs) -> Result<()> {
 }
 
 pub(crate) fn render_findings(info: &ProcessInfo, findings: &[Finding]) -> String {
+    let risk = risk_score(findings);
     let mut out = String::new();
     out.push_str(&format!(
-        "process {} ({}) - {} findings\n",
+        "process {} ({}) - {} findings, risk {}/100 ({})\n",
         info.name,
         info.pid,
-        findings.len()
+        findings.len(),
+        risk.score,
+        risk.level.as_str()
     ));
     if findings.is_empty() {
         out.push_str("no findings (absence of findings is not proof of safety)\n");
@@ -104,6 +107,7 @@ pub(crate) fn detect_json_payload(info: &ProcessInfo, findings: &[Finding]) -> V
         "process": { "pid": info.pid, "name": info.name },
         "finding_count": findings.len(),
         "findings": findings,
+        "risk": risk_score(findings),
     })
 }
 
@@ -270,6 +274,7 @@ mod tests {
         assert!(text.contains("protection"));
         assert!(text.contains("Potentially suspicious"));
         assert!(text.contains("1 findings"));
+        assert!(text.contains("risk "), "요약줄에 위험도 점수 표시: {text}");
     }
 
     #[test]
@@ -277,6 +282,10 @@ mod tests {
         let text = render_findings(&sample_info(), &[]);
         assert!(text.contains("0 findings"));
         assert!(text.contains("not proof"));
+        assert!(
+            text.contains("risk 0/100 (none)"),
+            "0건도 위험도 0으로 표시: {text}"
+        );
     }
 
     #[test]
@@ -286,6 +295,10 @@ mod tests {
         assert_eq!(payload["finding_count"], 1);
         assert!(payload["findings"].is_array());
         assert_eq!(payload["findings"][0]["rule_id"], "XMEM-001");
+        assert_eq!(payload["risk"]["score"], 13);
+        assert_eq!(payload["risk"]["level"], "low");
+        assert_eq!(payload["risk"]["findings"], 1);
+        assert_eq!(payload["risk"]["by_severity"]["medium"], 1);
     }
 
     #[test]

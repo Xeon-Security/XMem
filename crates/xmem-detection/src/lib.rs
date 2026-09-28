@@ -2,7 +2,9 @@
 #![cfg_attr(test, allow(clippy::unwrap_used, clippy::expect_used))]
 
 pub mod rules;
+pub mod score;
 pub mod source;
 
 pub use rules::{DetectionContext, Rule, default_rules, detect};
+pub use score::{RiskLevel, RiskScore, SeverityCounts, risk_score};
 pub use source::detect_source;

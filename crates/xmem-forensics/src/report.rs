@@ -8,6 +8,7 @@ use xmem_core::{
     Confidence, Evidence, Finding, JSON_SCHEMA_VERSION, MemoryRegion, MemoryState, ModuleInfo,
     ProcessArch, ProcessInfo, RegionClass, Result, Severity, ThreadInfo, VERSION, XmemError,
 };
+use xmem_detection::{RiskScore, risk_score};
 
 /// 리포트 요약 카운트.
 #[derive(Debug, Clone, Default, Serialize)]
@@ -37,6 +38,8 @@ pub struct ReportData {
     pub modules: Vec<ModuleInfo>,
     pub threads: Vec<ThreadInfo>,
     pub findings: Vec<Finding>,
+    /// findings에서 계산한 위험도 요약(휴리스틱).
+    pub risk: RiskScore,
     pub summary: ReportSummary,
 }
 
@@ -82,6 +85,7 @@ impl ReportData {
             regions,
             modules,
             threads,
+            risk: risk_score(&findings),
             findings,
             summary,
         }
@@ -132,6 +136,22 @@ pub fn to_markdown(data: &ReportData) -> String {
     out.push_str(&format!(
         "| committed bytes | {} |\n\n",
         data.summary.committed_bytes
+    ));
+
+    out.push_str("## Risk\n\n");
+    out.push_str(&format!(
+        "Score: {} / 100 ({})\n",
+        data.risk.score,
+        data.risk.level.as_str()
+    ));
+    out.push_str(&format!(
+        "- findings: {}, by severity: info {} / low {} / medium {} / high {} / critical {}\n\n",
+        data.risk.findings,
+        data.risk.by_severity.info,
+        data.risk.by_severity.low,
+        data.risk.by_severity.medium,
+        data.risk.by_severity.high,
+        data.risk.by_severity.critical,
     ));
 
     out.push_str("## Findings\n\n");
@@ -403,12 +423,28 @@ mod tests {
             "# XMem Report",
             "## Process",
             "## Memory Summary",
+            "## Risk",
             "## Findings",
             "XMEM-001",
             "sample.exe",
         ] {
             assert!(text.contains(needle), "missing: {needle}");
         }
+    }
+
+    #[test]
+    fn report_risk_matches_findings() {
+        let report = sample_report();
+        assert_eq!(
+            report.risk,
+            xmem_detection::risk_score(&report.findings),
+            "risk는 findings에서 계산된다"
+        );
+        assert_eq!(report.risk.score, 13, "Medium+High confidence");
+        assert_eq!(report.risk.level, xmem_detection::RiskLevel::Low);
+        let text = to_markdown(&report);
+        assert!(text.contains("## Risk"), "{text}");
+        assert!(text.contains("Score: 13 / 100 (low)"), "{text}");
     }
 
     #[test]

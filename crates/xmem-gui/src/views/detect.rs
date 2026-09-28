@@ -1,12 +1,27 @@
 //! 탐지 탭: findings 목록과 상세.
 
 use xmem_core::{Confidence, Evidence, Finding, FindingFilter, Severity, severity_rank};
+use xmem_detection::{RiskLevel, RiskScore, risk_score};
 
 use crate::app::XMemApp;
 use crate::task::TaskState;
-use crate::theme::{confidence_dots, palette, severity_color, severity_label};
+use crate::theme::{Palette, confidence_dots, palette, severity_color, severity_label};
 use crate::views::export::{ExportFormat, ExportPayload};
 use crate::views::overview::failure_banner;
+
+/// 위험도 배지 문구: `risk 13/100 (low)`.
+pub fn risk_text(risk: &RiskScore) -> String {
+    format!("risk {}/100 ({})", risk.score, risk.level.as_str())
+}
+
+/// level별 배지 색: None/Low muted, Medium warn, High/Critical danger.
+pub fn risk_color(level: RiskLevel, p: &Palette) -> egui::Color32 {
+    match level {
+        RiskLevel::None | RiskLevel::Low => p.muted,
+        RiskLevel::Medium => p.warn,
+        RiskLevel::High | RiskLevel::Critical => p.danger,
+    }
+}
 
 /// `detect --sort`와 같은 정렬. 기본 Rule은 기존 rule→주소 순서를 유지한다.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -286,6 +301,13 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 format!("{} / 전체 {} findings", rows.len(), findings.len())
             };
             ui.label(egui::RichText::new(count).weak());
+            let risk = risk_score(findings);
+            ui.label(
+                egui::RichText::new(risk_text(&risk))
+                    .color(risk_color(risk.level, &colors))
+                    .strong(),
+            )
+            .on_hover_text("휴리스틱 요약이며 악성 확정이 아닙니다");
             if ui.button("JSON 내보내기").clicked() {
                 export = Some(ExportFormat::Json);
             }
@@ -511,6 +533,18 @@ mod tests {
             select_and_sort_findings(&findings, &by_rule, DetectSort::Rule),
             vec![1]
         );
+    }
+
+    #[test]
+    fn risk_text_and_color_follow_level() {
+        let risk = risk_score(&[finding("XMEM-001", Severity::Medium, 0x1000)]);
+        assert_eq!(risk_text(&risk), "risk 13/100 (low)");
+        let p = palette(crate::theme::ThemeMode::Dark);
+        assert_eq!(risk_color(RiskLevel::None, &p), p.muted);
+        assert_eq!(risk_color(RiskLevel::Low, &p), p.muted);
+        assert_eq!(risk_color(RiskLevel::Medium, &p), p.warn);
+        assert_eq!(risk_color(RiskLevel::High, &p), p.danger);
+        assert_eq!(risk_color(RiskLevel::Critical, &p), p.danger);
     }
 
     #[test]

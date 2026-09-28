@@ -4858,6 +4858,7 @@ dependencies = [
 name = "xmem-detection"
 version = "0.2.3"
 dependencies = [
+ "serde",
  "xmem-core",
 ]
 
