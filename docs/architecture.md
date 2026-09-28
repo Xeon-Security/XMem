@@ -309,6 +309,9 @@ xmem experiment list | run <NAME>
 | v0.1.2 상세 뷰어(`MemoryRegion.allocation_base`, `PeInfo.time_date_stamp`+`parse_pe_file`, `thread_times`, ALLOC 컬럼, GUI 맵/모듈/스레드 상세 패널, `error_label`) | Done |
 | v0.2.0 Batch A(드라이브 경로 변환, 스캔 실패 사유별 집계, 모듈별 PE machine arch, 내보내기 `--output`/GUI, 좁은 창 세로 스크롤바, 표 방향키, 맵·모듈·스레드 취소, 한계 안내 문구, PPL 비목표) | Done |
 | v0.2.2 필터 확장(공유 core 필터 타입 + `matches()`, CLI 6개 명령 필터 플래그, 한글 열 정렬 전각 폭, GUI 전 탭 필터 컨트롤·"필터" 팝업, CLI/GUI 동등성 테스트, forensics 자기 덤프 테스트 분리) | Done |
+| v0.2.4 Batch B(`ScanProgress`/`scan_with_progress`, `DumpProgress`/`write_minidump_file_with_progress`(MiniDumpWriteDump 콜백), `snapshot create --hash-budget`/`--hash-all`, `RiskScore`/`risk_score`, `UnloadedModule`/`unloaded_module_candidates`, 실험 3종 + `xmem-experiments::history`) | Done |
+
+**v0.2.4 신규 공개 API**: `xmem-memory::ScanProgress`(원자 카운터: `regions_done`/`regions_total`/`bytes_scanned`/`fraction`)를 `scan_with_progress(..., Option<&ScanProgress>)`에 넘기면 스캔 중 진행도를 폴링할 수 있다(기존 `scan()`은 no-op 위임, GUI는 `Arc` 공유). `xmem-windows::DumpProgress`는 MiniDumpWriteDump의 `IoStart/IoWriteAll/IoFinish` 콜백으로 기록 바이트를 누적한다(콜백 I/O 모드: 콜백이 직접 seek+write하며, 콜백은 절대 패닉하지 않고 항상 TRUE를 반환하고 쓰기 실패는 `write_error`로 반환 후 오류 변환). `xmem-detection::risk_score(&[Finding]) -> RiskScore`는 심각도 가중 × 신뢰도 계수 + 포화 곡선(`round(100*raw/(raw+40))`)으로 결정적 점수를 낸다. `LiveProcess::unloaded_module_candidates()`는 private executable + `PrivateExecutablePeLike` 휴리스틱 영역 중 모듈 범위 밖에서 4 KiB PE 파싱에 성공한 것만 보고한다. `xmem-experiments::history`는 `%APPDATA%\XMem\experiments.jsonl`에 실행 이력을 append/load하고 `expected_observed` true→false 회귀를 감지한다(파일 없음·손상 줄에서도 실패하지 않음).
 
 ## 15. Non-Goals
 
