@@ -374,8 +374,12 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.colored_label(colors.warn, format!("주의: {note}"));
     }
 
+    // 정보 섹션은 상단 일부만 차지하고, 메모리 내용(hex)이 남은 공간을 전부 사용한다.
+    // (hex 뷰어를 볼 때마다 드래그로 넓히지 않도록)
+    let info_height = info_area_height(ui.available_height());
     egui::ScrollArea::vertical()
-        .auto_shrink([false, false])
+        .max_height(info_height)
+        .auto_shrink([false, true])
         .id_salt("region_detail_scroll")
         .show(ui, |ui| {
             egui::CollapsingHeader::new("식별")
@@ -540,80 +544,77 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                         );
                     }
                 });
+        });
 
-            egui::CollapsingHeader::new("메모리 내용 (4 KiB 페이지)")
-                .default_open(true)
-                .show(ui, |ui| {
-                    let region = &detail.region;
-                    if region.state != MemoryState::Commit || !region.readable {
-                        ui.label(
-                            egui::RichText::new(
-                                "이 영역은 읽을 수 없습니다 (미커밋이거나 읽기 불가 보호)",
-                            )
-                            .color(colors.muted),
-                        );
-                        return;
-                    }
-                    let first = region.base;
-                    let last = last_page_start(region);
-                    let page_running = app.region_page_task.is_running();
-                    ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(!page_running, egui::Button::new("|◀ 처음").small())
-                            .clicked()
-                        {
-                            goto_page = Some(first);
-                        }
-                        if ui
-                            .add_enabled(!page_running, egui::Button::new("◀ 이전").small())
-                            .clicked()
-                        {
-                            goto_page =
-                                Some(detail.page_start.saturating_sub(PAGE_SIZE).max(first));
-                        }
-                        if ui
-                            .add_enabled(!page_running, egui::Button::new("다음 ▶").small())
-                            .clicked()
-                        {
-                            goto_page = Some((detail.page_start + PAGE_SIZE).min(last));
-                        }
-                        if ui
-                            .add_enabled(!page_running, egui::Button::new("끝 ▶|").small())
-                            .clicked()
-                        {
-                            goto_page = Some(last);
-                        }
-                        ui.label(
-                            egui::RichText::new(format!(
-                                "{} / {} 페이지",
-                                (detail.page_start.saturating_sub(first)) / PAGE_SIZE + 1,
-                                page_count(region)
-                            ))
-                            .weak(),
-                        );
-                        if page_running {
-                            ui.spinner();
-                        }
+    ui.separator();
+
+    egui::CollapsingHeader::new("메모리 내용 (4 KiB 페이지)")
+        .default_open(true)
+        .show(ui, |ui| {
+            let region = &detail.region;
+            if region.state != MemoryState::Commit || !region.readable {
+                ui.label(
+                    egui::RichText::new("이 영역은 읽을 수 없습니다 (미커밋이거나 읽기 불가 보호)")
+                        .color(colors.muted),
+                );
+                return;
+            }
+            let first = region.base;
+            let last = last_page_start(region);
+            let page_running = app.region_page_task.is_running();
+            ui.horizontal(|ui| {
+                if ui
+                    .add_enabled(!page_running, egui::Button::new("|◀ 처음").small())
+                    .clicked()
+                {
+                    goto_page = Some(first);
+                }
+                if ui
+                    .add_enabled(!page_running, egui::Button::new("◀ 이전").small())
+                    .clicked()
+                {
+                    goto_page = Some(detail.page_start.saturating_sub(PAGE_SIZE).max(first));
+                }
+                if ui
+                    .add_enabled(!page_running, egui::Button::new("다음 ▶").small())
+                    .clicked()
+                {
+                    goto_page = Some((detail.page_start + PAGE_SIZE).min(last));
+                }
+                if ui
+                    .add_enabled(!page_running, egui::Button::new("끝 ▶|").small())
+                    .clicked()
+                {
+                    goto_page = Some(last);
+                }
+                ui.label(
+                    egui::RichText::new(format!(
+                        "{} / {} 페이지",
+                        (detail.page_start.saturating_sub(first)) / PAGE_SIZE + 1,
+                        page_count(region)
+                    ))
+                    .weak(),
+                );
+                if page_running {
+                    ui.spinner();
+                }
+            });
+            if let Some(error) = &detail.page_error {
+                ui.colored_label(colors.danger, format!("읽기 실패 — {error}"));
+            }
+            if detail.page_bytes.is_empty() {
+                ui.label(egui::RichText::new("내용 없음").weak());
+            } else {
+                let text = hex_dump(&detail.page_bytes, detail.page_start);
+                // 남은 공간을 전부 사용한다 — 매번 드래그로 넓힐 필요가 없다.
+                egui::ScrollArea::both()
+                    .auto_shrink([false, false])
+                    .id_salt("region_hex")
+                    .show(ui, |ui| {
+                        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                        ui.label(egui::RichText::new(text).monospace());
                     });
-                    if let Some(error) = &detail.page_error {
-                        ui.colored_label(colors.danger, format!("읽기 실패 — {error}"));
-                    }
-                    if detail.page_bytes.is_empty() {
-                        ui.label(egui::RichText::new("내용 없음").weak());
-                    } else {
-                        let text = hex_dump(&detail.page_bytes, detail.page_start);
-                        crate::views::pane_hint(ui);
-                        crate::views::resizable_pane(ui, "region_hex_pane", 280.0, 120.0, |ui| {
-                            egui::ScrollArea::both()
-                                .auto_shrink([false, false])
-                                .id_salt("region_hex")
-                                .show(ui, |ui| {
-                                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                                    ui.label(egui::RichText::new(text).monospace());
-                                });
-                        });
-                    }
-                });
+            }
         });
 
     if let Some(address) = goto_page
@@ -673,6 +674,11 @@ pub fn short_path(path: &str) -> String {
         .to_string()
 }
 
+/// 정보 섹션(식별·보호·백킹·상관)이 차지할 최대 높이. 나머지는 메모리 내용(hex)이 사용한다.
+fn info_area_height(panel_height: f32) -> f32 {
+    (panel_height * 0.42).clamp(140.0, 420.0)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -694,6 +700,13 @@ mod tests {
             heuristics: Vec::new(),
             mapped_file: None,
         }
+    }
+
+    #[test]
+    fn info_area_height_is_bounded() {
+        assert_eq!(info_area_height(100.0), 140.0);
+        assert!((info_area_height(600.0) - 252.0).abs() < 0.01);
+        assert_eq!(info_area_height(2000.0), 420.0);
     }
 
     #[test]

@@ -393,6 +393,14 @@ pub fn module_filter_status(
     }
 }
 
+/// 영역 상세 패널이 처음 열릴 때의 기본 높이.
+///
+/// 창 높이의 60%를 쓰되, 표 공간(최소 160px)을 남기는 `max_panel`을 넘지 않는다.
+pub(crate) fn detail_panel_default(available: f32, max_panel: f32) -> f32 {
+    let cap = max_panel.max(320.0);
+    (available * 0.6).clamp(320.0, cap)
+}
+
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let Some(pid) = app.selected_pid else {
         ui.label(egui::RichText::new("왼쪽에서 프로세스를 선택하세요").weak());
@@ -492,9 +500,11 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         // 표가 최소 높이를 유지하도록 패널 최대 높이를 가용 공간에서 제한한다.
         // (패널이 가용 공간을 모두 차지하면 표 헤더/행이 패널 위로 겹쳐 그려진다)
         let max_panel = (ui.available_height() - 160.0).max(140.0);
+        // 처음 열릴 때부터 넓게 펼쳐지도록 창 높이 기준으로 기본 높이를 잡는다.
+        let default_panel = detail_panel_default(ui.available_height(), max_panel);
         egui::Panel::bottom(egui::Id::new("region_detail"))
             .resizable(true)
-            .default_size(320.0)
+            .default_size(default_panel)
             .size_range(140.0..=max_panel)
             .show(ui, |ui| crate::views::region::panel(ui, app));
     }
@@ -721,6 +731,14 @@ mod tests {
             path: None,
             arch: Some(ProcessArch::X64),
         }
+    }
+
+    #[test]
+    fn detail_panel_default_uses_window_height_and_cap() {
+        assert_eq!(detail_panel_default(300.0, 900.0), 320.0);
+        assert!((detail_panel_default(600.0, 900.0) - 360.0).abs() < 0.01);
+        assert_eq!(detail_panel_default(2000.0, 500.0), 500.0);
+        assert_eq!(detail_panel_default(200.0, 140.0), 320.0);
     }
 
     #[test]
