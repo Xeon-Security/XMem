@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **v0.2.1** — 프로세스 접근 권한을 한눈에 볼 수 있게 했다: 프로세스 목록에 접근 열(가능/권한 필요)과 "접근 가능만 보기"·아키텍처 필터를 추가하고, CLI `process list --accessible-only`·ACCESS 열·JSON `accessible` 필드를 넣었다. 테스트 플레이크(미니덤프 테스트 분리, 모듈 수 허용 오차)도 수정했다. 실험 자동화는 CLI 전용으로 유지된다.
+현재 **v0.2.2** — 메모리 맵·프로세스·모듈·스레드·탐지에 필터를 대폭 확장했다: CLI는 `memory map` 14종·`process list`·`modules`·`threads`·`detect`·`snapshot diff --only` 플래그를, GUI는 모든 탭의 필터 컨트롤과 "필터" 팝업(좁은 창 대응)·[필터 초기화]를 제공하며 둘은 같은 core 필터 구현을 공유한다(동등성 테스트). 독립 감사에서 나온 결함 7건(보호 마스크 X 누락 등)과 GUI UI/UX 결함 18건(필터 팝업 콤보 사용 불가, 0건 안내·초기화 부재, 취소 버튼 부재 등)도 수정했다. 실험 자동화는 CLI 전용으로 유지된다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -267,7 +267,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | v0.1.9 | 맵/프로세스 정밀 수정 (클릭 밴드 클립, 태스크 리셋, 팝업 레이어 가드, 헤더 레이아웃, 목록 스크롤 복구 등) | 완료 |
 | v0.2.0 | 기능 갭 Batch A (경로 변환, 실패 사유 집계, 모듈 arch, 덤프/모듈 안내, 좁은 창 스크롤, 방향키, 취소 확대, JSON/CSV 내보내기, PPL 비목표) | 완료 |
 | v0.2.1 | 접근 권한 표시·필터 (접근 열, 접근 가능만 보기, 아키텍처 필터, CLI --accessible-only, 테스트 플레이크 수정) | 완료 |
-| v0.2.2 | 필터 확장 (맵/프로세스/모듈/스레드/탐지 필터, GUI 필터 팝업, GUI·CLI 동등성, forensics 테스트 안정화) | 완료 |
+| v0.2.2 | 필터 확장 + 감사 수정 (맵 14종·프로세스·모듈·스레드·탐지·diff 필터, GUI 필터 팝업·초기화, GUI·CLI 동등성 테스트, 보호 마스크 X, UI/UX 결함 18건 수정, forensics 테스트 안정화) | 완료 |
 
 ## License
 
