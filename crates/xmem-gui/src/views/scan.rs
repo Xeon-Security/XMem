@@ -36,6 +36,8 @@ pub struct ScanUiState {
     pub threads: usize,
     pub selected_match: Option<usize>,
     pub preview: Option<(u64, String)>,
+    /// 직전 검색 시작 시점의 옵션 서명. 옵션이 바뀌면 표시 결과가 무효다(M7).
+    pub options_snapshot: Option<String>,
 }
 
 fn default_threads() -> usize {
@@ -62,8 +64,62 @@ impl Default for ScanUiState {
             threads: default_threads(),
             selected_match: None,
             preview: None,
+            options_snapshot: None,
         }
     }
+}
+
+/// 검색 옵션(범위/최대 영역 크기/오프셋/청크/대형 프로세스 정책)의 서명.
+/// 검색 시작 시점 서명과 달라지면 표시 중인 결과가 무효다.
+pub fn options_signature(state: &ScanUiState) -> String {
+    format!(
+        "{}|{}|{}|{}|{}|{}",
+        state.range_start.trim(),
+        state.range_end.trim(),
+        state.max_region_size.trim(),
+        state.offset.trim(),
+        state.chunk_size.trim(),
+        state.all,
+    )
+}
+
+/// 옵션이 바뀌어 표시 중인 결과가 무효인가(검색 전이면 false).
+pub fn options_stale(state: &ScanUiState) -> bool {
+    state
+        .options_snapshot
+        .as_deref()
+        .is_some_and(|snapshot| snapshot != options_signature(state))
+}
+
+/// [필터 초기화]: 검색 필터/옵션을 기본값으로 되돌린다(검색어·형식·결과 수·스레드는 유지).
+pub fn reset_filter(state: &mut ScanUiState) {
+    state.executable_only = false;
+    state.private_only = false;
+    state.writable_only = false;
+    state.range_start.clear();
+    state.range_end.clear();
+    state.max_region_size.clear();
+    state.offset.clear();
+    state.chunk_size.clear();
+    state.all = false;
+}
+
+/// 팝업 버튼 활성 개수.
+fn filter_count(state: &ScanUiState) -> usize {
+    [
+        state.executable_only,
+        state.private_only,
+        state.writable_only,
+        state.all,
+        !state.range_start.trim().is_empty(),
+        !state.range_end.trim().is_empty(),
+        !state.max_region_size.trim().is_empty(),
+        !state.offset.trim().is_empty(),
+        !state.chunk_size.trim().is_empty(),
+    ]
+    .into_iter()
+    .filter(|set| *set)
+    .count()
 }
 
 pub fn hex_dump(bytes: &[u8], base: u64) -> String {
@@ -145,21 +201,9 @@ pub fn build_options(state: &ScanUiState) -> xmem_core::Result<ScanOptions> {
         },
         chunk_size,
         threads: state.threads.max(1),
-        max_results: state.max_results.max(1),
+        max_results: state.max_results,
         offset,
     })
-}
-
-fn filter_active(state: &ScanUiState) -> bool {
-    state.executable_only
-        || state.private_only
-        || state.writable_only
-        || state.all
-        || !state.range_start.trim().is_empty()
-        || !state.range_end.trim().is_empty()
-        || !state.max_region_size.trim().is_empty()
-        || !state.offset.trim().is_empty()
-        || !state.chunk_size.trim().is_empty()
 }
 
 fn filter_contents(ui: &mut egui::Ui, state: &mut ScanUiState) {
@@ -206,6 +250,7 @@ fn filter_contents(ui: &mut egui::Ui, state: &mut ScanUiState) {
                 .desired_width(70.0),
         );
     });
+    crate::views::filter_reset_button(ui, || reset_filter(state));
 }
 
 /// 미리보기 바이트를 읽어 hex dump를 만든다(백그라운드 태스크에서 호출).
@@ -264,10 +309,10 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         ui.checkbox(&mut app.scan_state.all, "대형 프로세스 정책 해제");
         ui.separator();
         ui.label("최대 결과")
-            .on_hover_text("최대 결과 수 (최대 1,000,000)");
+            .on_hover_text("최대 결과 수, 0 = 무제한 (메모리 사용 주의, 최대 1,000,000)");
         ui.add(
             egui::DragValue::new(&mut app.scan_state.max_results)
-                .range(1..=1_000_000)
+                .range(0..=1_000_000)
                 .speed(8.0),
         );
         ui.label("스레드");
@@ -276,7 +321,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 .range(1..=64)
                 .speed(0.2),
         );
-        let active = filter_active(&app.scan_state);
+        let active = filter_count(&app.scan_state);
         let state = &mut app.scan_state;
         crate::views::filter_popup(ui, "scan_filter_popup", active, |ui| {
             filter_contents(ui, state);
@@ -313,6 +358,14 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let mut clicked: Option<usize> = None;
     let mut export: Option<ExportFormat> = None;
     if let Some(report) = app.scan_report.as_ref() {
+        if options_stale(&app.scan_state) {
+            ui.label(
+                egui::RichText::new(
+                    "옵션이 바뀌었습니다 — 표시된 결과는 이전 옵션 기준입니다. 다시 검색하세요",
+                )
+                .color(colors.warn),
+            );
+        }
         if report.cancelled {
             ui.label(
                 egui::RichText::new(format!("취소됨(부분 결과 {}건)", report.matches.len()))
@@ -357,83 +410,98 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         });
         let selected = app.scan_state.selected_match;
         crate::views::truncate_cells(ui);
-        // 미리보기가 표 아래에 남아야 하므로 높이는 내용에 맞춘다.
-        crate::views::wrap_hscroll_if_wide(ui, "scan_table_hscroll", 880.0, [false, true], |ui| {
-            egui_extras::TableBuilder::new(ui)
-                .min_scrolled_height(0.0)
-                .striped(true)
-                .sense(egui::Sense::click())
-                .column(egui_extras::Column::exact(150.0))
-                .column(egui_extras::Column::exact(80.0))
-                .column(egui_extras::Column::exact(80.0))
-                .column(egui_extras::Column::exact(120.0))
-                .column(egui_extras::Column::exact(140.0))
-                .column(egui_extras::Column::remainder().clip(true))
-                .header(18.0, |mut header| {
-                    for title in ["ADDRESS", "OFFSET", "CLASS", "PROTECTION", "REGION", "FILE"] {
-                        header.col(|ui| {
-                            ui.strong(title);
-                        });
-                    }
-                })
-                .body(|body| {
-                    body.rows(20.0, report.matches.len(), |mut row| {
-                        let index = row.index();
-                        let found = &report.matches[index];
-                        if Some(index) == selected {
-                            row.set_selected(true);
+        if report.matches.is_empty() {
+            ui.label(
+                egui::RichText::new(
+                    "일치하는 항목이 없습니다 — 검색어/필터/옵션을 바꿔 다시 검색하세요",
+                )
+                .color(colors.muted),
+            );
+        } else {
+            // 미리보기가 표 아래에 남아야 하므로 높이는 내용에 맞춘다.
+            crate::views::wrap_hscroll(ui, "scan_table_hscroll", 880.0, [false, true], |ui| {
+                egui_extras::TableBuilder::new(ui)
+                    .min_scrolled_height(0.0)
+                    .striped(true)
+                    .sense(egui::Sense::click())
+                    .column(egui_extras::Column::exact(150.0))
+                    .column(egui_extras::Column::exact(80.0))
+                    .column(egui_extras::Column::exact(80.0))
+                    .column(egui_extras::Column::exact(120.0))
+                    .column(egui_extras::Column::exact(140.0))
+                    .column(egui_extras::Column::remainder().clip(true))
+                    .header(18.0, |mut header| {
+                        for title in ["ADDRESS", "OFFSET", "CLASS", "PROTECTION", "REGION", "FILE"]
+                        {
+                            header.col(|ui| {
+                                ui.strong(title);
+                            });
                         }
-                        let mut row_clicked = false;
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(opt_hex(Some(found.address))),
-                            );
+                    })
+                    .body(|body| {
+                        body.rows(20.0, report.matches.len(), |mut row| {
+                            let index = row.index();
+                            let found = &report.matches[index];
+                            if Some(index) == selected {
+                                row.set_selected(true);
+                            }
+                            let mut row_clicked = false;
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell_focusable(
+                                    ui,
+                                    egui::RichText::new(opt_hex(Some(found.address))),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(format!("{:#x}", found.offset)),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(
+                                        format!("{:?}", found.class).to_lowercase(),
+                                    ),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(found.protection.to_string()),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(format!(
+                                        "{} {}",
+                                        opt_hex(Some(found.region_base)),
+                                        human_size(found.region_size)
+                                    )),
+                                );
+                            });
+                            row.col(|ui| {
+                                row_clicked |= crate::views::table_cell(
+                                    ui,
+                                    egui::RichText::new(
+                                        found.mapped_file.as_deref().unwrap_or("-"),
+                                    ),
+                                );
+                            });
+                            if row_clicked {
+                                clicked = Some(index);
+                            }
                         });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(format!("{:#x}", found.offset)),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(format!("{:?}", found.class).to_lowercase()),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(found.protection.to_string()),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(format!(
-                                    "{} {}",
-                                    opt_hex(Some(found.region_base)),
-                                    human_size(found.region_size)
-                                )),
-                            );
-                        });
-                        row.col(|ui| {
-                            row_clicked |= crate::views::table_cell(
-                                ui,
-                                egui::RichText::new(found.mapped_file.as_deref().unwrap_or("-")),
-                            );
-                        });
-                        if row_clicked {
-                            clicked = Some(index);
-                        }
                     });
-                });
-        });
+            });
+        }
         crate::views::wrap_default(ui);
         if let Some(format) = export {
+            app.export_error = None;
             let payload = ExportPayload::Scan(report);
-            if let Some(dir) = crate::views::export::save_with_dialog(
+            match crate::views::export::save_with_dialog(
                 pid,
                 "scan",
                 format,
@@ -441,9 +509,17 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 app.config.last_output_dir.clone(),
                 &mut app.log,
             ) {
-                app.config.last_output_dir = Some(dir);
+                Ok(Some(dir)) => app.config.last_output_dir = Some(dir),
+                Ok(None) => {}
+                Err(err) => {
+                    app.export_error = Some((
+                        crate::app::Tab::Scan,
+                        format!("내보내기 실패: {}", crate::error::error_label(&err)),
+                    ));
+                }
             }
         }
+        crate::views::export_error(ui, app, crate::app::Tab::Scan);
     } else if !app.scan_task.is_running() {
         ui.label(egui::RichText::new("검색어를 입력하고 검색을 누르세요").weak());
     } else {
@@ -569,5 +645,78 @@ mod tests {
             })
             .is_err()
         );
+    }
+
+    #[test]
+    fn build_options_allows_zero_max_results_as_unlimited() {
+        let state = ScanUiState {
+            max_results: 0,
+            ..ScanUiState::default()
+        };
+        assert_eq!(
+            build_options(&state).unwrap().max_results,
+            0,
+            "CLI와 동일하게 0 = 무제한"
+        );
+    }
+
+    #[test]
+    fn options_signature_detects_stale_results() {
+        let state = ScanUiState::default();
+        assert!(!options_stale(&state), "검색 전에는 무효 표시 없음");
+        let mut searched = ScanUiState {
+            options_snapshot: Some(options_signature(&state)),
+            ..ScanUiState::default()
+        };
+        assert!(!options_stale(&searched));
+        searched.offset = "4".into();
+        assert!(options_stale(&searched), "오프셋 변경은 결과 무효");
+        searched.offset.clear();
+        searched.all = true;
+        assert!(options_stale(&searched), "대형 프로세스 정책 변경도 무효");
+        searched.all = false;
+        searched.max_region_size = "8Mi".into();
+        assert!(options_stale(&searched));
+        searched.max_region_size.clear();
+        searched.range_start = "0x1000".into();
+        assert!(options_stale(&searched));
+        searched.range_start.clear();
+        searched.chunk_size = "64Ki".into();
+        assert!(options_stale(&searched));
+        searched.chunk_size.clear();
+        searched.range_end = "0x2000".into();
+        assert!(options_stale(&searched));
+    }
+
+    #[test]
+    fn reset_filter_clears_scan_conditions() {
+        let mut state = ScanUiState {
+            executable_only: true,
+            private_only: true,
+            writable_only: true,
+            range_start: "0x1000".into(),
+            range_end: "0x2000".into(),
+            max_region_size: "8Mi".into(),
+            offset: "4".into(),
+            chunk_size: "64Ki".into(),
+            all: true,
+            needle: "pwsh".into(),
+            max_results: 0,
+            ..ScanUiState::default()
+        };
+        reset_filter(&mut state);
+        assert!(
+            !state.executable_only && !state.private_only && !state.writable_only && !state.all
+        );
+        assert!(
+            state.range_start.is_empty()
+                && state.range_end.is_empty()
+                && state.max_region_size.is_empty()
+                && state.offset.is_empty()
+                && state.chunk_size.is_empty()
+        );
+        assert_eq!(state.needle, "pwsh", "검색어는 유지");
+        assert_eq!(state.max_results, 0, "최대 결과 수는 유지");
+        assert_eq!(filter_count(&ScanUiState::default()), 0);
     }
 }

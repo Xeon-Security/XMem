@@ -171,6 +171,8 @@ pub struct XMemApp {
     pub dump_output_pid: Option<u32>,
     pub dump_full: bool,
     pub dump_full_warning: Option<String>,
+    /// `dump_full_warning`을 계산한 조건(pid, full, 출력 디렉터리). 매 프레임 재계산 방지.
+    pub dump_full_warning_key: Option<(u32, bool, std::path::PathBuf)>,
     pub dump_create_task: BackgroundTask<(u32, (String, u64))>,
     pub dump_created: Option<(String, u64)>,
     pub dump_analyze_input: String,
@@ -190,6 +192,8 @@ pub struct XMemApp {
     pub report_task: BackgroundTask<(u32, (String, u64))>,
     pub report_saved: Option<(String, u64)>,
     pub guide_query: String,
+    /// 탭별 내보내기 실패 문구. 하단 로그 외에 해당 탭에도 표시한다.
+    pub export_error: Option<(Tab, String)>,
 }
 
 impl XMemApp {
@@ -279,6 +283,7 @@ impl XMemApp {
             dump_output_pid: None,
             dump_full: false,
             dump_full_warning: None,
+            dump_full_warning_key: None,
             dump_create_task: BackgroundTask::idle(),
             dump_created: None,
             dump_analyze_input: String::new(),
@@ -290,6 +295,7 @@ impl XMemApp {
             report_task: BackgroundTask::idle(),
             report_saved: None,
             guide_query: String::new(),
+            export_error: None,
         };
         app.refresh_processes();
         if let Some(pid) = initial_pid {
@@ -388,6 +394,7 @@ impl XMemApp {
         self.dump_created = None;
         self.dump_analysis = None;
         self.dump_full_warning = None;
+        self.dump_full_warning_key = None;
         self.report_saved = None;
     }
 
@@ -494,6 +501,8 @@ impl XMemApp {
     }
 
     pub fn start_modules(&mut self, pid: u32) {
+        // 진행 중 수집이 있으면 취소하고 새로 시작한다(중복 수집/늦은 결과 방지).
+        self.modules_task.cancel();
         self.modules_bundle = None;
         self.module_selected = None;
         self.module_detail = None;
@@ -576,6 +585,8 @@ impl XMemApp {
         self.scan_report = None;
         self.scan_state.selected_match = None;
         self.scan_state.preview = None;
+        self.scan_state.options_snapshot =
+            Some(crate::views::scan::options_signature(&self.scan_state));
         self.scan_preview_task.cancel();
         self.scan_task = BackgroundTask::spawn("검색", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
@@ -665,10 +676,15 @@ impl XMemApp {
         let before = std::path::PathBuf::from(before);
         let after = std::path::PathBuf::from(after);
         self.snapshot_diff = None;
-        self.snapshot_diff_task = BackgroundTask::spawn("스냅샷 비교", move |_| {
+        self.snapshot_diff_task = BackgroundTask::spawn("스냅샷 비교", move |cancel| {
+            crate::task::ensure_not_cancelled(cancel)?;
             let before = xmem_forensics::read_file(&before)?;
+            crate::task::ensure_not_cancelled(cancel)?;
             let after = xmem_forensics::read_file(&after)?;
-            Ok(xmem_forensics::diff(&before, &after))
+            crate::task::ensure_not_cancelled(cancel)?;
+            let diff = xmem_forensics::diff(&before, &after);
+            crate::task::ensure_not_cancelled(cancel)?;
+            Ok(diff)
         });
     }
 
@@ -714,8 +730,8 @@ impl XMemApp {
         }
         let path = std::path::PathBuf::from(trimmed);
         self.dump_analysis = None;
-        self.dump_analyze_task = BackgroundTask::spawn("덤프 분석", move |_| {
-            let (analysis, findings) = crate::views::dump::analyze_dump_file(&path)?;
+        self.dump_analyze_task = BackgroundTask::spawn("덤프 분석", move |cancel| {
+            let (analysis, findings) = crate::views::dump::analyze_dump_file(&path, cancel)?;
             Ok((path.to_string_lossy().into_owned(), analysis, findings))
         });
     }
@@ -747,8 +763,10 @@ impl XMemApp {
             self.config.last_output_dir = Some(dir.to_path_buf());
         }
         self.report_saved = None;
-        self.report_task = BackgroundTask::spawn("리포트 저장", move |_| {
-            let data = crate::views::report::build_report_data(pid)?;
+        self.report_task = BackgroundTask::spawn("리포트 저장", move |cancel| {
+            crate::task::ensure_not_cancelled(cancel)?;
+            let data = crate::views::report::build_report_data(pid, cancel)?;
+            crate::task::ensure_not_cancelled(cancel)?;
             let bytes = xmem_forensics::write_report(&data, &output)?;
             Ok((pid, (output.to_string_lossy().into_owned(), bytes)))
         });

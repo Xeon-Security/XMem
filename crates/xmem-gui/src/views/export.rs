@@ -58,7 +58,10 @@ pub fn write_export(path: &Path, format: ExportFormat, payload: &ExportPayload<'
 }
 
 /// 저장 대화상자를 띄우고 선택한 경로에 결과를 쓴다.
-/// 성공하면 저장한 폴더를 돌려준다(다음 대화상자 시작 위치 기억용).
+///
+/// `Ok(None)`은 사용자가 취소한 경우, `Err`는 쓰기 실패다. 성공하면 저장한
+/// 폴더를 돌려준다(다음 대화상자 시작 위치 기억용). 실패는 하단 로그에 남기고
+/// 호출한 탭에서도 표시할 수 있도록 오류를 그대로 돌려준다.
 pub fn save_with_dialog(
     pid: u32,
     kind: &str,
@@ -66,7 +69,7 @@ pub fn save_with_dialog(
     payload: &ExportPayload<'_>,
     last_dir: Option<PathBuf>,
     log: &mut LogBuffer,
-) -> Option<PathBuf> {
+) -> std::result::Result<Option<PathBuf>, XmemError> {
     let path = rfd::FileDialog::new()
         .set_file_name(crate::config::output_file_name(
             kind,
@@ -76,7 +79,10 @@ pub fn save_with_dialog(
         ))
         .set_directory(last_dir.unwrap_or_else(crate::config::default_output_dir))
         .add_filter(format.label(), &[format.ext()])
-        .save_file()?;
+        .save_file();
+    let Some(path) = path else {
+        return Ok(None);
+    };
     match write_export(&path, format, payload) {
         Ok(bytes) => {
             log.push(
@@ -88,11 +94,11 @@ pub fn save_with_dialog(
                     human_size(bytes)
                 ),
             );
-            path.parent().map(Path::to_path_buf)
+            Ok(path.parent().map(Path::to_path_buf))
         }
         Err(err) => {
             log.push(LogLevel::Error, format!("내보내기 실패: {err}"));
-            None
+            Err(err)
         }
     }
 }
