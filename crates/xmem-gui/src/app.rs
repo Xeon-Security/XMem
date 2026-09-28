@@ -163,6 +163,8 @@ pub struct XMemApp {
     pub detect_sort: crate::views::detect::DetectSort,
     pub snapshot_output: String,
     pub snapshot_output_pid: Option<u32>,
+    pub snapshot_hash_budget: String,
+    pub snapshot_hash_all: bool,
     pub snapshot_before: String,
     pub snapshot_after: String,
     pub snapshot_create_task: BackgroundTask<(u32, (String, u64))>,
@@ -277,6 +279,8 @@ impl XMemApp {
             detect_sort: crate::views::detect::DetectSort::Rule,
             snapshot_output: String::new(),
             snapshot_output_pid: None,
+            snapshot_hash_budget: "64Mi".to_string(),
+            snapshot_hash_all: false,
             snapshot_before: String::new(),
             snapshot_after: String::new(),
             snapshot_create_task: BackgroundTask::idle(),
@@ -677,9 +681,20 @@ impl XMemApp {
         if let Some(dir) = output.parent() {
             self.config.last_output_dir = Some(dir.to_path_buf());
         }
+        let options = match crate::views::snapshot::collect_options_from_text(
+            &self.snapshot_hash_budget,
+            self.snapshot_hash_all,
+        ) {
+            Ok(options) => options,
+            Err(message) => {
+                self.log.push(LogLevel::Warn, message);
+                return;
+            }
+        };
         self.snapshot_created = None;
         self.snapshot_create_task = BackgroundTask::spawn("스냅샷 생성", move |cancel| {
-            let bytes = crate::views::snapshot::create_snapshot_file(pid, &output, cancel)?;
+            let bytes =
+                crate::views::snapshot::create_snapshot_file(pid, &output, cancel, &options)?;
             Ok((pid, (output.to_string_lossy().into_owned(), bytes)))
         });
     }

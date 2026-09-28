@@ -13,10 +13,38 @@ use crate::views::map::human_size;
 
 const DISK_MARGIN_BYTES: u64 = 16 * 1024 * 1024;
 
+/// GUI 입력(해시 예산 텍스트 + 전체 해시)을 수집 옵션으로 만든다.
+/// 빈 텍스트는 기본 64Mi, "전체 해시" 체크 시 무제한(u64::MAX).
+pub fn collect_options_from_text(
+    budget: &str,
+    hash_all: bool,
+) -> std::result::Result<CollectOptions, String> {
+    if hash_all {
+        return Ok(CollectOptions {
+            hash_budget_bytes: u64::MAX,
+            hash_chunk_size: xmem_forensics::collect::DEFAULT_HASH_CHUNK_SIZE,
+        });
+    }
+    let bytes = match crate::views::parse_size_text(budget)? {
+        Some(0) => return Err("해시 예산은 1 바이트 이상이어야 합니다".to_string()),
+        Some(bytes) => bytes,
+        None => xmem_forensics::DEFAULT_HASH_BUDGET_BYTES,
+    };
+    Ok(CollectOptions {
+        hash_budget_bytes: bytes,
+        hash_chunk_size: xmem_forensics::collect::DEFAULT_HASH_CHUNK_SIZE,
+    })
+}
+
 /// CLI `create_snapshot_file`과 동일한 파이프라인(수집→인코딩→디스크 검사→원자적 저장).
-pub fn create_snapshot_file(pid: u32, output: &Path, cancel: &AtomicBool) -> Result<u64> {
+pub fn create_snapshot_file(
+    pid: u32,
+    output: &Path,
+    cancel: &AtomicBool,
+    options: &CollectOptions,
+) -> Result<u64> {
     let live = xmem_memory::LiveProcess::open(pid)?;
-    let envelope = collect(&live, &CollectOptions::default(), cancel)?;
+    let envelope = collect(&live, options, cancel)?;
     let bytes = encode(&envelope)?;
     let dir = output
         .parent()
@@ -199,6 +227,22 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             }
         }
     });
+    ui.horizontal(|ui| {
+        ui.label("해시 예산");
+        ui.add_enabled(
+            !app.snapshot_hash_all,
+            egui::TextEdit::singleline(&mut app.snapshot_hash_budget)
+                .hint_text("예: 64Mi, 512Mi")
+                .desired_width(100.0),
+        );
+        ui.checkbox(&mut app.snapshot_hash_all, "전체 해시")
+            .on_hover_text("예산 제한 없이 모든 커밋 영역을 해시합니다(느리고 큼)");
+        if let Err(message) =
+            collect_options_from_text(&app.snapshot_hash_budget, app.snapshot_hash_all)
+        {
+            ui.colored_label(palette(app.theme).danger, message);
+        }
+    });
     if let TaskState::Failed(err) = app.snapshot_create_task.state() {
         error_label(ui, app, err);
     }
@@ -288,12 +332,28 @@ mod tests {
     use super::*;
 
     #[test]
+    fn collect_options_from_text_defaults_and_overrides() {
+        let default = collect_options_from_text("", false).unwrap();
+        assert_eq!(
+            default.hash_budget_bytes,
+            xmem_forensics::DEFAULT_HASH_BUDGET_BYTES
+        );
+        let one_mib = collect_options_from_text("1Mi", false).unwrap();
+        assert_eq!(one_mib.hash_budget_bytes, 1024 * 1024);
+        let all = collect_options_from_text("", true).unwrap();
+        assert_eq!(all.hash_budget_bytes, u64::MAX);
+        assert!(collect_options_from_text("0", false).is_err(), "0은 오류");
+        assert!(collect_options_from_text("bogus", false).is_err());
+    }
+
+    #[test]
     fn create_snapshot_of_self_writes_valid_file() {
         let dir = std::env::temp_dir().join(format!("xmem-gui-snap-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("self.xmem");
         let cancel = AtomicBool::new(false);
-        let bytes = create_snapshot_file(std::process::id(), &path, &cancel).unwrap();
+        let options = CollectOptions::default();
+        let bytes = create_snapshot_file(std::process::id(), &path, &cancel, &options).unwrap();
         assert!(bytes > 0);
         let envelope = xmem_forensics::read_file(&path).unwrap();
         assert_eq!(envelope.process.pid, std::process::id());
@@ -306,7 +366,13 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("self.xmem");
         let cancel = AtomicBool::new(false);
-        create_snapshot_file(std::process::id(), &path, &cancel).unwrap();
+        create_snapshot_file(
+            std::process::id(),
+            &path,
+            &cancel,
+            &CollectOptions::default(),
+        )
+        .unwrap();
         let envelope = xmem_forensics::read_file(&path).unwrap();
         let diff = xmem_forensics::diff(&envelope, &envelope);
         let text = render_diff(&diff);

@@ -495,6 +495,12 @@ pub enum SnapshotCmd {
         /// 출력 파일 (.xmem)
         #[arg(long)]
         output: String,
+        /// 콘텐츠 해시 예산 (바이트 또는 64Mi/512Mi 접미사, 기본 64Mi)
+        #[arg(long = "hash-budget", value_name = "SIZE", conflicts_with = "hash_all")]
+        hash_budget: Option<String>,
+        /// 예산 제한 없이 모든 커밋 영역을 해시 (느리고 큼)
+        #[arg(long = "hash-all")]
+        hash_all: bool,
     },
     /// 스냅샷 비교
     Diff {
@@ -636,6 +642,77 @@ mod tests {
     fn global_json_flag_is_global() {
         let cli = parse(&["xmem", "--json", "detect", "--pid", "1"]).unwrap();
         assert!(cli.global.json);
+    }
+
+    #[test]
+    fn snapshot_create_parses_hash_budget_and_all() {
+        let cli = parse(&[
+            "xmem",
+            "snapshot",
+            "create",
+            "--pid",
+            "1",
+            "--output",
+            "s.xmem",
+            "--hash-budget",
+            "1Mi",
+        ])
+        .unwrap();
+        let Command::Snapshot {
+            cmd:
+                SnapshotCmd::Create {
+                    hash_budget,
+                    hash_all,
+                    ..
+                },
+        } = cli.command
+        else {
+            panic!("expected snapshot create");
+        };
+        assert_eq!(hash_budget.as_deref(), Some("1Mi"));
+        assert!(!hash_all);
+
+        let cli = parse(&[
+            "xmem",
+            "snapshot",
+            "create",
+            "--pid",
+            "1",
+            "--output",
+            "s.xmem",
+            "--hash-all",
+        ])
+        .unwrap();
+        let Command::Snapshot {
+            cmd:
+                SnapshotCmd::Create {
+                    hash_budget,
+                    hash_all,
+                    ..
+                },
+        } = cli.command
+        else {
+            panic!("expected snapshot create");
+        };
+        assert!(hash_all);
+        assert!(hash_budget.is_none());
+
+        assert!(
+            parse(&[
+                "xmem",
+                "snapshot",
+                "create",
+                "--pid",
+                "1",
+                "--output",
+                "s.xmem",
+                "--hash-budget",
+                "1Mi",
+                "--hash-all",
+            ])
+            .is_err(),
+            "동시 지정은 clap 오류"
+        );
     }
 
     #[test]

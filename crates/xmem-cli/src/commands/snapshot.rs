@@ -17,13 +17,42 @@ const DISK_MARGIN_BYTES: u64 = 16 * 1024 * 1024;
 
 pub fn run(cmd: &SnapshotCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
-        SnapshotCmd::Create { pid, output } => run_create(pid.pid, output, global),
+        SnapshotCmd::Create {
+            pid,
+            output,
+            hash_budget,
+            hash_all,
+        } => run_create(pid.pid, output, hash_budget.as_deref(), *hash_all, global),
         SnapshotCmd::Diff {
             before,
             after,
             only,
         } => run_diff(before, after, only, global),
     }
+}
+
+/// 해시 예산 플래그를 `CollectOptions`로 만든다. `--hash-all`은 사실상 무제한(u64::MAX).
+pub(crate) fn hash_budget_options(
+    hash_budget: Option<&str>,
+    hash_all: bool,
+) -> Result<CollectOptions> {
+    let hash_budget_bytes = if hash_all {
+        u64::MAX
+    } else {
+        match hash_budget {
+            Some(text) => super::memory::parse_size(text)?,
+            None => xmem_forensics::DEFAULT_HASH_BUDGET_BYTES,
+        }
+    };
+    if hash_budget_bytes == 0 {
+        return Err(XmemError::InvalidInput {
+            reason: "--hash-budget은 1 바이트 이상이어야 함".to_string(),
+        });
+    }
+    Ok(CollectOptions {
+        hash_budget_bytes,
+        hash_chunk_size: xmem_forensics::collect::DEFAULT_HASH_CHUNK_SIZE,
+    })
 }
 
 /// `--only`가 고른 섹션. 미지정(빈 목록)이면 전체.
@@ -124,11 +153,18 @@ pub(crate) struct CreateSummary {
     pub elapsed_ms: u64,
 }
 
-fn run_create(pid: u32, output: &str, global: &GlobalArgs) -> Result<()> {
+fn run_create(
+    pid: u32,
+    output: &str,
+    hash_budget: Option<&str>,
+    hash_all: bool,
+    global: &GlobalArgs,
+) -> Result<()> {
+    let options = hash_budget_options(hash_budget, hash_all)?;
     let started = Instant::now();
     let cancel = cancel_flag();
     let path = Path::new(output);
-    let mut summary = create_snapshot_file(pid, path, &cancel)?;
+    let mut summary = create_snapshot_file(pid, path, &cancel, &options)?;
     summary.elapsed_ms = started.elapsed().as_millis() as u64;
     match resolve_mode(global.json) {
         OutputMode::Json => {
@@ -151,16 +187,26 @@ fn run_create(pid: u32, output: &str, global: &GlobalArgs) -> Result<()> {
                 human_size(summary.file_bytes)
             ));
             emit(&format!(
-                "  regions {} / modules {} / threads {} / hashed {} regions ({}) in {} ms\n",
+                "  regions {} / modules {} / threads {} / hashed {} regions ({} of {} budget) in {} ms\n",
                 summary.region_count,
                 summary.module_count,
                 summary.thread_count,
                 summary.hashed_regions,
                 human_size(summary.hashed_bytes),
+                budget_text(options.hash_budget_bytes),
                 summary.elapsed_ms,
             ));
             Ok(())
         }
+    }
+}
+
+/// `--hash-all`(u64::MAX)은 사람 출력에서 "전체"로 줄여 보여준다.
+fn budget_text(budget: u64) -> String {
+    if budget == u64::MAX {
+        "전체".to_string()
+    } else {
+        human_size(budget)
     }
 }
 
@@ -169,9 +215,10 @@ pub(crate) fn create_snapshot_file(
     pid: u32,
     output: &Path,
     cancel: &AtomicBool,
+    options: &CollectOptions,
 ) -> Result<CreateSummary> {
     let live = LiveProcess::open(pid)?;
-    let envelope = collect(&live, &CollectOptions::default(), cancel)?;
+    let envelope = collect(&live, options, cancel)?;
     let bytes = encode(&envelope)?;
     let dir = output
         .parent()
@@ -356,7 +403,9 @@ mod tests {
         let dir = temp_dir("create");
         let path = dir.join("self.xmem");
         let cancel = AtomicBool::new(false);
-        let summary = create_snapshot_file(xmem_windows::current_pid(), &path, &cancel).unwrap();
+        let options = CollectOptions::default();
+        let summary =
+            create_snapshot_file(xmem_windows::current_pid(), &path, &cancel, &options).unwrap();
         assert!(summary.file_bytes > 0);
         assert!(summary.region_count > 0);
         assert_eq!(summary.hashed_regions > 0, summary.hashed_bytes > 0);
@@ -364,6 +413,41 @@ mod tests {
         assert_eq!(envelope.process.pid, xmem_windows::current_pid());
         assert!(!envelope.regions.is_empty());
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn hash_budget_options_default_is_64mib() {
+        let options = hash_budget_options(None, false).unwrap();
+        assert_eq!(
+            options.hash_budget_bytes,
+            xmem_forensics::DEFAULT_HASH_BUDGET_BYTES
+        );
+        assert_eq!(
+            options.hash_chunk_size,
+            xmem_forensics::collect::DEFAULT_HASH_CHUNK_SIZE
+        );
+    }
+
+    #[test]
+    fn hash_budget_options_parses_suffix_and_all() {
+        let options = hash_budget_options(Some("1Mi"), false).unwrap();
+        assert_eq!(options.hash_budget_bytes, 1024 * 1024);
+        let options = hash_budget_options(Some("512"), false).unwrap();
+        assert_eq!(options.hash_budget_bytes, 512);
+        let options = hash_budget_options(None, true).unwrap();
+        assert_eq!(options.hash_budget_bytes, u64::MAX);
+    }
+
+    #[test]
+    fn hash_budget_options_rejects_zero_and_bad_values() {
+        assert!(
+            matches!(
+                hash_budget_options(Some("0"), false),
+                Err(XmemError::InvalidInput { .. })
+            ),
+            "0은 오류"
+        );
+        assert!(hash_budget_options(Some("bogus"), false).is_err());
     }
 
     #[test]

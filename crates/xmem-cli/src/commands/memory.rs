@@ -353,7 +353,7 @@ fn build_pattern(args: &ScanArgs) -> Result<ScanPattern> {
     }
 }
 
-fn parse_size(input: &str) -> Result<u64> {
+pub(crate) fn parse_size(input: &str) -> Result<u64> {
     let lower = input.trim().to_ascii_lowercase();
     let lower = lower.strip_suffix('i').unwrap_or(&lower);
     let (digits, mult) = match lower.chars().last() {
