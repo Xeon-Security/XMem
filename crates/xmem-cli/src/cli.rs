@@ -120,6 +120,8 @@ pub enum ProtArg {
     Rw,
     #[value(name = "r--")]
     R,
+    #[value(name = "x")]
+    X,
     #[value(name = "---")]
     None,
 }
@@ -131,6 +133,7 @@ impl ProtArg {
             ProtArg::Rx => ProtectionMask::Rx,
             ProtArg::Rw => ProtectionMask::Rw,
             ProtArg::R => ProtectionMask::R,
+            ProtArg::X => ProtectionMask::X,
             ProtArg::None => ProtectionMask::None,
         }
     }
@@ -269,7 +272,7 @@ pub struct MapArgs {
     /// 분류 필터
     #[arg(long, value_enum)]
     pub class: Option<ClassArg>,
-    /// 보호 속성 필터 (rwx|r-x|rw-|r--|---)
+    /// 보호 속성 필터 (rwx|r-x|rw-|r--|x|---)
     #[arg(long = "prot", value_enum, allow_hyphen_values = true)]
     pub protection: Option<ProtArg>,
     /// heuristic 태그 필터
@@ -287,12 +290,12 @@ pub struct MapArgs {
     /// 주소 범위 겹침 필터 (예: "0x1000:0x2000")
     #[arg(long)]
     pub range: Option<String>,
-    /// 최소 영역 크기(바이트)
+    /// 최소 영역 크기 (접미사 허용: 4096, 4Ki, 8Mi)
     #[arg(long = "min-size")]
-    pub min_size: Option<u64>,
-    /// 최대 영역 크기(바이트)
+    pub min_size: Option<String>,
+    /// 최대 영역 크기 (접미사 허용: 4096, 4Ki, 8Mi)
     #[arg(long = "max-size")]
-    pub max_size: Option<u64>,
+    pub max_size: Option<String>,
     /// 정렬 순서
     #[arg(long, value_enum, default_value = "addr")]
     pub sort: MapSortArg,
@@ -711,8 +714,8 @@ mod tests {
         assert_eq!(args.heuristic, Some(HeuristicArg::PeLike));
         assert!(args.pe_like && args.outside_modules && args.mapped_only);
         assert_eq!(args.range.as_deref(), Some("0x1000:0x2000"));
-        assert_eq!(args.min_size, Some(4096));
-        assert_eq!(args.max_size, Some(1_048_576));
+        assert_eq!(args.min_size.as_deref(), Some("4096"));
+        assert_eq!(args.max_size.as_deref(), Some("1048576"));
         assert_eq!(args.sort, MapSortArg::SizeDesc);
     }
 
@@ -747,6 +750,15 @@ mod tests {
             panic!("expected memory map");
         };
         assert_eq!(args.protection, Some(ProtArg::None));
+
+        let cli = parse(&["xmem", "memory", "map", "--pid", "7", "--prot", "x"]).unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Map(args),
+        } = cli.command
+        else {
+            panic!("expected memory map");
+        };
+        assert_eq!(args.protection, Some(ProtArg::X));
 
         assert!(parse(&["xmem", "memory", "map", "--pid", "7", "--prot", "xx"]).is_err());
         assert!(parse(&["xmem", "memory", "map", "--pid", "7", "--state", "bogus"]).is_err());

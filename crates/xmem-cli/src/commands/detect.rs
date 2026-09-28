@@ -15,7 +15,12 @@ pub(crate) fn build_filter(args: &DetectArgs) -> FindingFilter {
     FindingFilter {
         min_severity: args.min_severity.map(SeverityArg::to_severity),
         min_confidence: args.min_confidence.map(ConfidenceArg::to_confidence),
-        rule_id: args.rule.clone(),
+        rule_id: args
+            .rule
+            .as_deref()
+            .map(str::trim)
+            .filter(|rule| !rule.is_empty())
+            .map(str::to_string),
     }
 }
 
@@ -193,6 +198,26 @@ mod tests {
 
     fn sample_finding() -> Finding {
         finding_at("XMEM-001", Severity::Medium, Confidence::High, 0x1000)
+    }
+
+    #[test]
+    fn build_filter_normalizes_blank_rule() {
+        use clap::Parser;
+        let parse_rule = |rule: &str| {
+            let cli =
+                crate::cli::Cli::try_parse_from(["xmem", "detect", "--pid", "1", "--rule", rule])
+                    .unwrap();
+            let crate::cli::Command::Detect(args) = cli.command else {
+                panic!("detect가 아님");
+            };
+            build_filter(&args)
+        };
+        assert_eq!(parse_rule("   ").rule_id, None, "공백 규칙은 조건 없음");
+        assert_eq!(
+            parse_rule(" XMEM-001 ").rule_id.as_deref(),
+            Some("XMEM-001"),
+            "앞뒤 공백은 trim"
+        );
     }
 
     #[test]

@@ -1,7 +1,9 @@
 use crate::cli::{ArchArg, GlobalArgs, PidArg, ProcessCmd, ProcessListArgs};
 use crate::commands::render::{opt_num, truncate};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
-use xmem_core::{ProcessArch, ProcessFilter, ProcessInfo, Result, XmemError, pad_display};
+use xmem_core::{
+    ProcessArch, ProcessFilter, ProcessInfo, Result, XmemError, pad_display, truncate_display,
+};
 
 pub fn run(cmd: &ProcessCmd, global: &GlobalArgs) -> Result<()> {
     match cmd {
@@ -106,26 +108,26 @@ const ACCESS_WIDTH: usize = 9;
 pub fn render_list(rows: &[(ProcessInfo, bool)]) -> String {
     let mut out = String::new();
     out.push_str(&format!(
-        "{:>6}  {}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
+        "{:>6}  {}  {:>6}  {:>7}  {:>7}  {:<5}  {}  {}\n",
         "PID",
         pad_display("ACCESS", ACCESS_WIDTH),
         "PPID",
         "THREADS",
         "SESSION",
         "ARCH",
-        "NAME",
+        pad_display("NAME", 24),
         "PATH"
     ));
     for (info, accessible) in rows {
         out.push_str(&format!(
-            "{:>6}  {}  {:>6}  {:>7}  {:>7}  {:<5}  {:<24}  {}\n",
+            "{:>6}  {}  {:>6}  {:>7}  {:>7}  {:<5}  {}  {}\n",
             info.pid,
             pad_display(access_str(*accessible), ACCESS_WIDTH),
             opt_num(info.ppid),
             opt_num(info.thread_count),
             opt_num(info.session_id),
             arch_str(info.arch),
-            truncate(&info.name, 24),
+            pad_display(&truncate_display(&info.name, 24), 24),
             truncate(info.image_path.as_deref().unwrap_or("-"), 60),
         ));
     }
@@ -247,6 +249,26 @@ mod tests {
         info.name = "a".repeat(80);
         let out = render_list(&[(info, true)]);
         assert!(out.contains("..."));
+    }
+
+    #[test]
+    fn render_list_truncates_wide_korean_name_by_display_width() {
+        let mut korean = sample(10);
+        korean.name = "한글프로세스이름".repeat(3);
+        let mut ascii = sample(20);
+        ascii.name = "k".repeat(80);
+        let out = render_list(&[(korean, true), (ascii, true)]);
+        assert!(out.contains("..."), "긴 이름은 잘린다");
+        let path_column = |line: &str| {
+            let index = line.find("C:\\Windows").expect("PATH 열");
+            xmem_core::display_width(&line[..index])
+        };
+        let rows: Vec<&str> = out.lines().skip(1).collect();
+        assert_eq!(
+            path_column(rows[0]),
+            path_column(rows[1]),
+            "전각 이름도 PATH 열을 밀지 않는다"
+        );
     }
 
     #[test]

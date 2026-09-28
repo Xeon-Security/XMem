@@ -1,10 +1,13 @@
 use serde_json::{Value, json};
-use xmem_core::{MemorySource, ModuleFilter, ModuleInfo, ProcessArch, ProcessInfo, Result};
+use xmem_core::{
+    MemorySource, ModuleFilter, ModuleInfo, ProcessArch, ProcessInfo, Result, pad_display,
+    truncate_display,
+};
 use xmem_memory::LiveProcess;
 use xmem_pe::{PE_HEADER_PREFIX, PeInfo, parse_pe};
 
 use crate::cli::{GlobalArgs, ModulesArgs};
-use crate::commands::render::{human_size, truncate, truncate_tail};
+use crate::commands::render::{human_size, truncate_tail};
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 pub fn run(args: &ModulesArgs, global: &GlobalArgs) -> Result<()> {
@@ -105,7 +108,16 @@ fn render_modules(
         modules.len()
     ));
     if let Some(pe_list) = pe {
-        out.push_str("BASE                SIZE        MACHINE  ENTRY              SECTIONS NAME                 PATH\n");
+        out.push_str(&format!(
+            "{:<18} {:>10} {:8} {:18} {:>8} {} {}\n",
+            "BASE",
+            "SIZE",
+            "MACHINE",
+            "ENTRY",
+            "SECTIONS",
+            pad_display("NAME", 20),
+            "PATH"
+        ));
         for (index, module) in modules.iter().enumerate() {
             let (machine, entry, sections) = match pe_list.get(index).and_then(Option::as_ref) {
                 Some(pe) => (
@@ -121,18 +133,24 @@ fn render_modules(
                 .map(|p| truncate_tail(p, 60))
                 .unwrap_or_else(|| "-".to_string());
             out.push_str(&format!(
-                "0x{:016x} {:>10} {:8} {:18} {:>8} {:20} {}\n",
+                "0x{:016x} {:>10} {:8} {:18} {:>8} {} {}\n",
                 module.base,
                 human_size(module.size),
                 machine,
                 entry,
                 sections,
-                truncate(&module.name, 20),
+                pad_display(&truncate_display(&module.name, 20), 20),
                 path,
             ));
         }
     } else {
-        out.push_str("BASE                SIZE        NAME                 PATH\n");
+        out.push_str(&format!(
+            "{:<18} {:>10} {} {}\n",
+            "BASE",
+            "SIZE",
+            pad_display("NAME", 20),
+            "PATH"
+        ));
         for module in modules {
             let path = module
                 .path
@@ -140,10 +158,10 @@ fn render_modules(
                 .map(|p| truncate_tail(p, 60))
                 .unwrap_or_else(|| "-".to_string());
             out.push_str(&format!(
-                "0x{:016x} {:>10} {:20} {}\n",
+                "0x{:016x} {:>10} {} {}\n",
                 module.base,
                 human_size(module.size),
-                truncate(&module.name, 20),
+                pad_display(&truncate_display(&module.name, 20), 20),
                 path,
             ));
         }

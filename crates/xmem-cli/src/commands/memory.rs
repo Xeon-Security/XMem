@@ -38,8 +38,8 @@ pub(crate) fn build_map_filter(args: &MapArgs) -> Result<RegionFilter> {
         outside_modules_only: args.outside_modules,
         mapped_only: args.mapped_only,
         range: args.range.as_deref().map(parse_range).transpose()?,
-        min_size: args.min_size,
-        max_size: args.max_size,
+        min_size: args.min_size.as_deref().map(parse_size).transpose()?,
+        max_size: args.max_size.as_deref().map(parse_size).transpose()?,
     })
 }
 
@@ -636,8 +636,39 @@ mod tests {
     fn parse_size_units() {
         assert_eq!(parse_size("512").unwrap(), 512);
         assert_eq!(parse_size("4k").unwrap(), 4096);
+        assert_eq!(parse_size("4Ki").unwrap(), 4096);
         assert_eq!(parse_size("16Mi").unwrap(), 16 * 1024 * 1024);
         assert!(parse_size("abc").is_err());
+    }
+
+    #[test]
+    fn build_map_filter_parses_size_suffixes() {
+        use clap::Parser;
+        let parse_map = |min: &str, max: &str| {
+            let cli = crate::cli::Cli::try_parse_from([
+                "xmem",
+                "memory",
+                "map",
+                "--pid",
+                "1",
+                "--min-size",
+                min,
+                "--max-size",
+                max,
+            ])
+            .unwrap();
+            let crate::cli::Command::Memory {
+                cmd: MemoryCmd::Map(args),
+            } = cli.command
+            else {
+                panic!("map이 아님");
+            };
+            build_map_filter(&args)
+        };
+        let filter = parse_map("4Ki", "8Mi").unwrap();
+        assert_eq!(filter.min_size, Some(4096));
+        assert_eq!(filter.max_size, Some(8 * 1024 * 1024));
+        assert!(parse_map("bogus", "8Mi").is_err(), "잘못된 크기는 오류");
     }
 
     #[test]
