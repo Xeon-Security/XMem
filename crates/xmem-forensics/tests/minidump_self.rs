@@ -8,9 +8,21 @@
 
 use minidump::Minidump;
 use std::path::PathBuf;
+use std::sync::{Mutex, MutexGuard};
 use xmem_core::{MemorySource, ProcessArch, XmemError};
 use xmem_forensics::{MinidumpSource, analyze_dump};
 use xmem_windows::{current_pid, open_for_dump, write_minidump_file};
+
+/// 통합 테스트 바이너리 안에서도 `cargo test`는 테스트를 병렬로 돌린다.
+/// `MiniDumpWriteDump`는 덤프 중 프로세스의 모든 스레드를 중단하므로, 동시에 자기 덤프를
+/// 뜨면(다른 테스트가 DLL을 로드하는 중이면) 로더 락 경합으로 멈출 수 있어 직렬화한다.
+static SELF_DUMP_LOCK: Mutex<()> = Mutex::new(());
+
+fn lock_self_dump() -> MutexGuard<'static, ()> {
+    SELF_DUMP_LOCK
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 fn self_dump(name: &str) -> PathBuf {
     let dir = std::env::temp_dir().join(format!("xmem-fx-{}-{name}", std::process::id()));
@@ -24,6 +36,7 @@ fn self_dump(name: &str) -> PathBuf {
 
 #[test]
 fn analyze_dump_of_self_returns_metadata() {
+    let _guard = lock_self_dump();
     let path = self_dump("meta");
     let analysis = analyze_dump(&path).unwrap();
     assert_eq!(analysis.process.pid, current_pid());
@@ -36,6 +49,7 @@ fn analyze_dump_of_self_returns_metadata() {
 
 #[test]
 fn minidump_source_reads_memory_from_dump() {
+    let _guard = lock_self_dump();
     let path = self_dump("read");
     let source = MinidumpSource::open(&path).unwrap();
     let raw = Minidump::read_path(&path).unwrap();
@@ -52,6 +66,7 @@ fn minidump_source_reads_memory_from_dump() {
 
 #[test]
 fn minidump_source_read_invalid_address_errors() {
+    let _guard = lock_self_dump();
     let path = self_dump("bad-addr");
     let source = MinidumpSource::open(&path).unwrap();
     let mut buf = [0u8; 16];
