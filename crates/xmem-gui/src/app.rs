@@ -1,6 +1,7 @@
 //! 앱 셸: 상단 바 + 탭 + 하단 로그.
 
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use xmem_core::XmemError;
 
@@ -151,6 +152,7 @@ pub struct XMemApp {
     pub thread_tid_filter: String,
     pub scan_state: crate::views::scan::ScanUiState,
     pub scan_task: BackgroundTask<(u32, xmem_memory::ScanReport)>,
+    pub scan_progress: Option<Arc<xmem_memory::ScanProgress>>,
     pub scan_preview_task: BackgroundTask<(u64, u64, String)>,
     pub scan_report: Option<xmem_memory::ScanReport>,
     pub detect_task: BackgroundTask<(u32, Vec<xmem_core::Finding>)>,
@@ -263,6 +265,7 @@ impl XMemApp {
             thread_tid_filter: String::new(),
             scan_state: crate::views::scan::ScanUiState::default(),
             scan_task: BackgroundTask::idle(),
+            scan_progress: None,
             scan_preview_task: BackgroundTask::idle(),
             scan_report: None,
             detect_task: BackgroundTask::idle(),
@@ -368,6 +371,7 @@ impl XMemApp {
         self.threads_task.reset();
         self.thread_detail_task.reset();
         self.scan_task.reset();
+        self.scan_progress = None;
         self.scan_preview_task.reset();
         self.detect_task.reset();
         self.snapshot_create_task.reset();
@@ -588,9 +592,21 @@ impl XMemApp {
         self.scan_state.options_snapshot =
             Some(crate::views::scan::options_signature(&self.scan_state));
         self.scan_preview_task.cancel();
+        // 전체 영역 수는 스캔이 시작되면 scan_with_progress가 채운다.
+        let progress = Arc::new(xmem_memory::ScanProgress::new(0));
+        self.scan_progress = Some(Arc::clone(&progress));
         self.scan_task = BackgroundTask::spawn("검색", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
-            Ok((pid, xmem_memory::scan(&live, &pattern, &options, cancel)?))
+            Ok((
+                pid,
+                xmem_memory::scan_with_progress(
+                    &live,
+                    &pattern,
+                    &options,
+                    cancel,
+                    Some(&progress),
+                )?,
+            ))
         })
         .with_pid(pid);
     }

@@ -3,7 +3,7 @@
 use xmem_core::{MemorySource, ScanPattern, XmemError};
 use xmem_memory::{
     DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RESULTS, LiveProcess, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE,
-    RegionFilters, ScanOptions,
+    RegionFilters, ScanOptions, ScanProgress,
 };
 
 use crate::app::XMemApp;
@@ -206,6 +206,16 @@ pub fn build_options(state: &ScanUiState) -> xmem_core::Result<ScanOptions> {
     })
 }
 
+/// 진행바 옆 라벨. 진행률(`fraction`)은 진행바 자체가 %로 보여준다.
+pub fn scan_progress_text(progress: &ScanProgress) -> String {
+    format!(
+        "영역 {}/{} · {} 회수",
+        progress.regions_done(),
+        progress.regions_total(),
+        human_size(progress.bytes_scanned()),
+    )
+}
+
 fn filter_contents(ui: &mut egui::Ui, state: &mut ScanUiState) {
     ui.checkbox(&mut state.executable_only, "실행 가능만");
     ui.checkbox(&mut state.private_only, "Private만");
@@ -342,6 +352,18 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
             }
         }
     });
+    if app.scan_task.is_running()
+        && let Some(progress) = app.scan_progress.as_ref()
+    {
+        ui.horizontal(|ui| {
+            ui.add(
+                egui::ProgressBar::new(progress.fraction())
+                    .desired_width(240.0)
+                    .show_percentage(),
+            );
+            ui.label(egui::RichText::new(scan_progress_text(progress)).weak());
+        });
+    }
     if let Err(err) = build_options(&app.scan_state) {
         ui.colored_label(palette(app.theme).danger, err.to_string());
     }
@@ -658,6 +680,15 @@ mod tests {
             0,
             "CLI와 동일하게 0 = 무제한"
         );
+    }
+
+    #[test]
+    fn scan_progress_text_shows_fraction_and_regions() {
+        let progress = ScanProgress::new(4);
+        assert_eq!(progress.fraction(), 0.0);
+        let text = scan_progress_text(&progress);
+        assert!(text.contains("영역 0/4"), "{text}");
+        assert!(text.contains("0 B"), "{text}");
     }
 
     #[test]

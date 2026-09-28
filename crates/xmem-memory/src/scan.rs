@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::Instant;
 
 use rayon::prelude::*;
@@ -100,6 +100,53 @@ pub struct ScanReport {
     pub policy_restricted: bool,
 }
 
+/// 스캔 진행 상황 카운터. CLI/GUI가 `Arc`로 공유해 폴링한다.
+///
+/// `regions_total`은 스캔 시작 시 선택된 영역 수로 갱신된다(호출자는 미리
+/// 알 수 없으므로 0으로 만들어도 된다). 영역 1개를 끝낼 때마다(성공·실패·
+/// 0바이트 모두) `regions_done`이 1씩 증가한다.
+#[derive(Debug, Default)]
+pub struct ScanProgress {
+    regions_done: AtomicUsize,
+    regions_total: AtomicUsize,
+    bytes_scanned: AtomicU64,
+}
+
+impl ScanProgress {
+    pub fn new(regions_total: usize) -> Self {
+        Self {
+            regions_done: AtomicUsize::new(0),
+            regions_total: AtomicUsize::new(regions_total),
+            bytes_scanned: AtomicU64::new(0),
+        }
+    }
+
+    /// 완료한 영역 수.
+    pub fn regions_done(&self) -> usize {
+        self.regions_done.load(Ordering::Relaxed)
+    }
+
+    /// 스캔 대상 영역 수(시작 전에는 `new`에 준 값).
+    pub fn regions_total(&self) -> usize {
+        self.regions_total.load(Ordering::Relaxed)
+    }
+
+    /// 회수한 바이트 수.
+    pub fn bytes_scanned(&self) -> u64 {
+        self.bytes_scanned.load(Ordering::Relaxed)
+    }
+
+    /// 진행률 0.0~1.0. 전체 영역이 0이면 0.0.
+    pub fn fraction(&self) -> f32 {
+        let total = self.regions_total();
+        if total == 0 {
+            0.0
+        } else {
+            (self.regions_done() as f32 / total as f32).min(1.0)
+        }
+    }
+}
+
 #[derive(Debug, Default)]
 struct RegionScan {
     matches: Vec<ScanMatch>,
@@ -169,6 +216,7 @@ fn scan_region<S: MemorySource + Sync>(
     stop: &AtomicBool,
     budget_hit: &AtomicBool,
     found: &AtomicUsize,
+    progress: Option<&ScanProgress>,
     buf: &mut [u8],
 ) -> RegionScan {
     let mut out = RegionScan::default();
@@ -207,7 +255,8 @@ fn scan_region<S: MemorySource + Sync>(
                     if !accept(found, max_results) {
                         budget_hit.store(true, Ordering::SeqCst);
                         stop.store(true, Ordering::SeqCst);
-                        return out;
+                        // 아래 while 상단의 stop 검사로 빠져나가 진행 카운터를 남긴다.
+                        break;
                     }
                     out.matches.push(ScanMatch {
                         address: abs,
@@ -227,20 +276,32 @@ fn scan_region<S: MemorySource + Sync>(
         }
         off = end;
     }
+    if let Some(progress) = progress {
+        progress.regions_done.fetch_add(1, Ordering::Relaxed);
+        progress
+            .bytes_scanned
+            .fetch_add(out.bytes, Ordering::Relaxed);
+    }
     out
 }
 
-/// chunked 읽기 + bounded 병렬 스캔. 취소 시 부분 결과를 반환한다.
-pub fn scan<S: MemorySource + Sync>(
+/// 진행 카운터를 받는 스캔. `progress`가 None이면 `scan`과 동일하다.
+pub fn scan_with_progress<S: MemorySource + Sync>(
     source: &S,
     pattern: &ScanPattern,
     options: &ScanOptions,
     cancel: &AtomicBool,
+    progress: Option<&ScanProgress>,
 ) -> Result<ScanReport> {
     let started = Instant::now();
     let all_regions = source.regions()?;
     let regions_total = all_regions.len();
     let (selected, policy_restricted) = select_regions(&all_regions, &options.filters);
+    if let Some(progress) = progress {
+        progress
+            .regions_total
+            .store(selected.len(), Ordering::Relaxed);
+    }
     let chunk = options.chunk_size.clamp(MIN_CHUNK_SIZE, MAX_CHUNK_SIZE);
     let threads = options.threads.clamp(1, MAX_THREADS);
     let overlap = pattern.pattern.len().saturating_sub(1);
@@ -274,6 +335,7 @@ pub fn scan<S: MemorySource + Sync>(
                         &stop,
                         &budget_hit,
                         &found,
+                        progress,
                         buf,
                     )
                 },
@@ -312,6 +374,16 @@ pub fn scan<S: MemorySource + Sync>(
         truncated: budget_hit.load(Ordering::Relaxed),
         policy_restricted,
     })
+}
+
+/// chunked 읽기 + bounded 병렬 스캔. 취소 시 부분 결과를 반환한다.
+pub fn scan<S: MemorySource + Sync>(
+    source: &S,
+    pattern: &ScanPattern,
+    options: &ScanOptions,
+    cancel: &AtomicBool,
+) -> Result<ScanReport> {
+    scan_with_progress(source, pattern, options, cancel, None)
 }
 
 #[cfg(test)]
@@ -468,6 +540,80 @@ mod tests {
 
     fn no_cancel() -> AtomicBool {
         AtomicBool::new(false)
+    }
+
+    #[test]
+    fn progress_counts_regions_and_bytes() {
+        let a = make_region(0x1000_0000, 0x2000, PAGE_RW, MemoryType::Private);
+        let b = make_region(0x2000_0000, 0x2000, PAGE_RW, MemoryType::Private);
+        let mut content = BTreeMap::new();
+        content.insert(a.base, vec![0x41u8; 0x100]);
+        content.insert(b.base, vec![0x42u8; 0x100]);
+        let source = MockSource::new(vec![a, b], content);
+        let progress = ScanProgress::new(0);
+
+        let report = scan_with_progress(
+            &source,
+            &pattern(),
+            &ScanOptions::default(),
+            &no_cancel(),
+            Some(&progress),
+        )
+        .unwrap();
+
+        assert_eq!(report.stats.regions_scanned, 2);
+        assert_eq!(progress.regions_done(), 2);
+        assert_eq!(progress.regions_total(), 2);
+        assert_eq!(progress.fraction(), 1.0);
+        assert!(progress.bytes_scanned() > 0);
+    }
+
+    #[test]
+    fn progress_is_monotone_with_parallel_scan() {
+        let regions: Vec<MemoryRegion> = (0..4u64)
+            .map(|i| {
+                make_region(
+                    0x1000_0000 + i * 0x10000,
+                    0x1000,
+                    PAGE_RW,
+                    MemoryType::Private,
+                )
+            })
+            .collect();
+        let mut content = BTreeMap::new();
+        for region in &regions {
+            content.insert(region.base, vec![0u8; 0x100]);
+        }
+        let source = MockSource::new(regions, content);
+        let options = ScanOptions {
+            threads: 2,
+            ..ScanOptions::default()
+        };
+        let progress = ScanProgress::new(0);
+
+        scan_with_progress(&source, &pattern(), &options, &no_cancel(), Some(&progress)).unwrap();
+
+        assert_eq!(progress.regions_done(), 4);
+        assert_eq!(progress.regions_total(), 4);
+        assert_eq!(progress.fraction(), 1.0);
+    }
+
+    #[test]
+    fn progress_zero_total_is_safe() {
+        let source = MockSource::new(Vec::new(), BTreeMap::new());
+        let progress = ScanProgress::new(0);
+
+        scan_with_progress(
+            &source,
+            &pattern(),
+            &ScanOptions::default(),
+            &no_cancel(),
+            Some(&progress),
+        )
+        .unwrap();
+
+        assert_eq!(progress.regions_total(), 0);
+        assert_eq!(progress.fraction(), 0.0);
     }
 
     #[test]

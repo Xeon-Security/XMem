@@ -479,6 +479,9 @@ pub struct ScanArgs {
     /// 대형 프로세스 정책을 해제하고 모든 committed 영역을 스캔
     #[arg(long)]
     pub all: bool,
+    /// 스캔 진행 상황을 stderr에 표시(10% 단위)
+    #[arg(long)]
+    pub progress: bool,
     #[command(flatten)]
     pub output: OutputArgs,
 }
@@ -918,6 +921,36 @@ mod tests {
         assert_eq!(args.pattern.as_deref(), Some("48 8B ??"));
         assert!(args.executable_only);
         assert_eq!(args.threads, Some(2));
+    }
+
+    #[test]
+    fn parses_memory_scan_progress_flag() {
+        let cli = parse(&[
+            "xmem",
+            "memory",
+            "scan",
+            "--pid",
+            "42",
+            "--string",
+            "xmem",
+            "--progress",
+        ])
+        .unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Scan(args),
+        } = cli.command
+        else {
+            panic!("expected scan");
+        };
+        assert!(args.progress);
+        let cli = parse(&["xmem", "memory", "scan", "--pid", "42", "--string", "xmem"]).unwrap();
+        let Command::Memory {
+            cmd: MemoryCmd::Scan(args),
+        } = cli.command
+        else {
+            panic!("expected scan");
+        };
+        assert!(!args.progress);
     }
 
     #[test]

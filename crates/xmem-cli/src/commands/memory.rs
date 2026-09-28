@@ -7,7 +7,7 @@ use xmem_core::{
 };
 use xmem_memory::{
     DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RESULTS, LiveProcess, MAX_CHUNK_SIZE, MIN_CHUNK_SIZE,
-    RegionFilters, RegionMap, ScanOptions, ScanReport, scan,
+    RegionFilters, RegionMap, ScanOptions, ScanProgress, ScanReport, scan_with_progress,
 };
 
 use crate::cli::{
@@ -249,10 +249,37 @@ pub(crate) fn execute_scan(
     pattern: &ScanPattern,
     options: &ScanOptions,
     cancelled: &AtomicBool,
+    progress: Option<&ScanProgress>,
 ) -> Result<(LiveProcess, ScanReport)> {
     let live = LiveProcess::open(pid)?;
-    let report = scan(&live, pattern, options, cancelled)?;
+    let report = scan_with_progress(&live, pattern, options, cancelled, progress)?;
     Ok((live, report))
+}
+
+/// 스캔이 동기라 별도 스레드가 진행 카운터를 폴링해 10% 단위로 stderr에 찍는다.
+fn spawn_scan_monitor(progress: Arc<ScanProgress>, done: Arc<AtomicBool>) {
+    std::thread::spawn(move || {
+        let mut last_bucket = 0u32;
+        loop {
+            let finished = done.load(Ordering::Relaxed);
+            let pct = (progress.fraction() * 100.0).round().clamp(0.0, 100.0) as u32;
+            let bucket = if finished { 10 } else { pct / 10 };
+            if bucket > last_bucket {
+                eprintln!(
+                    "scanning... {}% (regions {}/{}, {})",
+                    pct.min(100),
+                    progress.regions_done(),
+                    progress.regions_total(),
+                    human_size(progress.bytes_scanned()),
+                );
+                last_bucket = bucket;
+            }
+            if finished {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(200));
+        }
+    });
 }
 
 fn run_scan(args: &ScanArgs, global: &GlobalArgs) -> Result<()> {
@@ -260,7 +287,21 @@ fn run_scan(args: &ScanArgs, global: &GlobalArgs) -> Result<()> {
     let options = build_options(args)?;
     let cancelled = cancel_flag();
     cancelled.store(false, Ordering::SeqCst);
-    let (live, report) = execute_scan(args.pid.pid, &pattern, &options, &cancelled)?;
+    let progress = Arc::new(ScanProgress::new(0));
+    let done = Arc::new(AtomicBool::new(false));
+    if args.progress {
+        spawn_scan_monitor(Arc::clone(&progress), Arc::clone(&done));
+    }
+    let tracking = args.progress.then(|| Arc::clone(&progress));
+    let result = execute_scan(
+        args.pid.pid,
+        &pattern,
+        &options,
+        &cancelled,
+        tracking.as_deref(),
+    );
+    done.store(true, Ordering::SeqCst);
+    let (live, report) = result?;
     if let Some(output) = args.output.output.as_deref() {
         let bytes = write_export(
             Path::new(output),
@@ -770,8 +811,14 @@ mod tests {
             ..ScanOptions::default()
         };
         let cancelled = AtomicBool::new(true);
-        let (_live, report) =
-            execute_scan(xmem_windows::current_pid(), &pattern, &options, &cancelled).unwrap();
+        let (_live, report) = execute_scan(
+            xmem_windows::current_pid(),
+            &pattern,
+            &options,
+            &cancelled,
+            None,
+        )
+        .unwrap();
         assert!(report.cancelled);
         assert!(report.matches.is_empty());
     }
