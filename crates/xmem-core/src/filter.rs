@@ -17,6 +17,7 @@ pub enum ProtectionMask {
     Rx,
     Rw,
     R,
+    X,
     None,
 }
 
@@ -26,8 +27,10 @@ impl ProtectionMask {
         match raw & 0xff {
             0x40 | 0x80 => Self::Rwx,
             0x20 => Self::Rx,
+            0x10 => Self::X,
             0x04 | 0x08 => Self::Rw,
             0x02 => Self::R,
+            0x00 | 0x01 => Self::None,
             _ => Self::None,
         }
     }
@@ -315,6 +318,29 @@ fn char_width(c: char) -> usize {
     }
 }
 
+/// 표시 폭 기준 앞을 남기고 자른다. 초과 시 `...`를 붙여 결과 폭이 `width` 이하가 된다.
+pub fn truncate_display(text: &str, width: usize) -> String {
+    if display_width(text) <= width {
+        return text.to_string();
+    }
+    if width < 3 {
+        return ".".repeat(width);
+    }
+    let budget = width - 3;
+    let mut out = String::new();
+    let mut used = 0;
+    for c in text.chars() {
+        let w = char_width(c);
+        if used + w > budget {
+            break;
+        }
+        used += w;
+        out.push(c);
+    }
+    out.push_str("...");
+    out
+}
+
 /// 표시 폭 기준 좌측 정렬 패딩. 이미 넓이 이상이면 그대로 둔다.
 pub fn pad_display(text: &str, width: usize) -> String {
     let current = display_width(text);
@@ -330,7 +356,7 @@ pub fn pad_display(text: &str, width: usize) -> String {
 mod tests {
     use super::{
         FindingFilter, ModuleFilter, ProcessFilter, ProtectionMask, RegionFilter, ThreadFilter,
-        confidence_rank, display_width, pad_display, severity_rank,
+        confidence_rank, display_width, pad_display, severity_rank, truncate_display,
     };
     use crate::evidence::{Confidence, Evidence, Finding, Severity};
     use crate::model::RegionClass;
@@ -467,6 +493,7 @@ mod tests {
             (0x40, ProtectionMask::Rwx),
             (0x80, ProtectionMask::Rwx),
             (0x20, ProtectionMask::Rx),
+            (0x10, ProtectionMask::X),
             (0x04, ProtectionMask::Rw),
             (0x08, ProtectionMask::Rw),
             (0x02, ProtectionMask::R),
@@ -476,6 +503,57 @@ mod tests {
         ];
         for (raw, expected) in cases {
             assert_eq!(ProtectionMask::from_win32(raw), expected, "raw={raw:#x}");
+        }
+    }
+
+    #[test]
+    fn protection_none_filter_does_not_match_execute_only() {
+        let x = region(0x1000, 0x1000, 0x10, RegionClass::Private);
+        assert_eq!(ProtectionMask::from_win32(0x10), ProtectionMask::X);
+        assert!(
+            !RegionFilter {
+                protection: Some(ProtectionMask::None),
+                ..Default::default()
+            }
+            .matches(&x, &[]),
+            "---는 실행 전용(PAGE_EXECUTE) 영역을 매칭하지 않는다"
+        );
+        assert!(
+            RegionFilter {
+                protection: Some(ProtectionMask::X),
+                ..Default::default()
+            }
+            .matches(&x, &[]),
+            "x는 실행 전용 영역만 매칭한다"
+        );
+    }
+
+    #[test]
+    fn truncate_display_respects_display_width() {
+        assert_eq!(truncate_display("abcdef", 6), "abcdef", "딱 맞으면 그대로");
+        assert_eq!(truncate_display("abcdefgh", 6), "abc...", "ASCII 초과");
+        assert_eq!(
+            truncate_display("한글abc", 6),
+            "한...",
+            "전각 혼합은 표시 폭 기준"
+        );
+        assert_eq!(
+            truncate_display("가나다라마", 5),
+            "가...",
+            "전각은 2칸으로 센다"
+        );
+        assert_eq!(truncate_display("권한", 4), "권한", "전각 딱 맞음");
+        for (text, width) in [
+            ("abcdefgh", 6),
+            ("한글abc", 6),
+            ("가나다라마", 5),
+            ("가나다라마바사", 20),
+            ("a", 0),
+        ] {
+            assert!(
+                display_width(&truncate_display(text, width)) <= width,
+                "text={text:?} width={width}"
+            );
         }
     }
 
@@ -932,7 +1010,11 @@ mod tests {
     fn protection_mask_serde_uses_snake_case() {
         let json = serde_json::to_string(&ProtectionMask::Rwx).unwrap();
         assert_eq!(json, "\"rwx\"");
+        let x_json = serde_json::to_string(&ProtectionMask::X).unwrap();
+        assert_eq!(x_json, "\"x\"");
         let parsed: ProtectionMask = serde_json::from_str("\"none\"").unwrap();
         assert_eq!(parsed, ProtectionMask::None);
+        let parsed_x: ProtectionMask = serde_json::from_str("\"x\"").unwrap();
+        assert_eq!(parsed_x, ProtectionMask::X);
     }
 }

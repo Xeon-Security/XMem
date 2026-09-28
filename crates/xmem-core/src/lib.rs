@@ -16,7 +16,7 @@ pub use error::{Result, XmemError};
 pub use evidence::{Confidence, Evidence, Finding, Severity};
 pub use filter::{
     FindingFilter, ModuleFilter, ProcessFilter, ProtectionMask, RegionFilter, ThreadFilter,
-    confidence_rank, display_width, pad_display, severity_rank,
+    confidence_rank, display_width, pad_display, severity_rank, truncate_display,
 };
 pub use model::*;
 pub use pattern::{BytePattern, MAX_PATTERN_LEN, PatternKind, ScanPattern};
