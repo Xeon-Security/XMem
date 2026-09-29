@@ -104,7 +104,7 @@ pub fn read_file(path: &Path) -> Result<SnapshotEnvelope> {
     decode(&bytes)
 }
 
-fn temp_path(path: &Path) -> PathBuf {
+pub(crate) fn temp_path(path: &Path) -> PathBuf {
     let mut name = path
         .file_name()
         .map(|name| name.to_os_string())

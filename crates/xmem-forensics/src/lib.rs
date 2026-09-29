@@ -6,6 +6,7 @@ pub mod diff;
 pub mod dump;
 pub mod envelope;
 pub mod format;
+pub mod image;
 pub mod report;
 pub mod source;
 
@@ -17,5 +18,10 @@ pub use diff::{
 pub use dump::{DumpAnalysis, MinidumpSource, analyze_dump};
 pub use envelope::{AcquisitionMeta, RegionHash, SnapshotEnvelope};
 pub use format::{HEADER_LEN, MAGIC, decode, encode, read_file, write_file};
+pub use image::{
+    IMAGE_FORMAT_VERSION, IMAGE_MAGIC, ImageAcquisition, ImageMeta, ImageOptions, MemoryImage,
+    MemoryImageSource, StoredRegion, collect_image, decode_image, encode_image, read_image,
+    write_image,
+};
 pub use report::{ReportData, ReportSummary, is_markdown, write_report};
 pub use source::SnapshotSource;
