@@ -96,6 +96,37 @@ fn backing_of(region: &MemoryRegion, modules: &[ModuleInfo]) -> Backing {
     }
 }
 
+/// 같은 `allocation_base`를 공유하는 committed executable 영역 수(자기 포함, 최소 1).
+fn executable_allocation_count(region: &MemoryRegion, regions: &[MemoryRegion]) -> usize {
+    let Some(allocation) = region.allocation_base else {
+        return 1;
+    };
+    regions
+        .iter()
+        .filter(|candidate| {
+            candidate.allocation_base == Some(allocation)
+                && candidate.state == MemoryState::Commit
+                && candidate.executable
+        })
+        .count()
+        .max(1)
+}
+
+/// 자신이 아닌 형제 영역이 파일/이미지 백킹을 가지면 true.
+fn allocation_has_backed_sibling(region: &MemoryRegion, regions: &[MemoryRegion]) -> bool {
+    let Some(allocation) = region.allocation_base else {
+        return false;
+    };
+    if allocation == region.base {
+        return false;
+    }
+    regions.iter().any(|candidate| {
+        candidate.allocation_base == Some(allocation)
+            && candidate.base != region.base
+            && (candidate.mapped_file.is_some() || candidate.region_type == Some(MemoryType::Image))
+    })
+}
+
 /// XMEM-001: committed + MEM_PRIVATE + executable.
 pub struct ExecutablePrivateMemory;
 
@@ -113,14 +144,37 @@ impl Rule for ExecutablePrivateMemory {
             .regions
             .iter()
             .filter(|region| region.heuristics.contains(&Heuristic::ExecutablePrivate))
-            .map(|region| Finding {
-                rule_id: self.id().to_string(),
-                name: self.name().to_string(),
-                severity: Severity::Medium,
-                confidence: Confidence::High,
-                evidence: vec![region_evidence(region)],
-                heuristic: "private memory with executable protection".to_string(),
-                interpretation: "Potentially suspicious memory region".to_string(),
+            .map(|region| {
+                // 같은 할당에 executable 영역이 여럿이면 JIT/런타임 할당 풀일 가능성이 높다.
+                let count = executable_allocation_count(region, context.regions);
+                let jit_like = count >= 2;
+                Finding {
+                    rule_id: self.id().to_string(),
+                    name: self.name().to_string(),
+                    severity: Severity::Medium,
+                    confidence: if jit_like {
+                        Confidence::Low
+                    } else {
+                        Confidence::High
+                    },
+                    evidence: vec![
+                        region_evidence(region)
+                            .observe(
+                                "allocation_base",
+                                region.allocation_base.map_or_else(
+                                    || "none".to_string(),
+                                    |value| format!("{value:#x}"),
+                                ),
+                            )
+                            .observe("allocation_region_count", count.to_string()),
+                    ],
+                    heuristic: "private memory with executable protection".to_string(),
+                    interpretation: if jit_like {
+                        "Potentially suspicious memory region; multiple executable regions share the same allocation (JIT-like)".to_string()
+                    } else {
+                        "Potentially suspicious memory region".to_string()
+                    },
+                }
             })
             .collect()
     }
@@ -185,6 +239,7 @@ impl Rule for ExecutableWithoutBackingModule {
                 if region.classification == RegionClass::Private {
                     return None;
                 }
+                let allocation_backed = allocation_has_backed_sibling(region, context.regions);
                 let (backing, severity, confidence, heuristic, interpretation) =
                     match backing_of(region, context.modules) {
                         Backing::ModuleFile | Backing::Image => return None,
@@ -194,6 +249,13 @@ impl Rule for ExecutableWithoutBackingModule {
                             Confidence::Low,
                             "executable mapping outside any loaded module range",
                             "Disk-backed executable mapping outside the module list; manually mapped images and unusual data mappings can appear here",
+                        ),
+                        Backing::None if allocation_backed => (
+                            "allocation-backed-subregion",
+                            Severity::Low,
+                            Confidence::Low,
+                            "executable subregion of an allocation with file-backed siblings",
+                            "Executable subregion inside an allocation whose other regions are file-backed; likely a fragment of a backed mapping",
                         ),
                         Backing::None => (
                             "mapped-no-file",
@@ -225,7 +287,11 @@ impl Rule for ExecutableWithoutBackingModule {
                                     .unwrap_or_else(|| "none".to_string()),
                             )
                             .observe("module_overlap", "none")
-                            .observe("backing", backing),
+                            .observe("backing", backing)
+                            .observe(
+                                "allocation_backed",
+                                if allocation_backed { "some" } else { "none" },
+                            ),
                     ],
                     heuristic: heuristic.to_string(),
                     interpretation: interpretation.to_string(),
@@ -615,6 +681,91 @@ mod tests {
         )];
         let findings = evaluate(&ExecutableWithoutBackingModule, &regions, &[], &[]);
         assert!(findings.is_empty());
+    }
+
+    /// 같은 할당에 executable 영역이 2개 이상이면 JIT-like로 confidence를 낮춘다.
+    #[test]
+    fn xmem001_lowers_confidence_when_allocation_holds_multiple_executable_regions() {
+        let mut first = region(
+            0x1000,
+            vec![Heuristic::ExecutablePrivate],
+            RegionClass::Private,
+            0x40,
+        );
+        first.allocation_base = Some(0x10000);
+        let mut second = region(
+            0x2000,
+            vec![Heuristic::ExecutablePrivate],
+            RegionClass::Private,
+            0x40,
+        );
+        second.allocation_base = Some(0x10000);
+        let context = DetectionContext {
+            regions: &[first.clone()],
+            modules: &[],
+            threads: &[],
+        };
+        let findings = ExecutablePrivateMemory.evaluate(&context);
+        assert_eq!(findings[0].confidence, Confidence::High, "단독 할당");
+
+        let context = DetectionContext {
+            regions: &[first, second],
+            modules: &[],
+            threads: &[],
+        };
+        let findings = ExecutablePrivateMemory.evaluate(&context);
+        assert_eq!(
+            findings[0].confidence,
+            Confidence::Low,
+            "JIT-like 다중 할당"
+        );
+        assert_eq!(
+            findings[0].evidence[0].observed["allocation_region_count"],
+            "2"
+        );
+    }
+
+    #[test]
+    fn xmem003_downgrades_subregion_of_backed_allocation() {
+        let mut parent = typed_region(
+            0x10000,
+            RegionClass::Mapped,
+            Some(MemoryType::Mapped),
+            0x20,
+            Some(r"\Device\HarddiskVolume3\x.dll"),
+        );
+        parent.allocation_base = Some(0x10000);
+        let mut child = typed_region(
+            0x11000,
+            RegionClass::Mapped,
+            Some(MemoryType::Mapped),
+            0x20,
+            None,
+        );
+        child.allocation_base = Some(0x10000);
+        // modules가 비면 XMEM-003이 침묵하므로 더미 모듈을 넣는다.
+        let module = ModuleInfo {
+            name: "other.dll".into(),
+            base: 0,
+            size: 0x1000,
+            path: None,
+            arch: None,
+        };
+        let context = DetectionContext {
+            regions: &[parent, child],
+            modules: &[module],
+            threads: &[],
+        };
+        let findings = ExecutableWithoutBackingModule.evaluate(&context);
+        let child_finding = findings
+            .iter()
+            .find(|f| f.evidence[0].region_base == Some(0x11000))
+            .unwrap();
+        assert_eq!(child_finding.severity, Severity::Low);
+        assert_eq!(
+            child_finding.evidence[0].observed["allocation_backed"],
+            "some"
+        );
     }
 
     #[test]
