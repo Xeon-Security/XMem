@@ -4859,6 +4859,7 @@ name = "xmem-detection"
 version = "0.2.4"
 dependencies = [
  "serde",
+ "serde_json",
  "xmem-core",
 ]
 
