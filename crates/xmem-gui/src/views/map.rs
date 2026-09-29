@@ -401,6 +401,32 @@ pub(crate) fn detail_panel_default(available: f32, max_panel: f32) -> f32 {
     (available * 0.6).clamp(320.0, cap)
 }
 
+/// 점프 입력을 주소로 해석한다. `0x` 접두사가 있으면 16진, 없으면 10진(CLI `parse_addr`와 동일).
+pub fn parse_jump_address(text: &str) -> Result<u64, String> {
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Err("주소를 입력하세요".to_string());
+    }
+    if let Some(hex) = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix("0X"))
+    {
+        u64::from_str_radix(hex, 16)
+            .map_err(|_| format!("16진 주소를 해석할 수 없습니다: {trimmed}"))
+    } else {
+        trimmed.parse::<u64>().map_err(|_| {
+            format!("주소를 해석할 수 없습니다: {trimmed} (16진은 0x 접두사를 붙이세요)")
+        })
+    }
+}
+
+/// 주소를 포함하는 영역의 인덱스.
+pub fn find_region_index(regions: &[xmem_core::MemoryRegion], address: u64) -> Option<usize> {
+    regions.iter().position(|region| {
+        address >= region.base && address < region.base.saturating_add(region.size)
+    })
+}
+
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let Some(pid) = app.selected_pid else {
         ui.label(egui::RichText::new("왼쪽에서 프로세스를 선택하세요").weak());
@@ -414,6 +440,7 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         &app.map_min_size,
         &app.map_max_size,
     );
+    let mut jump_request: Option<String> = None;
     ui.horizontal(|ui| {
         if ui
             .add_enabled(!app.map_task.is_running(), egui::Button::new("맵 새로고침"))
@@ -447,7 +474,45 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
         crate::views::filter_popup(ui, "map_filter_popup", active, |ui| {
             filter_contents(ui, app, pid, has_modules);
         });
+        ui.separator();
+        ui.label("주소");
+        let jump_response = ui.add(
+            egui::TextEdit::singleline(&mut app.map_jump_address)
+                .hint_text("0x7ff...")
+                .desired_width(140.0),
+        );
+        let entered = jump_response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        if ui.button("이동").clicked() || entered {
+            jump_request = Some(app.map_jump_address.clone());
+        }
     });
+    if let Some(text) = jump_request {
+        match parse_jump_address(&text) {
+            Ok(address) => {
+                let found = app
+                    .map
+                    .as_ref()
+                    .and_then(|map| find_region_index(&map.regions, address));
+                match found {
+                    Some(index) => {
+                        let region = app.map.as_ref().map(|map| map.regions[index].clone());
+                        if let Some(region) = region {
+                            app.map_jump_error = None;
+                            app.select_region(pid, region);
+                        }
+                    }
+                    None => {
+                        app.map_jump_error =
+                            Some(format!("주소 {address:#x}를 포함하는 영역이 없습니다"));
+                    }
+                }
+            }
+            Err(message) => app.map_jump_error = Some(message),
+        }
+    }
+    if let Some(message) = &app.map_jump_error {
+        ui.colored_label(palette(app.theme).danger, message);
+    }
     match module_filter_status(
         app.map_filter.outside_modules_only,
         has_modules,
@@ -723,6 +788,24 @@ mod tests {
         }
     }
 
+    fn sample_region(base: u64, size: u64) -> xmem_core::MemoryRegion {
+        xmem_core::MemoryRegion {
+            base,
+            size,
+            allocation_base: Some(base),
+            state: xmem_core::MemoryState::Commit,
+            protection: xmem_core::Protection::new(0x04, true, true, false),
+            allocation_protection: None,
+            region_type: Some(xmem_core::MemoryType::Private),
+            readable: true,
+            writable: true,
+            executable: false,
+            classification: xmem_core::RegionClass::Private,
+            heuristics: Vec::new(),
+            mapped_file: None,
+        }
+    }
+
     fn module(base: u64, size: u64) -> ModuleInfo {
         ModuleInfo {
             name: "mod.dll".to_string(),
@@ -944,5 +1027,28 @@ mod tests {
         for (value, label) in sort_options() {
             assert_eq!(sort_label(value).strip_prefix("정렬: "), Some(label));
         }
+    }
+
+    #[test]
+    fn parse_jump_address_accepts_hex_and_decimal() {
+        assert_eq!(parse_jump_address("0x1000").unwrap(), 0x1000);
+        assert_eq!(parse_jump_address(" 0X10 ").unwrap(), 0x10);
+        assert_eq!(parse_jump_address("4096").unwrap(), 4096);
+        assert!(parse_jump_address("").is_err());
+        assert!(parse_jump_address("0xzz").is_err());
+        assert!(
+            parse_jump_address("12ab").is_err(),
+            "접두사 없는 16진은 거부한다"
+        );
+    }
+
+    #[test]
+    fn find_region_index_matches_containing_range() {
+        let regions = vec![sample_region(0x1000, 0x1000), sample_region(0x4000, 0x1000)];
+        assert_eq!(find_region_index(&regions, 0x1000), Some(0));
+        assert_eq!(find_region_index(&regions, 0x1fff), Some(0));
+        assert_eq!(find_region_index(&regions, 0x2000), None);
+        assert_eq!(find_region_index(&regions, 0x4000), Some(1));
+        assert_eq!(find_region_index(&regions, u64::MAX), None);
     }
 }

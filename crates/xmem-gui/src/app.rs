@@ -125,6 +125,8 @@ pub struct XMemApp {
     pub map: Option<xmem_memory::RegionMap>,
     pub map_filter: xmem_core::RegionFilter,
     pub map_range_start: String,
+    pub map_jump_address: String,
+    pub map_jump_error: Option<String>,
     pub map_range_end: String,
     pub map_min_size: String,
     pub map_max_size: String,
@@ -245,6 +247,8 @@ impl XMemApp {
             map: None,
             map_filter: xmem_core::RegionFilter::default(),
             map_range_start: String::new(),
+            map_jump_address: String::new(),
+            map_jump_error: None,
             map_range_end: String::new(),
             map_min_size: String::new(),
             map_max_size: String::new(),
@@ -394,6 +398,7 @@ impl XMemApp {
         self.start_overview(pid);
         self.map = None;
         self.map_selected = None;
+        self.map_jump_error = None;
         self.region_detail = None;
         self.region_page_pending = None;
         self.modules_bundle = None;
