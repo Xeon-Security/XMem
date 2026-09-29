@@ -1043,7 +1043,12 @@ impl eframe::App for XMemApp {
         });
 
         egui::Panel::bottom(egui::Id::new("log")).show(ui, |ui| {
-            crate::views::log::ui(ui, &mut self.log, self.theme);
+            let log_dir = self
+                .config
+                .last_output_dir
+                .clone()
+                .unwrap_or_else(crate::config::default_output_dir);
+            crate::views::log::ui(ui, &mut self.log, self.theme, &log_dir);
         });
 
         let narrow = ui.ctx().input(|i| i.viewport_rect().width()) < 900.0;
