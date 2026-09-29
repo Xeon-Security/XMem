@@ -49,6 +49,7 @@ impl MinidumpSource {
         let dump = Minidump::read_path(path).map_err(|e| dump_error(path, &e))?;
 
         let system = dump.get_stream::<MinidumpSystemInfo>().ok();
+        let misc = dump.get_stream::<MinidumpMiscInfo>().ok();
         let (os, cpu, arch) = match &system {
             Some(s) => (
                 format!("{:?}", s.os),
@@ -67,29 +68,55 @@ impl MinidumpSource {
             .map(|list| list.iter().map(|m| module_from(m, arch)).collect())
             .unwrap_or_default();
 
-        let (pid, creation_time) = misc_info(&dump);
-        let threads: Vec<ThreadInfo> = dump
-            .get_stream::<MinidumpThreadList>()
-            .map(|list| {
-                list.threads
-                    .iter()
-                    .map(|t| ThreadInfo {
-                        tid: t.raw.thread_id,
-                        pid,
-                        priority: None,
-                        start_address: None,
-                        start_region_base: None,
-                        start_module: None,
-                    })
-                    .collect()
-            })
-            .unwrap_or_default();
-
         let regions: Vec<MemoryRegion> = dump
             .get_stream::<MinidumpMemoryInfoList>()
             .map(|list| {
                 list.iter()
                     .filter_map(|info| region_from_info(info, &modules))
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        let (pid, creation_time) = misc_info(misc.as_ref());
+        // minidump에는 실측 start address가 없어 컨텍스트의 instruction pointer를 근사값으로 쓴다.
+        // 컨텍스트가 없는 덤프는 기존처럼 start_address None을 유지한다.
+        let threads: Vec<ThreadInfo> = dump
+            .get_stream::<MinidumpThreadList>()
+            .map(|list| {
+                list.threads
+                    .iter()
+                    .map(|t| {
+                        let ip = system
+                            .as_ref()
+                            .and_then(|s| t.context(s, misc.as_ref()))
+                            .map(|context| context.get_instruction_pointer())
+                            .filter(|address| *address != 0);
+                        ThreadInfo {
+                            tid: t.raw.thread_id,
+                            pid,
+                            priority: None,
+                            start_address: ip,
+                            start_region_base: ip.and_then(|address| {
+                                regions
+                                    .iter()
+                                    .find(|region| {
+                                        address >= region.base
+                                            && address < region.base.saturating_add(region.size)
+                                    })
+                                    .map(|region| region.base)
+                            }),
+                            start_module: ip.and_then(|address| {
+                                modules
+                                    .iter()
+                                    .find(|module| {
+                                        address >= module.base
+                                            && address < module.base.saturating_add(module.size)
+                                    })
+                                    .map(|module| module.name.clone())
+                            }),
+                            start_address_source: ip.map(|_| "minidump-context-rip".to_string()),
+                        }
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -208,8 +235,8 @@ fn dump_error(path: &Path, e: &minidump::Error) -> XmemError {
     }
 }
 
-fn misc_info(dump: &minidump::MmapMinidump) -> (u32, Option<u64>) {
-    let Ok(misc) = dump.get_stream::<MinidumpMiscInfo>() else {
+fn misc_info(misc: Option<&MinidumpMiscInfo>) -> (u32, Option<u64>) {
+    let Some(misc) = misc else {
         return (0, None);
     };
     let pid = misc.raw.process_id().copied().unwrap_or(0);

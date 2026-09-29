@@ -575,6 +575,7 @@ mod equivalence_tests {
             start_address: start,
             start_region_base: start.map(|address| address & !0xfff),
             start_module: module.map(str::to_string),
+            start_address_source: None,
         }
     }
 

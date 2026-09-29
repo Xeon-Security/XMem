@@ -542,6 +542,7 @@ mod tests {
             start_address: Some(0x1000),
             start_region_base: Some(0x1000),
             start_module: Some("old.dll".to_string()),
+            start_address_source: None,
         });
         let mut after = sample_envelope(1, 0x1000, 0x04);
         after.modules.push(ModuleInfo {
@@ -558,6 +559,7 @@ mod tests {
             start_address: Some(0x9000),
             start_region_base: Some(0x9000),
             start_module: None,
+            start_address_source: None,
         });
         let diff = diff(&before, &after);
         assert_eq!(diff.modules_added.len(), 1);

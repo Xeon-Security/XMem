@@ -245,6 +245,7 @@ impl LiveProcess {
                 start_address,
                 start_region_base,
                 start_module,
+                start_address_source: None,
             });
         }
         Ok(threads)

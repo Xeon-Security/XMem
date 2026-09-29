@@ -388,6 +388,7 @@ mod tests {
             start_address: Some(0x4000),
             start_region_base: Some(0x4000),
             start_module: Some("sample.exe".to_string()),
+            start_address_source: None,
         }];
         let findings = vec![Finding {
             rule_id: "XMEM-001".to_string(),

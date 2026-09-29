@@ -266,8 +266,8 @@ impl Rule for SuspiciousThreadStartAddress {
                 name: self.name().to_string(),
                 severity: Severity::High,
                 confidence: Confidence::Medium,
-                evidence: vec![
-                    Evidence::new("thread")
+                evidence: {
+                    let mut evidence = Evidence::new("thread")
                         .with_address(thread.start_address.unwrap_or(0))
                         .observe("tid", thread.tid.to_string())
                         .observe(
@@ -282,11 +282,15 @@ impl Rule for SuspiciousThreadStartAddress {
                                 .start_region_base
                                 .map_or_else(|| "none".to_string(), |value| format!("{value:#x}")),
                         )
-                        .observe("start_module", "none"),
-                ],
+                        .observe("start_module", "none");
+                    if let Some(source) = thread.start_address_source.as_deref() {
+                        evidence = evidence.observe("start_address_source", source);
+                    }
+                    vec![evidence]
+                },
                 heuristic: "thread start address outside loaded modules".to_string(),
                 interpretation:
-                    "Potentially suspicious thread origin; JIT, hooks, and unloaded modules can also produce this"
+                    "Potentially suspicious thread origin; JIT, hooks, and unloaded modules can also produce this. 주소가 컨텍스트 instruction pointer인 경우(start_address_source 참조) 시작 주소의 근사값이다."
                         .to_string(),
             })
             .collect()
@@ -413,6 +417,7 @@ mod tests {
             start_address: start,
             start_region_base: region_base,
             start_module: module.map(str::to_string),
+            start_address_source: None,
         }
     }
 
@@ -635,6 +640,31 @@ mod tests {
         assert_eq!(tids, vec!["10", "11"]);
         assert_eq!(findings[0].severity, Severity::High);
         assert_eq!(findings[0].confidence, Confidence::Medium);
+    }
+
+    #[test]
+    fn xmem004_records_start_address_source() {
+        let thread = ThreadInfo {
+            tid: 7,
+            pid: 1,
+            priority: None,
+            start_address: Some(0x2000),
+            start_region_base: Some(0x2000),
+            start_module: None,
+            start_address_source: Some("minidump-context-rip".to_string()),
+        };
+        let regions = [region(0x2000, Vec::new(), RegionClass::Private, 0x20)];
+        let context = DetectionContext {
+            regions: &regions,
+            modules: &[],
+            threads: &[thread],
+        };
+        let findings = SuspiciousThreadStartAddress.evaluate(&context);
+        assert_eq!(findings.len(), 1, "private exec + 모듈 밖 스레드");
+        assert_eq!(
+            findings[0].evidence[0].observed["start_address_source"],
+            "minidump-context-rip"
+        );
     }
 
     #[test]

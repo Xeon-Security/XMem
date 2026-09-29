@@ -352,6 +352,11 @@ pub fn panel(ui: &mut egui::Ui, app: &mut XMemApp) {
                                 ui.label(value);
                                 ui.end_row();
                             }
+                            if let Some(source) = thread.start_address_source.as_deref() {
+                                ui.label(egui::RichText::new("시작 주소 출처").weak());
+                                ui.label(source);
+                                ui.end_row();
+                            }
                         });
                 });
             egui::CollapsingHeader::new("스레드 시간")
@@ -459,6 +464,7 @@ mod tests {
             start_address,
             start_region_base: Some(0x0001_4000_0000),
             start_module: Some("sample.dll".into()),
+            start_address_source: None,
         }
     }
 

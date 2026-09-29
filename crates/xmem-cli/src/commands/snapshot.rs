@@ -600,6 +600,7 @@ mod tests {
                 start_address: None,
                 start_region_base: None,
                 start_module: None,
+                start_address_source: None,
             }],
             content_hashes: Vec::new(),
             findings: Vec::new(),

@@ -74,3 +74,23 @@ fn minidump_source_read_invalid_address_errors() {
     assert!(matches!(err, XmemError::InvalidAddress { .. }));
     let _ = std::fs::remove_dir_all(path.parent().unwrap());
 }
+
+#[test]
+fn minidump_threads_report_context_instruction_pointer() {
+    let _guard = lock_self_dump();
+    let path = self_dump("rip");
+
+    let source = MinidumpSource::open(&path).unwrap();
+    let threads = xmem_core::MemorySource::threads(&source).unwrap();
+    assert!(!threads.is_empty(), "스레드 목록");
+    assert!(
+        threads.iter().any(|t| t.start_address.is_some()),
+        "MiniDumpNormal은 스레드 컨텍스트를 포함한다"
+    );
+    assert!(
+        threads.iter().all(|t| t.start_address.is_none()
+            || t.start_address_source.as_deref() == Some("minidump-context-rip")),
+        "출처 표기"
+    );
+    let _ = std::fs::remove_dir_all(path.parent().unwrap());
+}
