@@ -38,8 +38,10 @@ fn init_tracing(cli: &Cli) {
             _ => "trace",
         }
     };
-    let filter =
-        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(default_level));
+    // minidump 크레이트는 최신 CPU 컨텍스트의 XSTATE를 만나면 스레드마다 경고를 출력한다(무해).
+    // 기본 필터에서만 억제하고, RUST_LOG가 있으면 사용자가 지정한 값을 그대로 쓴다.
+    let filter = EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| EnvFilter::new(format!("{default_level},minidump=error")));
     let _ = tracing_subscriber::fmt()
         .with_env_filter(filter)
         .with_target(false)

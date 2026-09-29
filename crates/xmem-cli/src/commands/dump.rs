@@ -245,6 +245,8 @@ pub(crate) fn dump_json_payload(analysis: &DumpAnalysis, findings: &[Finding]) -
         "region_count": analysis.regions.len(),
         "module_count": analysis.modules.len(),
         "thread_count": analysis.threads.len(),
+        // 오프라인 분석에서도 스레드 시작 주소와 출처(start_address_source)를 볼 수 있게 한다.
+        "threads": analysis.threads,
         "memory_ranges": analysis.memory_ranges,
         "memory_bytes": analysis.memory_bytes,
         "finding_count": findings.len(),
@@ -351,6 +353,27 @@ mod tests {
         assert_eq!(value["memory_ranges"], 7);
         assert_eq!(value["finding_count"], 1);
         assert_eq!(value["findings"][0]["rule_id"], "XMEM-001");
+    }
+
+    #[test]
+    fn dump_json_payload_includes_threads_with_source() {
+        let mut analysis = sample_analysis();
+        analysis.threads.push(xmem_core::ThreadInfo {
+            tid: 77,
+            pid: 4242,
+            priority: None,
+            start_address: Some(0x1000),
+            start_region_base: Some(0x1000),
+            start_module: None,
+            start_address_source: Some("minidump-context-rip".to_string()),
+        });
+        let value = dump_json_payload(&analysis, &[]);
+        assert_eq!(value["thread_count"], 1);
+        assert_eq!(value["threads"][0]["tid"], 77);
+        assert_eq!(
+            value["threads"][0]["start_address_source"],
+            "minidump-context-rip"
+        );
     }
 
     #[test]
