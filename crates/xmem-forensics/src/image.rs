@@ -46,6 +46,42 @@ pub struct StoredRegion {
     pub partial: bool,
 }
 
+/// 바이트 수준 diff의 한 구간(변경된 연속 바이트).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ByteChange {
+    pub base: u64,
+    pub offset: u64,
+    pub len: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegionByteDiff {
+    pub base: u64,
+    pub changes: Vec<ByteChange>,
+    pub changed_bytes: u64,
+    pub compared_bytes: u64,
+    pub truncated: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageDiffRef {
+    pub pid: u32,
+    pub name: String,
+    pub timestamp: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImageDiff {
+    pub before: ImageDiffRef,
+    pub after: ImageDiffRef,
+    pub regions_added: Vec<u64>,
+    pub regions_removed: Vec<u64>,
+    pub byte_diffs: Vec<RegionByteDiff>,
+    pub changed_regions: usize,
+    pub changed_bytes: u64,
+    pub truncated: bool,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ImageAcquisition {
     pub stored_regions: usize,
@@ -320,6 +356,154 @@ pub fn read_image(path: &Path) -> Result<MemoryImage> {
     decode_image(&bytes)
 }
 
+const DIFF_CHUNK: usize = 4096;
+
+/// 변경 구간 기록기. `max_changes`를 넘으면 기록만 멈추고 합계는 계속 누적한다.
+struct ChangeRecorder {
+    base: u64,
+    max_changes: usize,
+    changes: Vec<ByteChange>,
+    changed_bytes: u64,
+    truncated: bool,
+}
+
+impl ChangeRecorder {
+    fn record(&mut self, offset: u64, len: u64) {
+        if len == 0 {
+            return;
+        }
+        self.changed_bytes += len;
+        if self.changes.len() >= self.max_changes {
+            self.truncated = true;
+            return;
+        }
+        if let Some(last) = self.changes.last_mut()
+            && last.offset + last.len == offset
+        {
+            last.len += len;
+            return;
+        }
+        self.changes.push(ByteChange {
+            base: self.base,
+            offset,
+            len,
+        });
+    }
+}
+
+fn stored_slice<'a>(image: &'a MemoryImage, stored: &StoredRegion, len: u64) -> &'a [u8] {
+    let start = stored.offset as usize;
+    let end = start.saturating_add(len as usize);
+    image.content.get(start..end).unwrap_or(&[])
+}
+
+fn image_ref(image: &MemoryImage) -> ImageDiffRef {
+    ImageDiffRef {
+        pid: image.meta.process.pid,
+        name: image.meta.process.name.clone(),
+        timestamp: image.meta.timestamp,
+    }
+}
+
+/// 두 이미지의 저장 영역을 비교한다.
+/// 영역은 base로 매칭하고, 저장 길이가 다르면 짧은 쪽 이후 꼬리 구간을 변경으로 본다.
+pub fn diff_images(before: &MemoryImage, after: &MemoryImage, max_changes: usize) -> ImageDiff {
+    use std::collections::BTreeMap;
+
+    let before_map: BTreeMap<u64, &StoredRegion> = before
+        .meta
+        .contents
+        .iter()
+        .map(|stored| (stored.base, stored))
+        .collect();
+    let after_map: BTreeMap<u64, &StoredRegion> = after
+        .meta
+        .contents
+        .iter()
+        .map(|stored| (stored.base, stored))
+        .collect();
+
+    let mut regions_added: Vec<u64> = after_map
+        .keys()
+        .filter(|base| !before_map.contains_key(base))
+        .copied()
+        .collect();
+    let mut regions_removed: Vec<u64> = before_map
+        .keys()
+        .filter(|base| !after_map.contains_key(base))
+        .copied()
+        .collect();
+    regions_added.sort_unstable();
+    regions_removed.sort_unstable();
+
+    let mut byte_diffs = Vec::new();
+    let mut changed_regions = 0usize;
+    let mut changed_bytes = 0u64;
+    let mut truncated = false;
+    for (base, before_stored) in &before_map {
+        let Some(after_stored) = after_map.get(base) else {
+            continue;
+        };
+        let compare_len = before_stored.len.min(after_stored.len);
+        let a = stored_slice(before, before_stored, compare_len);
+        let b = stored_slice(after, after_stored, compare_len);
+        let compared = a.len().min(b.len());
+        let mut recorder = ChangeRecorder {
+            base: *base,
+            max_changes,
+            changes: Vec::new(),
+            changed_bytes: 0,
+            truncated: false,
+        };
+        let mut offset = 0usize;
+        while offset < compared {
+            let end = (offset + DIFF_CHUNK).min(compared);
+            if a[offset..end] != b[offset..end] {
+                let mut run_start = offset;
+                for index in offset..end {
+                    if a[index] == b[index] {
+                        if index > run_start {
+                            recorder.record(run_start as u64, (index - run_start) as u64);
+                        }
+                        run_start = index + 1;
+                    }
+                }
+                if end > run_start {
+                    recorder.record(run_start as u64, (end - run_start) as u64);
+                }
+            }
+            offset = end;
+        }
+        if before_stored.len != after_stored.len {
+            let tail = before_stored.len.abs_diff(after_stored.len);
+            recorder.record(compared as u64, tail);
+        }
+        if recorder.changed_bytes > 0 {
+            changed_regions += 1;
+            changed_bytes += recorder.changed_bytes;
+            truncated |= recorder.truncated;
+            byte_diffs.push(RegionByteDiff {
+                base: *base,
+                compared_bytes: compared as u64,
+                changed_bytes: recorder.changed_bytes,
+                changes: recorder.changes,
+                truncated: recorder.truncated,
+            });
+        }
+    }
+
+    ImageDiff {
+        before: image_ref(before),
+        after: image_ref(after),
+        regions_added,
+        regions_removed,
+        byte_diffs,
+        changed_regions,
+        changed_bytes,
+        truncated,
+    }
+}
+
 /// 이미지 파일을 MemorySource로 노출한다. read는 저장된 영역만 대상으로 한다.
 pub struct MemoryImageSource {
     meta: ImageMeta,
@@ -463,6 +647,73 @@ mod tests {
         }
     }
 
+    /// 여러 영역을 직접 구성한 이미지(테스트 전용).
+    fn built_image(parts: &[(u64, &[u8])]) -> MemoryImage {
+        let mut content = Vec::new();
+        let mut contents = Vec::new();
+        let mut regions = Vec::new();
+        for (base, bytes) in parts {
+            contents.push(StoredRegion {
+                base: *base,
+                region_size: bytes.len() as u64,
+                offset: content.len() as u64,
+                len: bytes.len() as u64,
+                partial: false,
+            });
+            regions.push(MemoryRegion {
+                base: *base,
+                size: bytes.len() as u64,
+                allocation_base: Some(*base),
+                state: MemoryState::Commit,
+                protection: Protection::new(0x04, true, true, false),
+                allocation_protection: None,
+                region_type: Some(MemoryType::Private),
+                readable: true,
+                writable: true,
+                executable: false,
+                classification: RegionClass::Private,
+                heuristics: Vec::new(),
+                mapped_file: None,
+            });
+            content.extend_from_slice(bytes);
+        }
+        MemoryImage {
+            meta: ImageMeta {
+                schema_version: 1,
+                xmem_version: "test".into(),
+                format_version: IMAGE_FORMAT_VERSION,
+                timestamp: chrono::Utc::now(),
+                process: ProcessInfo {
+                    pid: 9,
+                    ppid: None,
+                    name: "mock.exe".into(),
+                    image_path: None,
+                    arch: ProcessArch::X64,
+                    session_id: None,
+                    creation_time: None,
+                    command_line: None,
+                    user: None,
+                    memory_stats: None,
+                    thread_count: None,
+                    module_count: None,
+                },
+                regions,
+                modules: Vec::new(),
+                threads: Vec::new(),
+                findings: Vec::new(),
+                contents,
+                acquisition: ImageAcquisition {
+                    stored_regions: parts.len(),
+                    stored_bytes: content.len() as u64,
+                    budget_bytes: u64::MAX,
+                    read_failures: 0,
+                    skipped_unreadable: 0,
+                },
+            },
+            content,
+        }
+    }
+
     #[test]
     fn encode_decode_roundtrip_keeps_meta_and_content() {
         let source = mock(0x1000, 0x100, 0x40);
@@ -586,5 +837,73 @@ mod tests {
             copy[index] ^= (lcg(&mut seed) & 0xff) as u8;
             let _ = decode_image(&copy);
         }
+    }
+
+    #[test]
+    fn diff_identical_images_is_empty() {
+        let a = built_image(&[(0x1000, &[1u8, 2, 3, 4])]);
+        let b = a.clone();
+        let diff = diff_images(&a, &b, 100);
+        assert!(diff.regions_added.is_empty());
+        assert!(diff.regions_removed.is_empty());
+        assert_eq!(diff.changed_regions, 0);
+        assert_eq!(diff.changed_bytes, 0);
+        assert!(!diff.truncated);
+    }
+
+    #[test]
+    fn diff_reports_single_byte_change_with_exact_range() {
+        let mut bytes = vec![0u8; 0x40];
+        bytes[0x10] = 7;
+        let a = built_image(&[(0x1000, &bytes)]);
+        let mut mutated = bytes.clone();
+        mutated[0x10] = 9;
+        let b = built_image(&[(0x1000, &mutated)]);
+        let diff = diff_images(&a, &b, 100);
+        assert_eq!(diff.changed_regions, 1);
+        assert_eq!(diff.changed_bytes, 1);
+        let region = &diff.byte_diffs[0];
+        assert_eq!(region.base, 0x1000);
+        assert_eq!(region.changes.len(), 1);
+        assert_eq!(region.changes[0].offset, 0x10);
+        assert_eq!(region.changes[0].len, 1);
+    }
+
+    #[test]
+    fn diff_reports_added_and_removed_regions() {
+        let a = built_image(&[(0x1000, &[1u8; 8]), (0x2000, &[2u8; 8])]);
+        let b = built_image(&[(0x1000, &[1u8; 8]), (0x3000, &[3u8; 8])]);
+        let diff = diff_images(&a, &b, 100);
+        assert_eq!(diff.regions_added, vec![0x3000]);
+        assert_eq!(diff.regions_removed, vec![0x2000]);
+        assert_eq!(diff.changed_regions, 0);
+    }
+
+    #[test]
+    fn diff_caps_changes_and_marks_truncated() {
+        let mut a_bytes = vec![0u8; 0x30];
+        let mut b_bytes = vec![0u8; 0x30];
+        a_bytes[0x00] = 1;
+        b_bytes[0x00] = 2;
+        a_bytes[0x28] = 1;
+        b_bytes[0x28] = 2;
+        let a = built_image(&[(0x1000, &a_bytes)]);
+        let b = built_image(&[(0x1000, &b_bytes)]);
+        let diff = diff_images(&a, &b, 1);
+        assert_eq!(diff.changed_bytes, 2, "잘려도 합계는 정확해야 한다");
+        assert_eq!(diff.byte_diffs[0].changes.len(), 1);
+        assert!(diff.byte_diffs[0].truncated);
+        assert!(diff.truncated);
+    }
+
+    #[test]
+    fn diff_reports_length_tail_change() {
+        let a = built_image(&[(0x1000, &[1u8; 8])]);
+        let b = built_image(&[(0x1000, &[1u8; 6])]);
+        let diff = diff_images(&a, &b, 100);
+        assert_eq!(diff.changed_bytes, 2);
+        let change = &diff.byte_diffs[0].changes[0];
+        assert_eq!(change.offset, 6);
+        assert_eq!(change.len, 2);
     }
 }

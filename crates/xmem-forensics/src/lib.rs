@@ -19,9 +19,9 @@ pub use dump::{DumpAnalysis, MinidumpSource, analyze_dump};
 pub use envelope::{AcquisitionMeta, RegionHash, SnapshotEnvelope};
 pub use format::{HEADER_LEN, MAGIC, decode, encode, read_file, write_file};
 pub use image::{
-    IMAGE_FORMAT_VERSION, IMAGE_MAGIC, ImageAcquisition, ImageMeta, ImageOptions, MemoryImage,
-    MemoryImageSource, StoredRegion, collect_image, decode_image, encode_image, read_image,
-    write_image,
+    ByteChange, IMAGE_FORMAT_VERSION, IMAGE_MAGIC, ImageAcquisition, ImageDiff, ImageDiffRef,
+    ImageMeta, ImageOptions, MemoryImage, MemoryImageSource, RegionByteDiff, StoredRegion,
+    collect_image, decode_image, diff_images, encode_image, read_image, write_image,
 };
 pub use report::{ReportData, ReportSummary, is_markdown, write_report};
 pub use source::SnapshotSource;

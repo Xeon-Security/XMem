@@ -6,12 +6,14 @@ use std::sync::atomic::Ordering;
 use serde_json::{Value, json};
 use xmem_core::{MemorySource, Result, ScanPattern, XmemError};
 use xmem_forensics::{
-    ImageMeta, ImageOptions, MemoryImageSource, ReportData, collect_image, encode_image,
-    write_image, write_report,
+    ImageDiff, ImageMeta, ImageOptions, MemoryImageSource, ReportData, collect_image, diff_images,
+    encode_image, read_image, write_image, write_report,
 };
 use xmem_memory::{DEFAULT_CHUNK_SIZE, DEFAULT_MAX_RESULTS, RegionFilters, ScanOptions, scan};
 
-use crate::cli::{GlobalArgs, ImageAnalyzeArgs, ImageCmd, ImageCreateArgs, ImageScanArgs};
+use crate::cli::{
+    GlobalArgs, ImageAnalyzeArgs, ImageCmd, ImageCreateArgs, ImageDiffArgs, ImageScanArgs,
+};
 use crate::commands::memory::{cancel_flag, parse_size, render_scan};
 use crate::commands::render::human_size;
 use crate::commands::snapshot::ensure_disk_space;
@@ -23,6 +25,7 @@ pub fn run(cmd: &ImageCmd, global: &GlobalArgs) -> Result<()> {
         ImageCmd::Info { file } => run_info(file, global),
         ImageCmd::Analyze(args) => run_analyze(args, global),
         ImageCmd::Scan(args) => run_scan(args, global),
+        ImageCmd::Diff(args) => run_diff(args, global),
     }
 }
 
@@ -283,6 +286,70 @@ fn run_scan(args: &ImageScanArgs, global: &GlobalArgs) -> Result<()> {
     Ok(())
 }
 
+fn run_diff(args: &ImageDiffArgs, global: &GlobalArgs) -> Result<()> {
+    let before = read_image(Path::new(&args.before))?;
+    let after = read_image(Path::new(&args.after))?;
+    let diff = diff_images(&before, &after, args.max_changes);
+    match resolve_mode(global.json) {
+        OutputMode::Json => emit_json(&success_envelope(json!({
+            "before": args.before,
+            "after": args.after,
+            "before_process": { "pid": diff.before.pid, "name": diff.before.name },
+            "after_process": { "pid": diff.after.pid, "name": diff.after.name },
+            "regions_added": diff.regions_added,
+            "regions_removed": diff.regions_removed,
+            "changed_regions": diff.changed_regions,
+            "changed_bytes": diff.changed_bytes,
+            "truncated": diff.truncated,
+            "byte_diffs": diff.byte_diffs,
+        }))),
+        OutputMode::Human => emit(&render_image_diff(&diff)),
+    }
+    Ok(())
+}
+
+fn render_image_diff(diff: &ImageDiff) -> String {
+    let mut out = format!(
+        "image diff: {} (pid {}) -> {} (pid {})\n",
+        diff.before.name, diff.before.pid, diff.after.name, diff.after.pid
+    );
+    out.push_str(&format!(
+        "  regions: +{} -{}, byte changes: {} regions / {}{}\n",
+        diff.regions_added.len(),
+        diff.regions_removed.len(),
+        diff.changed_regions,
+        human_size(diff.changed_bytes),
+        if diff.truncated {
+            " (변경 구간 목록 잘림)"
+        } else {
+            ""
+        }
+    ));
+    for base in &diff.regions_removed {
+        out.push_str(&format!("  - 0x{base:016x}\n"));
+    }
+    for base in &diff.regions_added {
+        out.push_str(&format!("  + 0x{base:016x}\n"));
+    }
+    for region in &diff.byte_diffs {
+        for change in &region.changes {
+            out.push_str(&format!(
+                "  * 0x{:016x} +0x{:x} {}\n",
+                change.base,
+                change.offset,
+                human_size(change.len)
+            ));
+        }
+        if region.truncated {
+            out.push_str(&format!(
+                "    (0x{:016x} 변경 구간 목록 잘림)\n",
+                region.base
+            ));
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -395,5 +462,41 @@ mod tests {
             ..sample_args()
         };
         assert!(build_pattern(&args).is_err());
+    }
+
+    #[test]
+    fn render_image_diff_lists_regions_and_changes() {
+        let diff = xmem_forensics::ImageDiff {
+            before: xmem_forensics::ImageDiffRef {
+                pid: 1,
+                name: "a.exe".into(),
+                timestamp: chrono::Utc::now(),
+            },
+            after: xmem_forensics::ImageDiffRef {
+                pid: 1,
+                name: "a.exe".into(),
+                timestamp: chrono::Utc::now(),
+            },
+            regions_added: vec![0x3000],
+            regions_removed: vec![0x2000],
+            byte_diffs: vec![xmem_forensics::RegionByteDiff {
+                base: 0x1000,
+                changes: vec![xmem_forensics::ByteChange {
+                    base: 0x1000,
+                    offset: 0x10,
+                    len: 4,
+                }],
+                changed_bytes: 4,
+                compared_bytes: 0x100,
+                truncated: false,
+            }],
+            changed_regions: 1,
+            changed_bytes: 4,
+            truncated: false,
+        };
+        let text = render_image_diff(&diff);
+        assert!(text.contains("+ 0x0000000000003000"));
+        assert!(text.contains("- 0x0000000000002000"));
+        assert!(text.contains("* 0x0000000000001000 +0x10"));
     }
 }

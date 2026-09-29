@@ -334,6 +334,8 @@ pub enum ImageCmd {
     Analyze(ImageAnalyzeArgs),
     /// 이미지 오프라인 패턴/문자열 검색
     Scan(ImageScanArgs),
+    /// 두 이미지의 메타데이터·바이트 차이
+    Diff(ImageDiffArgs),
 }
 
 #[derive(Debug, Args)]
@@ -393,6 +395,17 @@ pub struct ImageScanArgs {
     /// 최대 결과 수(0=무제한, 기본 1024)
     #[arg(long = "max-results")]
     pub max_results: Option<usize>,
+}
+
+#[derive(Debug, Args)]
+pub struct ImageDiffArgs {
+    /// 이전 이미지(.xmemimg)
+    pub before: String,
+    /// 이후 이미지(.xmemimg)
+    pub after: String,
+    /// 최대 변경 구간 수(기본 1000)
+    #[arg(long = "max-changes", default_value_t = 1000)]
+    pub max_changes: usize,
 }
 
 #[derive(Debug, Args)]
@@ -1162,6 +1175,29 @@ mod tests {
         };
         assert_eq!(args.needle_string.as_deref(), Some("abc"));
         assert!(Cli::try_parse_from(["xmem", "image", "scan", "a.xmemimg"]).is_err());
+    }
+
+    #[test]
+    fn image_diff_parses_files_and_max_changes() {
+        let cli = parse(&[
+            "xmem",
+            "image",
+            "diff",
+            "a.xmemimg",
+            "b.xmemimg",
+            "--max-changes",
+            "5",
+        ])
+        .unwrap();
+        let Command::Image { cmd } = cli.command else {
+            panic!("image 서브커맨드여야 한다");
+        };
+        let ImageCmd::Diff(args) = cmd else {
+            panic!("diff 서브커맨드여야 한다");
+        };
+        assert_eq!(args.before, "a.xmemimg");
+        assert_eq!(args.after, "b.xmemimg");
+        assert_eq!(args.max_changes, 5);
     }
 
     #[test]
