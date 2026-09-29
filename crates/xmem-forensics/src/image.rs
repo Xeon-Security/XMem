@@ -384,6 +384,13 @@ mod tests {
     use std::sync::atomic::AtomicBool;
     use xmem_core::{MemoryState, MemoryType, ProcessArch, Protection, ReadOutcome, RegionClass};
 
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*seed >> 33) as u32
+    }
+
     struct MockSource {
         info: ProcessInfo,
         regions: Vec<MemoryRegion>,
@@ -559,5 +566,25 @@ mod tests {
             collect_image(&source, &ImageOptions::default(), &cancel),
             Err(XmemError::Cancelled { .. })
         ));
+    }
+
+    #[test]
+    fn decode_image_never_panics_on_random_and_mutated_input() {
+        let mut seed = 0x00c0_ffee_1234_5678_u64;
+        for _ in 0..1000 {
+            let len = (lcg(&mut seed) % 512) as usize;
+            let bytes: Vec<u8> = (0..len).map(|_| (lcg(&mut seed) & 0xff) as u8).collect();
+            let _ = decode_image(&bytes);
+        }
+        let source = mock(0x1000, 0x100, 0x40);
+        let image =
+            collect_image(&source, &ImageOptions::default(), &AtomicBool::new(false)).unwrap();
+        let valid = encode_image(&image).unwrap();
+        for _ in 0..1000 {
+            let mut copy = valid.clone();
+            let index = (lcg(&mut seed) as usize) % copy.len();
+            copy[index] ^= (lcg(&mut seed) & 0xff) as u8;
+            let _ = decode_image(&copy);
+        }
     }
 }

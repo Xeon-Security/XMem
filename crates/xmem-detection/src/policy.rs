@@ -332,6 +332,13 @@ mod tests {
     use crate::rules::detect;
     use xmem_core::{MemoryRegion, MemoryState, MemoryType, Protection, RegionClass};
 
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*seed >> 33) as u32
+    }
+
     fn region(base: u64, heuristics: Vec<Heuristic>) -> MemoryRegion {
         MemoryRegion {
             base,
@@ -512,5 +519,18 @@ mod tests {
         let back: DetectionPolicy = serde_json::from_slice(&json).unwrap();
         assert_eq!(back.suppress.len(), 1);
         assert_eq!(back.suppress[0].observed["backing"], "mapped-no-file");
+    }
+
+    #[test]
+    fn parse_policy_never_panics_on_random_input() {
+        let alphabet = b"{}[]\":,abcXY?*0123456789 \n\t\\";
+        let mut seed = 0x0f0f_1234_abcd_0001_u64;
+        for _ in 0..2000 {
+            let len = (lcg(&mut seed) % 256) as usize;
+            let text: String = (0..len)
+                .map(|_| alphabet[(lcg(&mut seed) as usize) % alphabet.len()] as char)
+                .collect();
+            let _ = parse_policy(text.as_bytes(), "fuzz");
+        }
     }
 }

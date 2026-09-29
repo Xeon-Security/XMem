@@ -201,6 +201,13 @@ impl BytePattern {
 mod tests {
     use super::*;
 
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*seed >> 33) as u32
+    }
+
     fn err(input: &str, f: impl Fn(&str) -> Result<BytePattern>) {
         assert!(
             matches!(f(input), Err(XmemError::InvalidInput { .. })),
@@ -280,5 +287,18 @@ mod tests {
         assert_eq!(p.source, "48 8B");
         assert_eq!(ScanPattern::ascii("hi").unwrap().kind, PatternKind::Ascii);
         assert_eq!(ScanPattern::wide("hi").unwrap().len(), 4);
+    }
+
+    #[test]
+    fn parse_hex_never_panics_on_random_input() {
+        let alphabet = b"0123456789abcdefABCDEF? ";
+        let mut seed = 0x1234_5678_9abc_def0_u64;
+        for _ in 0..2000 {
+            let len = (lcg(&mut seed) % 64) as usize;
+            let text: String = (0..len)
+                .map(|_| alphabet[(lcg(&mut seed) as usize) % alphabet.len()] as char)
+                .collect();
+            let _ = BytePattern::parse_hex(&text);
+        }
     }
 }

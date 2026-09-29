@@ -297,6 +297,13 @@ pub fn classify_memory_pe(region_class: RegionClass, bytes: &[u8]) -> MemoryPeCl
 mod tests {
     use super::*;
 
+    fn lcg(seed: &mut u64) -> u32 {
+        *seed = seed
+            .wrapping_mul(6364136223846793005)
+            .wrapping_add(1442695040888963407);
+        (*seed >> 33) as u32
+    }
+
     fn own_exe_bytes() -> Vec<u8> {
         let path = std::env::current_exe().unwrap();
         std::fs::read(path).unwrap()
@@ -455,5 +462,22 @@ mod tests {
         );
         assert_eq!(MemoryPeClass::PrivatePeLike.as_str(), "private_pe_like");
         assert_eq!(MemoryPeClass::Malformed.as_str(), "malformed");
+    }
+
+    #[test]
+    fn parse_pe_never_panics_on_random_and_seeded_input() {
+        let mut seed = 0xdead_beef_0bad_f00d_u64;
+        for round in 0..2000 {
+            let len = (lcg(&mut seed) % 4096) as usize;
+            let mut bytes: Vec<u8> = (0..len).map(|_| (lcg(&mut seed) & 0xff) as u8).collect();
+            if round % 2 == 0 && bytes.len() >= 0x48 {
+                bytes[0] = b'M';
+                bytes[1] = b'Z';
+                bytes[0x3c..0x40].copy_from_slice(&0x40u32.to_le_bytes());
+                bytes[0x40..0x44].copy_from_slice(b"PE\0\0");
+            }
+            let _ = looks_like_pe(&bytes);
+            let _ = parse_pe(&bytes);
+        }
     }
 }
