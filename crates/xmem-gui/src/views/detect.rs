@@ -1,9 +1,10 @@
 //! 탐지 탭: findings 목록과 상세.
 
 use xmem_core::{Confidence, Evidence, Finding, FindingFilter, Severity, severity_rank};
-use xmem_detection::{RiskLevel, RiskScore, risk_score};
+use xmem_detection::{RiskLevel, RiskScore, SuppressedFinding, risk_score};
 
 use crate::app::XMemApp;
+use crate::log::LogLevel;
 use crate::task::TaskState;
 use crate::theme::{Palette, confidence_dots, palette, severity_color, severity_label};
 use crate::views::export::{ExportFormat, ExportPayload};
@@ -235,6 +236,29 @@ fn observed_text(evidence: &Evidence) -> String {
         .join(", ")
 }
 
+/// 탐지 탭 규칙 파일 라벨(파일명만 표시).
+pub(crate) fn policy_label(policy: Option<&str>) -> String {
+    match policy {
+        Some(path) => format!("규칙 파일: {}", crate::views::region::short_path(path)),
+        None => "규칙 파일 없음".to_string(),
+    }
+}
+
+/// 억제된 finding 요약. 없으면 빈 문자열.
+pub(crate) fn suppressed_summary(suppressed: &[SuppressedFinding]) -> String {
+    if suppressed.is_empty() {
+        return String::new();
+    }
+    let mut out = format!("suppressed {} findings — ", suppressed.len());
+    for (index, item) in suppressed.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(&format!("{}: {}", item.finding.rule_id, item.reason));
+    }
+    out
+}
+
 pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
     let Some(pid) = app.selected_pid else {
         ui.label(egui::RichText::new("왼쪽에서 프로세스를 선택하세요").weak());
@@ -255,6 +279,32 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 app.detect_task.cancel();
             }
         }
+        if !running {
+            if ui.button("규칙 파일").clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("정책 JSON", &["json"])
+                    .pick_file()
+            {
+                match xmem_detection::load_policy(&path) {
+                    Ok(policy) => {
+                        let name = path.display().to_string();
+                        app.log
+                            .push(LogLevel::Info, format!("규칙 파일 불러옴: {name}"));
+                        app.detect_policy = Some((name, policy));
+                    }
+                    Err(err) => {
+                        app.log.push(
+                            LogLevel::Warn,
+                            format!("규칙 파일 실패: {}", crate::error::error_label(&err)),
+                        );
+                    }
+                }
+            }
+            if app.detect_policy.is_some() && ui.button("해제").clicked() {
+                app.detect_policy = None;
+                app.detect_suppressed.clear();
+            }
+        }
         if !crate::views::narrow(ui) {
             ui.separator();
             severity_menu(ui, app);
@@ -272,6 +322,19 @@ pub fn ui(ui: &mut egui::Ui, app: &mut XMemApp) {
                 filter_contents(ui, app);
             },
         );
+    });
+    ui.horizontal(|ui| {
+        ui.label(
+            egui::RichText::new(policy_label(
+                app.detect_policy.as_ref().map(|(path, _)| path.as_str()),
+            ))
+            .weak(),
+        );
+        let summary = suppressed_summary(&app.detect_suppressed);
+        if !summary.is_empty() {
+            ui.separator();
+            ui.label(egui::RichText::new(summary).weak());
+        }
     });
     if let TaskState::Failed(err) = app.detect_task.state() {
         let failure = crate::app::classify_open_failure(
@@ -586,5 +649,24 @@ mod tests {
         reset_filter(&mut filter, &mut rule);
         assert_eq!(filter, FindingFilter::default());
         assert!(rule.is_empty());
+    }
+
+    #[test]
+    fn policy_label_and_clear_helpers() {
+        assert_eq!(policy_label(None), "규칙 파일 없음");
+        let label = policy_label(Some(r"C:\rules\xmem.json"));
+        assert!(label.contains("xmem.json"), "파일명 표시: {label}");
+    }
+
+    #[test]
+    fn suppressed_summary_text_counts_and_reasons() {
+        let suppressed = vec![SuppressedFinding {
+            finding: finding("XMEM-001", Severity::High, 0x1000),
+            reason: "known JIT".into(),
+        }];
+        let text = suppressed_summary(&suppressed);
+        assert!(text.contains("1"), "{text}");
+        assert!(text.contains("known JIT"), "{text}");
+        assert!(suppressed_summary(&[]).is_empty());
     }
 }

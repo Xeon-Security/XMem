@@ -156,9 +156,12 @@ pub struct XMemApp {
     pub scan_progress: Option<Arc<xmem_memory::ScanProgress>>,
     pub scan_preview_task: BackgroundTask<(u64, u64, String)>,
     pub scan_report: Option<xmem_memory::ScanReport>,
-    pub detect_task: BackgroundTask<(u32, Vec<xmem_core::Finding>)>,
+    pub detect_task: BackgroundTask<(u32, xmem_detection::PolicyOutcome)>,
     pub findings: Option<Vec<xmem_core::Finding>>,
     pub detect_selected: Option<usize>,
+    /// 사용자 규칙·억제 정책 파일 (경로, 로드된 정책). 프로세스를 바꿔도 유지된다.
+    pub detect_policy: Option<(String, xmem_detection::DetectionPolicy)>,
+    pub detect_suppressed: Vec<xmem_detection::SuppressedFinding>,
     pub detect_filter: xmem_core::FindingFilter,
     pub detect_rule_filter: String,
     pub detect_sort: crate::views::detect::DetectSort,
@@ -276,6 +279,8 @@ impl XMemApp {
             detect_task: BackgroundTask::idle(),
             findings: None,
             detect_selected: None,
+            detect_policy: None,
+            detect_suppressed: Vec::new(),
             detect_filter: xmem_core::FindingFilter::default(),
             detect_rule_filter: String::new(),
             detect_sort: crate::views::detect::DetectSort::Rule,
@@ -402,6 +407,7 @@ impl XMemApp {
         self.scan_state.preview = None;
         self.findings = None;
         self.detect_selected = None;
+        self.detect_suppressed.clear();
         self.snapshot_created = None;
         self.snapshot_diff = None;
         self.dump_created = None;
@@ -653,6 +659,11 @@ impl XMemApp {
     pub fn start_detect(&mut self, pid: u32) {
         self.findings = None;
         self.detect_selected = None;
+        self.detect_suppressed.clear();
+        let policy = self
+            .detect_policy
+            .as_ref()
+            .map(|(_, policy)| policy.clone());
         self.detect_task = BackgroundTask::spawn("탐지", move |cancel| {
             let live = xmem_memory::LiveProcess::open(pid)?;
             let regions = live.region_map_cancellable(cancel)?.regions;
@@ -661,14 +672,20 @@ impl XMemApp {
             crate::task::ensure_not_cancelled(cancel)?;
             let threads = live.threads()?;
             crate::task::ensure_not_cancelled(cancel)?;
-            Ok((
-                pid,
-                xmem_detection::detect(&xmem_detection::DetectionContext {
-                    regions: &regions,
-                    modules: &modules,
-                    threads: &threads,
-                }),
-            ))
+            let context = xmem_detection::DetectionContext {
+                regions: &regions,
+                modules: &modules,
+                threads: &threads,
+            };
+            let builtins = xmem_detection::detect(&context);
+            let outcome = match &policy {
+                Some(policy) => xmem_detection::apply_policy(policy, &context, builtins),
+                None => xmem_detection::PolicyOutcome {
+                    findings: builtins,
+                    suppressed: Vec::new(),
+                },
+            };
+            Ok((pid, outcome))
         })
         .with_pid(pid);
     }
@@ -934,10 +951,11 @@ impl eframe::App for XMemApp {
             }
         }
         if self.detect_task.poll()
-            && let Some((task_pid, findings)) = self.detect_task.take_done()
+            && let Some((task_pid, outcome)) = self.detect_task.take_done()
             && Some(task_pid) == self.selected_pid
         {
-            self.findings = Some(findings);
+            self.findings = Some(outcome.findings);
+            self.detect_suppressed = outcome.suppressed;
         }
         if self.snapshot_create_task.poll()
             && let Some((task_pid, created)) = self.snapshot_create_task.take_done()
