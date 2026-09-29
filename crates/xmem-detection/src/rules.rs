@@ -36,7 +36,7 @@ pub fn detect(context: &DetectionContext<'_>) -> Vec<Finding> {
     findings
 }
 
-fn finding_key(finding: &Finding) -> (String, u64, u64) {
+pub(crate) fn finding_key(finding: &Finding) -> (String, u64, u64) {
     let evidence = finding.evidence.first();
     (
         finding.rule_id.clone(),
@@ -47,7 +47,7 @@ fn finding_key(finding: &Finding) -> (String, u64, u64) {
     )
 }
 
-fn region_evidence(region: &MemoryRegion) -> Evidence {
+pub(crate) fn region_evidence(region: &MemoryRegion) -> Evidence {
     Evidence::new("region")
         .with_region_base(region.base)
         .observe("size", format!("{:#x}", region.size))
@@ -55,7 +55,7 @@ fn region_evidence(region: &MemoryRegion) -> Evidence {
         .observe("protection", region.protection.to_string())
 }
 
-fn overlaps(module: &ModuleInfo, region: &MemoryRegion) -> bool {
+pub(crate) fn overlaps(module: &ModuleInfo, region: &MemoryRegion) -> bool {
     let module_end = module.base.saturating_add(module.size);
     let region_end = region.base.saturating_add(region.size);
     module.base < region_end && region.base < module_end
