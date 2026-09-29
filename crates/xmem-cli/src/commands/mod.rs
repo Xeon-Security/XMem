@@ -23,7 +23,9 @@ pub fn dispatch(cli: &Cli) -> Result<()> {
         Command::Snapshot { cmd } => snapshot::run(cmd, &cli.global),
         Command::Dump { cmd } => dump::run(cmd, &cli.global),
         Command::Detect(args) => detect::run(args, &cli.global),
-        Command::Report { pid, output } => report::run(pid, output, &cli.global),
+        Command::Report { pid, output, rules } => {
+            report::run(pid, output, rules.as_deref(), &cli.global)
+        }
         Command::Experiment { cmd } => experiment::run(cmd, &cli.global),
     }
 }
@@ -205,6 +207,7 @@ mod equivalence_tests {
             min_severity: Some(SeverityArg::Medium),
             min_confidence: None,
             rule: None,
+            rules: None,
             sort: DetectSortArg::Rule,
         });
         assert_eq!(

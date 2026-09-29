@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde_json::json;
 use xmem_core::Result;
-use xmem_detection::{DetectionContext, detect};
+use xmem_detection::DetectionContext;
 use xmem_forensics::{ReportData, is_markdown, write_report};
 use xmem_memory::LiveProcess;
 
@@ -13,16 +13,18 @@ use crate::commands::render::human_size;
 use crate::output::{OutputMode, emit, emit_json, resolve_mode, success_envelope};
 
 /// 프로세스의 현재 관찰 상태로 리포트 데이터를 만든다(읽기 전용).
-pub(crate) fn build_report(pid: u32) -> Result<ReportData> {
+pub(crate) fn build_report(pid: u32, rules: Option<&str>) -> Result<ReportData> {
     let live = LiveProcess::open(pid)?;
     let regions = live.region_map()?.regions;
     let modules = live.modules()?;
     let threads = live.threads()?;
-    let findings = detect(&DetectionContext {
+    let context = DetectionContext {
         regions: &regions,
         modules: &modules,
         threads: &threads,
-    });
+    };
+    let findings =
+        crate::commands::detect::collect_findings(&context, rules.map(Path::new))?.findings;
     Ok(ReportData::new(
         live.info.clone(),
         regions,
@@ -32,8 +34,8 @@ pub(crate) fn build_report(pid: u32) -> Result<ReportData> {
     ))
 }
 
-pub fn run(pid: &PidArg, output: &str, global: &GlobalArgs) -> Result<()> {
-    let data = build_report(pid.pid)?;
+pub fn run(pid: &PidArg, output: &str, rules: Option<&str>, global: &GlobalArgs) -> Result<()> {
+    let data = build_report(pid.pid, rules)?;
     let path = Path::new(output);
     let file_bytes = write_report(&data, path)?;
     let format = if is_markdown(path) {
@@ -81,7 +83,7 @@ mod tests {
 
     #[test]
     fn build_report_of_self_is_populated() {
-        let data = build_report(std::process::id()).expect("build report");
+        let data = build_report(std::process::id(), None).expect("build report");
         assert_eq!(data.process.pid, std::process::id());
         assert!(!data.regions.is_empty());
         assert!(!data.modules.is_empty());
@@ -90,7 +92,7 @@ mod tests {
 
     #[test]
     fn report_writes_markdown_for_md_extension() {
-        let data = build_report(std::process::id()).expect("build report");
+        let data = build_report(std::process::id(), None).expect("build report");
         let dir = std::env::temp_dir().join(format!("xmem-cli-report-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let path = dir.join("self.md");

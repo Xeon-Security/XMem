@@ -2,7 +2,10 @@ use std::path::Path;
 
 use serde_json::{Value, json};
 use xmem_core::{Finding, FindingFilter, ProcessInfo, Result, severity_rank};
-use xmem_detection::{detect_source, risk_score};
+use xmem_detection::{
+    DetectionContext, PolicyOutcome, SuppressedFinding, apply_policy, detect, load_policy,
+    risk_score,
+};
 use xmem_memory::LiveProcess;
 
 use crate::cli::{ConfidenceArg, DetectArgs, DetectSortArg, GlobalArgs, SeverityArg};
@@ -24,15 +27,41 @@ pub(crate) fn build_filter(args: &DetectArgs) -> FindingFilter {
     }
 }
 
+/// 정책이 있으면 컨텍스트에서 사용자 규칙까지 평가해 합친다.
+pub(crate) fn collect_findings(
+    context: &DetectionContext<'_>,
+    rules: Option<&Path>,
+) -> Result<PolicyOutcome> {
+    let builtins = detect(context);
+    match rules {
+        Some(path) => Ok(apply_policy(&load_policy(path)?, context, builtins)),
+        None => Ok(PolicyOutcome {
+            findings: builtins,
+            suppressed: Vec::new(),
+        }),
+    }
+}
+
 pub fn run(args: &DetectArgs, global: &GlobalArgs) -> Result<()> {
     let live = LiveProcess::open(args.pid.pid)?;
+    let regions = live.region_map()?.regions;
+    let modules = live.modules()?;
+    let threads = live.threads()?;
+    let context = DetectionContext {
+        regions: &regions,
+        modules: &modules,
+        threads: &threads,
+    };
+    let outcome = collect_findings(&context, args.rules.as_deref().map(Path::new))?;
     let filter = build_filter(args);
-    let mut findings: Vec<Finding> = detect_source(&live)?
+    let mut findings: Vec<Finding> = outcome
+        .findings
         .into_iter()
         .filter(|finding| filter.matches(finding))
         .collect();
     sort_findings(&mut findings, args.sort);
     if let Some(output) = args.output.output.as_deref() {
+        // 내보내기 파일에는 억제를 포함하지 않는다(위험도·건수에서도 제외됨).
         let bytes = write_export(
             Path::new(output),
             args.output.format,
@@ -51,15 +80,40 @@ pub fn run(args: &DetectArgs, global: &GlobalArgs) -> Result<()> {
     match resolve_mode(global.json) {
         OutputMode::Json => {
             emit_json(&success_envelope(detect_json_payload(
-                &live.info, &findings,
+                &live.info,
+                &findings,
+                &outcome.suppressed,
             )));
             Ok(())
         }
         OutputMode::Human => {
-            emit(&render_findings(&live.info, &findings));
+            emit(&render_findings_with_suppressed(
+                &live.info,
+                &findings,
+                &outcome.suppressed,
+            ));
             Ok(())
         }
     }
+}
+
+/// `render_findings`에 억제 요약을 덧붙인다(감사용 보존).
+pub(crate) fn render_findings_with_suppressed(
+    info: &ProcessInfo,
+    findings: &[Finding],
+    suppressed: &[SuppressedFinding],
+) -> String {
+    let mut out = render_findings(info, findings);
+    if !suppressed.is_empty() {
+        out.push_str(&format!("\nsuppressed {} findings\n", suppressed.len()));
+        for item in suppressed {
+            out.push_str(&format!(
+                "  suppressed {} {} — {}\n",
+                item.finding.rule_id, item.finding.name, item.reason
+            ));
+        }
+    }
+    out
 }
 
 pub(crate) fn render_findings(info: &ProcessInfo, findings: &[Finding]) -> String {
@@ -102,12 +156,21 @@ pub(crate) fn render_findings(info: &ProcessInfo, findings: &[Finding]) -> Strin
     out
 }
 
-pub(crate) fn detect_json_payload(info: &ProcessInfo, findings: &[Finding]) -> Value {
+pub(crate) fn detect_json_payload(
+    info: &ProcessInfo,
+    findings: &[Finding],
+    suppressed: &[SuppressedFinding],
+) -> Value {
     json!({
         "process": { "pid": info.pid, "name": info.name },
         "finding_count": findings.len(),
         "findings": findings,
         "risk": risk_score(findings),
+        "suppressed_count": suppressed.len(),
+        "suppressed": suppressed.iter().map(|item| json!({
+            "finding": item.finding,
+            "reason": item.reason,
+        })).collect::<Vec<Value>>(),
     })
 }
 
@@ -240,7 +303,7 @@ mod tests {
             .collect();
         assert_eq!(filtered.len(), 1);
         assert_eq!(filtered[0].rule_id, "XMEM-002");
-        let payload = detect_json_payload(&sample_info(), &filtered);
+        let payload = detect_json_payload(&sample_info(), &filtered, &[]);
         assert_eq!(payload["finding_count"], 1);
         assert_eq!(payload["findings"].as_array().unwrap().len(), 1);
     }
@@ -290,7 +353,7 @@ mod tests {
 
     #[test]
     fn detect_json_payload_shape() {
-        let payload = detect_json_payload(&sample_info(), &[sample_finding()]);
+        let payload = detect_json_payload(&sample_info(), &[sample_finding()], &[]);
         assert_eq!(payload["process"]["pid"], 321);
         assert_eq!(payload["finding_count"], 1);
         assert!(payload["findings"].is_array());
@@ -307,5 +370,83 @@ mod tests {
         let findings = xmem_detection::detect_source(&live).unwrap();
         let text = render_findings(&live.info, &findings);
         assert!(text.contains("findings"));
+    }
+
+    #[test]
+    fn collect_findings_applies_policy_file() {
+        use xmem_core::{
+            Heuristic, MemoryRegion, MemoryState, MemoryType, Protection, RegionClass,
+        };
+        let region = MemoryRegion {
+            base: 0x1000,
+            size: 0x1000,
+            allocation_base: Some(0x1000),
+            state: MemoryState::Commit,
+            protection: Protection::new(0x20, true, false, true),
+            allocation_protection: None,
+            region_type: Some(MemoryType::Private),
+            readable: true,
+            writable: false,
+            executable: true,
+            classification: RegionClass::Private,
+            heuristics: vec![Heuristic::ExecutablePrivate],
+            mapped_file: None,
+        };
+        let context = xmem_detection::DetectionContext {
+            regions: &[region],
+            modules: &[],
+            threads: &[],
+        };
+        let dir = std::env::temp_dir().join(format!("xmem-rules-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("policy.json");
+        std::fs::write(
+            &path,
+            r#"{
+              "user_rules": [{"id":"XMEM-U1","name":"user rule","severity":"low","confidence":"low",
+                "match":{"heuristics":["executable_private"]}}],
+              "suppress": [{"rule_id":"XMEM-U1","reason":"broad rule","observed":{"source":"user-rule"}}]
+            }"#,
+        )
+        .unwrap();
+
+        let outcome = collect_findings(&context, Some(&path)).unwrap();
+        // 사용자 규칙 finding만 source=user-rule 관찰 키를 가지므로 그것만 억제되고,
+        // 내장 XMEM-001(같은 region)은 관찰 키가 없어 유지된다 → 파이프라인 검증.
+        assert_eq!(
+            outcome.findings.len(),
+            1,
+            "내장 XMEM-001 유지: {:?}",
+            outcome.findings
+        );
+        assert_eq!(outcome.findings[0].rule_id, "XMEM-001");
+        assert_eq!(outcome.suppressed.len(), 1, "사용자 규칙 finding 억제");
+        assert_eq!(outcome.suppressed[0].reason, "broad rule");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn collect_findings_without_rules_keeps_builtin_only() {
+        let context = xmem_detection::DetectionContext {
+            regions: &[],
+            modules: &[],
+            threads: &[],
+        };
+        let outcome = collect_findings(&context, None).unwrap();
+        assert!(outcome.suppressed.is_empty());
+    }
+
+    #[test]
+    fn detect_json_payload_includes_suppressed() {
+        let suppressed = vec![xmem_detection::SuppressedFinding {
+            finding: sample_finding(),
+            reason: "noise".to_string(),
+        }];
+        let payload = detect_json_payload(&sample_info(), &[sample_finding()], &suppressed);
+        assert_eq!(payload["finding_count"], 1);
+        assert_eq!(payload["suppressed_count"], 1);
+        assert_eq!(payload["suppressed"][0]["reason"], "noise");
+        assert_eq!(payload["suppressed"][0]["finding"]["rule_id"], "XMEM-001");
+        assert!(payload.get("_unused").is_none());
     }
 }

@@ -316,6 +316,9 @@ pub struct DetectArgs {
     /// 특정 rule ID만
     #[arg(long)]
     pub rule: Option<String>,
+    /// 정책 파일(사용자 규칙·억제, JSON)
+    #[arg(long = "rules")]
+    pub rules: Option<String>,
     /// 정렬 순서
     #[arg(long, value_enum, default_value = "rule")]
     pub sort: DetectSortArg,
@@ -377,6 +380,9 @@ pub enum Command {
         /// 출력 파일 경로
         #[arg(long)]
         output: String,
+        /// 정책 파일(사용자 규칙·억제, JSON)
+        #[arg(long = "rules")]
+        rules: Option<String>,
     },
     /// 연구 실험
     Experiment {
@@ -977,6 +983,31 @@ mod tests {
         assert!(parse(&["xmem", "detect", "--pid", "42", "--min-severity", "bogus"]).is_err());
         assert!(parse(&["xmem", "detect", "--pid", "42", "--min-confidence", "bogus"]).is_err());
         assert!(parse(&["xmem", "detect", "--pid", "42", "--sort", "bogus"]).is_err());
+    }
+
+    #[test]
+    fn detect_and_report_parse_rules_flag() {
+        let cli = parse(&["xmem", "detect", "--pid", "1", "--rules", "policy.json"]).unwrap();
+        let Command::Detect(args) = cli.command else {
+            panic!("detect가 아님");
+        };
+        assert_eq!(args.rules.as_deref(), Some("policy.json"));
+
+        let cli = parse(&[
+            "xmem",
+            "report",
+            "--pid",
+            "1",
+            "--output",
+            "r.json",
+            "--rules",
+            "policy.json",
+        ])
+        .unwrap();
+        let Command::Report { rules, .. } = cli.command else {
+            panic!("report가 아님");
+        };
+        assert_eq!(rules.as_deref(), Some("policy.json"));
     }
 
     #[test]
