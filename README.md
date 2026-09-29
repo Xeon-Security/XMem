@@ -18,7 +18,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 
 ## Status
 
-현재 **v0.2.5** — Batch C(정책·이미지·minidump·정밀화)를 적용했다: 탐지 정책 파일(`detect`/`report` `--rules`, JSON 사용자 규칙 + 억제 목록 + `suppressed` 보고), MemoryImage 오프라인 분석(`image create|info|analyze|scan` → `.xmemimg`), 미니덤프 스레드 시작 주소 출처(`minidump-context-rip`, `dump analyze` JSON threads), XMEM-001/003 할당 단위 휴리스틱 정밀화. 실험 자동화는 CLI 전용으로 유지된다.
+현재 **v0.2.6** — Batch D(엔지니어링 성숙도·GUI 잔여)를 적용했다: 숨김 벤치마크(`xmem bench`), 시드 고정 fuzz-lite(패턴·PE·정책·이미지 파서), RSS soak 테스트(`--ignored`), 이미지 바이트 수준 diff(`image diff`), GUI 로그 레벨 필터·파일 저장, GUI 맵 주소 점프, 포터블 설치/제거 스크립트(`packaging/`). 실험 자동화는 CLI 전용으로 유지된다.
 
 | 구성 요소 | 상태 |
 |---|---|
@@ -42,7 +42,7 @@ Baseline → Controlled Experiment → Post-state → Snapshot Diff → Detectio
 | `report --pid <PID> --output <FILE>` (JSON/Markdown 리포트: regions/modules/threads/findings + summary + risk, 정책 파일(`--rules`), 확장자 `.md`면 Markdown, temp→rename, `--json`) | Implemented |
 | `dump create --pid <PID> --output <FILE> [--full]` (MiniDumpWriteDump, metadata+FullMemoryInfo 기본, `--full`은 전체 메모리·디스크 사전 검사, `--progress` 콜백 진행률, temp→검증→rename, `--json`) | Implemented |
 | `dump analyze <FILE>` (minidump 파싱: os/cpu/arch/pid/modules/threads(시작 주소 출처 포함)/regions/findings, 오프라인 Detection, `--json`) | Implemented |
-| `image create\|info\|analyze\|scan` (MemoryImage `.xmemimg` v1: 프로세스 메모리 오프라인 스냅샷(committed+readable, 예산 상한, temp→재검증→rename), info/analyze/scan으로 오프라인 재분석, `--json`) | Implemented |
+| `image create\|info\|analyze\|scan\|diff` (MemoryImage `.xmemimg` v1: 프로세스 메모리 오프라인 스냅샷(committed+readable, 예산 상한, temp→재검증→rename), info/analyze/scan 오프라인 재분석, **diff는 두 이미지의 바이트 수준 변경 구간·바이트 수 보고**, `--json`) | Implemented |
 | Test Target (`lab/targets/xmem-target`) (deterministic 시나리오 normal/pattern/private/private-exec/pe-like/threads/protection/all, Ground Truth JSON report, 회귀 테스트) | Implemented |
 | Experiment 자동화 (`experiment list` / `experiment run <NAME>` / `experiment history`) (7개 정의 실험: remote-alloc/protection-flip/pe-staging/remote-thread/multi-alloc/exec-only-alloc/writecopy-alloc, spawn한 xmem-target 한정, guard/신원 검증, cleanup, 실행 이력 `%APPDATA%\XMem\experiments.jsonl`·회귀 표시, `--json`) | Implemented |
 | GUI (`xmem-gui`) (egui 단일 exe: 프로세스 목록/개요·메모리맵·검색+hex 미리보기·모듈·스레드·탐지·스냅샷·덤프·리포트, **맵/모듈/스레드 상세 패널**(hex 페이지 뷰어·디스크/메모리 PE 비교·스레드 시간), 스캔/덤프 진행바·위험도 배지·해시 예산 입력·언로드 후보, 아이콘·무콘솔, 시작 시 관리자 권한 자동 요청(runas), 가이드, 로그 패널, 다크/라이트) | Implemented |
@@ -90,6 +90,7 @@ xmem dump analyze target.dmp                            # 오프라인 분석 (r
 xmem detect --pid <PID> --rules policy.json             # 사용자 규칙 + 억제 목록 적용 (suppressed 보고)
 xmem image create --pid <PID> --output lab.xmemimg --max-bytes 64Mi  # 메모리 이미지 저장 (오프라인 분석용)
 xmem image scan lab.xmemimg --string XMEM_PATTERN_ALPHA_0123456789   # 이미지에서 문자열 재검색
+xmem image diff a.xmemimg b.xmemimg                      # 두 이미지의 바이트 수준 변경 구간 (0x주소 +오프셋 N바이트)
 xmem report --pid <PID> --output report.md              # JSON/Markdown 리포트 (findings 포함)
 cargo build -p xmem-target                              # Research Lab Test Target 빌드
 .\target\debug\xmem-target.exe run all --hold-secs 60 --report report.json  # 알려진 아티팩트 프로세스
@@ -103,6 +104,8 @@ xmem --json memory map --pid <PID>  # 영역 상세 JSON
 xmem --json memory scan --pid <PID> --wide-string pwsh  # UTF-16LE 검색 JSON
 cargo build --release -p xmem-gui                        # GUI 빌드 (egui 단일 exe)
 .\target\release\xmem-gui.exe                            # GUI 실행 (--pid <PID>로 시작 가능)
+.\packaging\install.ps1 -ZipPath .\xmem-v0.2.6-windows-x64.zip  # 포터블 설치(LOCALAPPDATA\Programs\XMem + 시작 메뉴)
+.\packaging\uninstall.ps1                                # 설치 제거(사용자 데이터 gui.json·Documents\XMem은 유지)
 ```
 
 ## CLI Usage (계약)
@@ -209,6 +212,13 @@ cargo test --workspace
 cargo clippy --workspace --all-targets -- -D warnings
 ```
 
+개발 도구 (v0.2.6):
+
+```powershell
+xmem bench --pid <PID> --scenario all --iterations 3   # 분석 경로 반복 벤치마크(숨김 명령, map/scan/detect/modules/threads/snapshot)
+cargo test -q -p xmem-memory --test soak -- --ignored --nocapture  # soak: map+scan 60회, RSS 증가 < 32 MiB
+```
+
 ## Limitations
 
 - **User-mode 전용**: Kernel driver, 물리 메모리 접근, 커널 패칭은 범위 밖(Non-Goal).
@@ -240,6 +250,9 @@ cargo clippy --workspace --all-targets -- -D warnings
 - 탐지 정책 파일(v0.2.5, JSON)은 `detect`/`report`의 `--rules <FILE>`로 적용한다: `user_rules`(영역 조건 매칭으로 XMEM-U… finding 추가)와 `suppress`(rule_id + `observed` 글롭으로 finding 억제, 사유 기록)로 구성되며 `suppressed N findings`와 억제 사유를 함께 보고한다. 빈 id·중복 id·내장 rule_id 재정의·빈 사유는 거부하고, 오류 시 exit 1로 중단한다. GUI는 탐지 탭에서 규칙 파일을 불러오기/해제할 수 있다. 정책은 분석 튜닝 도구이며 findings를 숨긴 사실 자체가 suppressed로 드러난다.
 - `image` 명령군(v0.2.5)은 Snapshot과 별개의 `.xmemimg` 포맷(v1, magic `XMEMIMG`)이다. `image create`는 committed+readable 영역을 예산(`--max-bytes`, 기본 256 MiB)·영역 상한 안에서 저장하고(`--executable-only`/`--private-only` 필터, 디스크 사전 검사, temp→재검증→rename), `image info`/`image analyze`/`image scan`은 네트워크/대상 프로세스 없이 저장된 내용만으로 동작한다(저장되지 않은 영역은 read/scan 불가). GUI에는 아직 이미지 탭이 없다.
 - XMEM-001/003 정밀화(v0.2.5): 같은 `allocation_base` 안에 committed executable 영역이 2개 이상이면 XMEM-001 confidence를 Low로 낮추고 `allocation_region_count`/`allocation_base`를 evidence에 남긴다(정상 런타임/JIT 힌트). XMEM-003의 `mapped-no-file`도 같은 할당에 파일 백킹 형제 영역이 있으면 Low로 낮추고 `allocation_backed = some`을 남긴다.
+- `image diff`(v0.2.6)는 두 이미지에서 저장된(stored) 영역만 비교한다(4 KiB 청크, 인접 변경 병합). 영역은 `base`로 매칭하므로 같은 base가 다시 매핑되며 크기가 달라져도 크기 자체는 보고하지 않고 꼬리 변경만 보고한다. `--max-changes`(기본 1000) 초과 시 목록은 잘리지만 합계(`changed_bytes`)는 정확하며 `truncated: true`로 표시된다.
+- `bench`(v0.2.6)는 개발도구용 숨김 명령(`--help`에 미표시)이며 read-only 분석 경로만 반복 측정한다(ms 수치는 시스템 부하에 따라 달라진다). fuzz-lite(v0.2.6)는 시드 고정 난수 입력으로 파서가 패닉하지 않음을 확인하는 회귀 테스트다(커버리지 기반 fuzzing은 아니다). soak은 `#[ignore]` 테스트라 기본 `cargo test`에 포함되지 않는다.
+- `packaging/install.ps1`(v0.2.6)은 릴리스 zip을 `%LOCALAPPDATA%\Programs\XMem`에 풀고 시작 메뉴 바로가기를 만드는 사용자 단위 포터블 설치 스크립트다(관리자 불필요, MSI/서명 없음). `uninstall.ps1`은 설치 폴더·바로가기만 제거하며 사용자 데이터(`%APPDATA%\XMem`, `Documents\XMem`)는 남긴다.
 
 ## Documentation
 
@@ -251,7 +264,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 - [`docs/experiments.md`](docs/experiments.md) — 실험 방법론과 안전 원칙
 - [`docs/format.md`](docs/format.md) — Snapshot v1 / Minidump / Report / JSON envelope 포맷
 - [`docs/gui-design.md`](docs/gui-design.md) — GUI 설계 스펙 (화면 구조, 디자인 시스템, 권한/취소 규칙)
-- [`docs/future-work.md`](docs/future-work.md) — v0.2.5 기준 기능 문제·부족 목록과 우선순위
+- [`docs/future-work.md`](docs/future-work.md) — v0.2.6 기준 기능 문제·부족 목록과 우선순위
 - [`docs/plans/`](docs/plans/) — 마일스톤 실행 계획
 
 ## Roadmap
@@ -285,6 +298,7 @@ cargo clippy --workspace --all-targets -- -D warnings
 | v0.2.3 | 상세 패널 펼침 (영역 상세가 창 높이 60%로 열림, hex가 남은 공간을 자동으로 채워 드래그 불필요) | 완료 |
 | v0.2.4 | 기능 갭 Batch B (스캔 진행률, 덤프 진행률, 해시 예산 옵션, 위험도 스코어, 언로드 모듈 후보, 실험 3종·이력/회귀) | 완료 |
 | v0.2.5 | Batch C (탐지 정책 `--rules`·억제 목록, MemoryImage `.xmemimg` `image create/info/analyze/scan`, minidump XMEM-004 컨텍스트 RIP·출처, XMEM-001/003 할당 단위 정밀화) | 완료 |
+| v0.2.6 | Batch D (숨김 `bench`, fuzz-lite 4종, soak 테스트, `image diff` 바이트 수준 diff, GUI 로그 필터·파일 저장, GUI 맵 주소 점프, 포터블 설치 스크립트) | 완료 |
 
 ## License
 

@@ -1,11 +1,12 @@
 # XMem 미래 작업 목록
 
-> v0.1.9 기준으로 확인된 **기능적 문제와 부족한 점**을 기록한다.
-> 실측 근거가 있는 항목은 측정값을 함께 남긴다. (기준일: 2026-09-24)
+> v0.2.6 기준으로 확인된 **기능적 문제와 부족한 점**을 기록한다.
+> 실측 근거가 있는 항목은 측정값을 함께 남긴다. (기준일: 2026-09-29)
 > 해소된 항목은 취소선 대신 "(vX.Y.Z 해소)"로 표시한다.
 > v0.2.0 Batch A에서 ⑩⑧⑪⑰⑬⑳㉑㉒⑦을 해소했다(2026-09-25).
 > v0.2.4 Batch B에서 ⑥⑯⑭④⑫⑱을 해소했다(2026-09-26).
 > v0.2.5 Batch C에서 D1/D2/D4/S3과 XMEM-001/003 할당 단위 정밀화를 해소했다(2026-09-29).
+> v0.2.6 Batch D에서 Q2/Q3/Q4/G2/G4/Q7(포터블)을 해소하고 S2(이미지 바이트 diff)를 추가했다(2026-09-29).
 > v0.2.2에서 맵/프로세스/모듈/스레드/탐지 필터를 확장하고 GUI/CLI가 공유 core 필터(`xmem-core::filter`)를 쓰도록 통일했다(2026-09-26).
 > 관련 문서: `docs/architecture.md`, `docs/plans/`, `docs/gui-design.md`
 
@@ -65,7 +66,7 @@
 | # | 항목 | 현재 동작 | 기대 |
 |---|---|---|---|
 | S1 | content diff 범위 | 해시 예산(64 MiB) 안 영역만 | 예산 상향 옵션, 영역 지정 해싱 **(v0.2.4 부분 해소)** — `snapshot create --hash-budget <SIZE>`/`--hash-all` 추가(영역 지정 해싱은 후속) |
-| S2 | 바이트 수준 diff | 해시 변화만 표시 | 변경 바이트 범위/패치 뷰 |
+| S2 | 바이트 수준 diff | 해시 변화만 표시 | 변경 바이트 범위/패치 뷰 **(v0.2.6 해소)** — `image diff <A> <B>`가 두 `.xmemimg`의 저장 영역을 4 KiB 청크로 비교해 변경 구간(`base +offset N바이트`)·바이트 수·truncated를 보고(영역은 base 매칭, 미저장 영역 제외). Snapshot v1은 해시만 저장하므로 Snapshot끼리의 바이트 diff는 소스(S1 영역 지정 해싱)와 함께 후속 |
 | S3 | 오프라인 재분석 | 스냅샷에 메모리 내용 미저장(해시만) | MemoryImage 소스(후속 계획) **(v0.2.5 해소)** — `.xmemimg`(`image create`) + `MemoryImageSource`로 `image analyze`/`image scan` 오프라인 분석(저장된 영역 한정) |
 | S4 | `--full` 덤프 | 취소 불가, 진행률 없음 | 진행률 표시(취소는 MiniDumpWriteDump 한계로 불가 시 명시) **(v0.2.4 진행률 해소)** — `dump create --progress`(콜백, CLI stderr/GUI 진행바), 취소 불가는 유지 |
 
@@ -74,9 +75,9 @@
 | # | 항목 | 현재 동작 | 기대 |
 |---|---|---|---|
 | G1 | 맵 영역 내용 보기 | **hex 뷰어 추가됨(v0.1.2)** — 맵 상세 패널에서 4 KiB 페이지 단위 열람 | (해소) |
-| G2 | 주소 점프 | 영역 상세 내 페이지 이동(비동기 로딩, v0.1.8)·할당 시작 이동이 해당 영역 선택(v0.1.9) | 임의 주소 입력 → 해당 영역으로 이동 |
+| G2 | 주소 점프 | 영역 상세 내 페이지 이동(비동기 로딩, v0.1.8)·할당 시작 이동이 해당 영역 선택(v0.1.9) | 임의 주소 입력 → 해당 영역으로 이동 **(v0.2.6 해소)** — 맵 툴바 주소 입력(`0x`=16진/그 외 10진) + 이동/Enter, 영역 밖·형식 오류는 danger 라벨 |
 | G3 | 결과 내보내기 | 리포트 저장만 | 맵/스캔/탐지 결과 내보내기 **(v0.2.0 해소)** — 각 탭의 JSON/CSV 내보내기 버튼 + rfd 저장 대화상자 |
-| G4 | 로그 지속 | 세션 내 200줄 + 심각도 표기·자동 스크롤·지우기(v0.1.7) | 파일 저장, 레벨 필터 |
+| G4 | 로그 지속 | 세션 내 200줄 + 심각도 표기·자동 스크롤·지우기(v0.1.7) | 파일 저장, 레벨 필터 **(v0.2.6 해소)** — 로그 패널 레벨 ComboBox(Info/Warn/Error) + rfd 파일 저장(저장은 필터 무관 전체, `HH:MM:SS LEVEL message`) |
 | G5 | 다국어 | 한국어 고정 | 리소스 분리(영어 등) |
 | G6 | 접근 불가 프로세스 | 전체 목록만 표시(읽기 가능 여부 표시 없음) | 접근성 `ACCESS`(`가능`/`권한 필요`) 표시 + "접근 가능만 보기"·아키텍처 필터 **(v0.2.1 해소)** |
 
@@ -88,7 +89,7 @@
 | E2 | 대상 | XMem이 spawn한 xmem-target 한정(설계) | (유지) — 문서로 명확히 |
 | E3 | 결과 비교 | baseline/post findings 비교 | 반복 실행 추세, 회귀 감지 **(v0.2.4 해소)** — `%APPDATA%\XMem\experiments.jsonl` 이력 + `experiment history` + expected 회귀 표시 |
 
-### 2.6 GUI 개선 이력 (v0.1.3~v0.2.5, 해소)
+### 2.6 GUI 개선 이력 (v0.1.3~v0.2.6, 해소)
 
 | 버전 | 항목 | 내용 |
 |------|------|------|
@@ -103,6 +104,7 @@
 | v0.2.2 | 필터 확장 + GUI/CLI 동등성 | 맵/프로세스/모듈/스레드/탐지 필터를 `xmem-core::filter` 공유 구현으로 통일(CLI 플래그 ↔ GUI 컨트롤 1:1), 모든 탭의 **"필터" 팝업**(좁은 창 대응), 검색 탭에 주소 범위·최대 영역 크기·오프셋·청크 크기·대형 프로세스 정책 해제 추가, detect 정렬(심각도/주소/규칙), CLI 한글 열 정렬(전각 폭) 수정 |
 | v0.2.4 | Batch B 기능 갭 6건 | ⑥ 스캔 진행률(`ScanProgress` + `--progress` + GUI 진행바), ⑯ 덤프 진행률(콜백 + `--progress` + GUI 진행바), ⑭ 해시 예산(`snapshot create --hash-budget`/`--hash-all`), ④ 위험도 스코어(`risk_score`, CLI/JSON/리포트/GUI), ⑫ 언로드 모듈 후보(`modules --unloaded` + GUI), ⑱ 실험 3종·이력/회귀(`experiment history`) |
 | v0.2.5 | Batch C(정책·이미지·minidump·정밀화) | ③ 정책 파일(`--rules`: JSON 사용자 규칙·억제 + `suppressed`, GUI 탐지 탭 파일 불러오기), ⑮ MemoryImage(`.xmemimg`, `image create/info/analyze/scan`), ⑤ minidump XMEM-004(컨텍스트 RIP + 출처, `dump analyze` JSON `threads`), ①② XMEM-001/003 할당 단위 정밀화 |
+| v0.2.6 | Batch D(엔지니어링·GUI·설치) | Q2 숨김 `bench`(6 시나리오 반복 측정), Q3 fuzz-lite 4종(패턴·PE·정책·이미지), Q4 soak(`--ignored`, map+scan 60회 RSS 한도), S2 `image diff`(바이트 수준 변경 구간), G4 로그 레벨 필터·파일 저장, G2 맵 주소 점프, Q7 `packaging/install.ps1`·`uninstall.ps1`(사용자 단위 포터블) |
 
 ---
 
@@ -110,13 +112,13 @@
 
 | # | 항목 | 상태 |
 |---|---|---|
-| Q1 | 검증 다양성 | 전부 개발 노트북(Win11 x64) + self/lab target. Win10·ARM64·WOW64 자동화 미비 |
-| Q2 | 벤치마크 | 0개. 스캔 처리량/스냅샷 수집 시간 등 수치 미공개 |
-| Q3 | fuzz | 0개. pattern/PE 파서 랜덤 입력 검증 없음 |
-| Q4 | soak/누수 | 장시간 구동·반복 실행 시 핸들/RSS 안정성 미측정 |
+| Q1 | 검증 다양성 | 전부 개발 노트북(Win11 x64) + self/lab target. Win10·WOW64 자동화 미비 (플랫폼은 x64 단일로 확정 — ARM64는 비목표) |
+| Q2 | 벤치마크 | **해소(v0.2.6)** — 숨김 `xmem bench`(map/scan/detect/modules/threads/snapshot, `--iterations`/`--json`, min/median/max·regions·bytes). 실측 예: lab target map 1.4 ms/157 regions. 수치는 시스템 부하 의존이라 회귀 판정용 기준값은 아님 |
+| Q3 | fuzz | **부분 해소(v0.2.6)** — 시드 고정 fuzz-lite 4종(패턴 파서·PE 파서(+MZ 씨앗)·정책 JSON·이미지 디코드(+변이), 각 2000회). 커버리지 기반 fuzzing(cargo-fuzz 등)은 후속 |
+| Q4 | soak/누수 | **해소(v0.2.6)** — `#[ignore]` soak 테스트(map+scan 60회, RSS 증가 <32 MiB). 실측 증가 0.45 MiB(4.51s). 장시간(시간 단위)·핸들 카운트 추적은 후속 |
 | Q5 | CI | **사용자 결정으로 제외**(2026-09-23) |
 | Q6 | 코드 서명 | 없음 → SmartScreen 경고. 인증서 구매 필요(연 $200~400) |
-| Q7 | 설치본 | zip + 개별 exe만. Inno Setup/WiX/설치 스크립트 없음 |
+| Q7 | 설치본 | **부분 해소(v0.2.6)** — `packaging/install.ps1`(릴리스 zip → `%LOCALAPPDATA%\Programs\XMem`, 시작 메뉴 바로가기, 사용자 단위·관리자 불필요) + `uninstall.ps1`(사용자 데이터 보존). MSI/WiX·서명은 후속 |
 | Q8 | 커널/PPL | 설계상 비목표(user-mode 한정). **PPL(Protected Process Light)은 Windows 정책상 관리자 권한으로도 열 수 없어 해결 대상이 아니다(v0.2.0 비목표 명시)**. 커널 드라이버 없이는 접근 불가 |
 
 ---
@@ -127,13 +129,13 @@
 |---|---|---|---|
 | P0 | 1.3 mapped_file 경로 변환(`\Device\...` → `C:\...`) | 0.5일 | 해소(v0.2.0) — 표시 가독성 + 모듈 경로 매칭 정확도 |
 | P0 | 1.2 XMEM-001 노이즈 완화 | 0.5일 | 정상 프로세스 기본 노이즈 제거 (v0.2.5에서 할당 단위 confidence 하향 적용; JIT 밀도 힌트는 후속) |
-| P1 | Q2 벤치마크 + 수치 공개 | 0.5일 | 성능 주장의 근거 확보 |
-| P1 | Q4 soak/누수 테스트 | 1일 | 장시간 사용 신뢰 |
-| P1 | 잔여 GUI·CLI 사용성 갭 | 0.5~1일 | 파일 저장 로그(G4), 임의 주소 점프(G2), 검색 옵션(M8) (M6 진행률·S4 덤프 진행률은 v0.2.4, D1/D2 규칙·억제는 v0.2.5에서 해소) |
-| P2 | Q3 fuzz(pattern/PE) | 0.5~1일 | 파서 견고성 |
-| P2 | S1/S2 스냅샷 diff 심화 | 1~2일 | 포렌식 가치 |
+| P1 | Q2 벤치마크 + 수치 공개 | — | 해소(v0.2.6) — 숨김 `xmem bench`(6 시나리오). 회귀 기준값 자동화는 후속 |
+| P1 | Q4 soak/누수 테스트 | — | 해소(v0.2.6) — `#[ignore]` soak(map+scan 60회, RSS <32 MiB). 핸들 카운트·시간 단위 soak는 후속 |
+| P1 | 잔여 GUI·CLI 사용성 갭 | 0.5일 | G4 로그 파일 저장·G2 주소 점프는 v0.2.6에서 해소. 남은 항목: 검색 옵션(M8 regex·대소문자 무시), 이미지 GUI 탭 |
+| P2 | Q3 fuzz(pattern/PE) | — | 부분 해소(v0.2.6) — 시드 고정 fuzz-lite 4종. 커버리지 기반 fuzzing은 후속 |
+| P2 | S1/S2 스냅샷 diff 심화 | 1일 | S2는 v0.2.6에서 `.xmemimg` 기준으로 해소(`image diff`). S1(영역 지정 해싱)·Snapshot끼리의 바이트 diff는 후속 |
 | P2 | D1/D2 규칙 파일·억제 목록 | — | 해소(v0.2.5) — JSON 정책 파일 `--rules` + `suppressed` 보고 |
-| P3 | Q7 설치본 | 0.5~1일 | 배포 편의 |
+| P3 | Q7 설치본 | 0.5일 | 부분 해소(v0.2.6) — 포터블 install/uninstall 스크립트. MSI/WiX·서명은 후속 |
 | P3 | Q6 코드 서명 | 인증서 구매 선행 | SmartScreen 경고 제거 |
 
 ---

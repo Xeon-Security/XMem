@@ -166,7 +166,7 @@ pub struct ReadOutcome { pub bytes_read: usize, pub partial: bool }  // Partial 
 
 Minidump 소스(M9 구현됨; thread 시작 주소는 v0.2.5): `MinidumpSource`가 `MemorySource`를 구현하므로 `detect_source` 등 상위 계층이 라이브 프로세스와 동일하게 동작한다(Offline Forensics). `MinidumpSource::open`이 minidump 스트림(SystemInfo/ModuleList/ThreadList/MemoryInfoList/MiscInfo)과 메모리 범위를 1회 파싱해 보관하고, `read`는 메모리 범위를 선형 탐색한다(범위 밖 → `InvalidAddress`, 메모리 스트림 없음 → `DumpError`). v0.2.5부터 스레드 컨텍스트의 instruction pointer(`MinidumpThread::context(...).get_instruction_pointer()`)를 `ThreadInfo.start_address`의 근사값으로 채우고 `start_address_source = Some("minidump-context-rip")`로 출처를 남긴다(컨텍스트가 없으면 `None` → XMEM-004 skip). RIP는 대개 로드된 모듈 내부라 XMEM-004가 발화하지 않을 수 있다. `mapped_file`은 모듈 목록 기반 근사다. 파일 생성(`xmem-windows::write_minidump_file`)은 temp → `MDMP` 시그니처 검증 → atomic rename이며 실패 시 temp를 제거한다.
 
-MemoryImage 소스(v0.2.5 구현됨): `.xmemimg` 포맷(v1, magic `XMEMIMG`, 헤더 = magic7 + u16 format_version + u16 flags + u32 meta_len + u32 content_len)은 프로세스 메모리와 메타데이터(process/regions/modules/threads/findings/acquisition)를 함께 저장한다. `collect_image`는 committed + readable 영역만 executable → private 우선으로 정렬해 예산(`ImageOptions::max_bytes`, 기본 256 MiB)·영역 상한 안에서 수집하고, `MemoryImageSource`가 `MemorySource`를 구현해 `image analyze`/`image scan`이 대상 프로세스 없이 동작한다(저장되지 않은 영역 read는 `InvalidAddress`). `write_image`는 temp → 재파싱 검증 → atomic rename, `decode_image`는 magic/version/flags/길이/오프셋을 엄격 검증한다.
+MemoryImage 소스(v0.2.5 구현됨; 바이트 diff는 v0.2.6): `.xmemimg` 포맷(v1, magic `XMEMIMG`, 헤더 = magic7 + u16 format_version + u16 flags + u32 meta_len + u32 content_len)은 프로세스 메모리와 메타데이터(process/regions/modules/threads/findings/acquisition)를 함께 저장한다. `collect_image`는 committed + readable 영역만 executable → private 우선으로 정렬해 예산(`ImageOptions::max_bytes`, 기본 256 MiB)·영역 상한 안에서 수집하고, `MemoryImageSource`가 `MemorySource`를 구현해 `image analyze`/`image scan`이 대상 프로세스 없이 동작한다(저장되지 않은 영역 read는 `InvalidAddress`). `write_image`는 temp → 재파싱 검증 → atomic rename, `decode_image`는 magic/version/flags/길이/오프셋을 엄격 검증한다. v0.2.6의 `diff_images(before, after, max_changes)`는 양쪽에 저장된 영역을 `base`로 매칭해 4 KiB 청크로 비교하고 인접 변경을 병합한 `ByteChange{base, offset, len}` 목록을 낸다(영역 추가/제거 수, `changed_bytes` 합계, `--max-changes` 초과 시 `truncated`). 같은 base의 크기가 달라지면 꼬리 영역을 변경으로 보고하며, 저장되지 않은 영역은 비교 대상이 아니다.
 
 ## 8. Snapshot 포맷 v1 (M7 구현됨)
 
@@ -263,9 +263,10 @@ xmem memory scan --pid <PID> [--output <FILE> --format json|csv]
 xmem modules --pid <PID> | threads --pid <PID>
 xmem snapshot create --pid <PID> --output <FILE> | snapshot diff <A> <B>
 xmem dump create --pid <PID> --output <FILE> [--full] | dump analyze <FILE>
-xmem image create --pid <PID> --output <FILE> [--max-bytes <SIZE>] | image info|analyze|scan <FILE>
+xmem image create --pid <PID> --output <FILE> [--max-bytes <SIZE>] | image info|analyze|scan <FILE> | image diff <A> <B> [--max-changes <N>]
 xmem detect --pid <PID> [--rules <FILE>] [--output <FILE> --format json|csv] | report --pid <PID> --output <FILE> [--rules <FILE>]
 xmem experiment list | run <NAME>
+xmem bench --pid <PID> [--scenario all|map|scan|detect|modules|threads|snapshot] [--iterations N]   (숨김 개발도구, v0.2.6)
 ```
 
 ```text
@@ -316,10 +317,13 @@ xmem experiment list | run <NAME>
 | v0.2.2 필터 확장(공유 core 필터 타입 + `matches()`, CLI 6개 명령 필터 플래그, 한글 열 정렬 전각 폭, GUI 전 탭 필터 컨트롤·"필터" 팝업, CLI/GUI 동등성 테스트, forensics 자기 덤프 테스트 분리) | Done |
 | v0.2.4 Batch B(`ScanProgress`/`scan_with_progress`, `DumpProgress`/`write_minidump_file_with_progress`(MiniDumpWriteDump 콜백), `snapshot create --hash-budget`/`--hash-all`, `RiskScore`/`risk_score`, `UnloadedModule`/`unloaded_module_candidates`, 실험 3종 + `xmem-experiments::history`) | Done |
 | v0.2.5 Batch C(`xmem-detection::policy`(JSON 사용자 규칙·억제), `detect`/`report --rules` + `suppressed`, `xmem-forensics::image`(`.xmemimg` v1, MemoryImageSource) + `image create/info/analyze/scan`, minidump 컨텍스트 RIP → XMEM-004 + `start_address_source`, XMEM-001/003 할당 단위 정밀화) | Done |
+| v0.2.6 Batch D(`xmem bench`(숨김, 6 시나리오 반복 측정), fuzz-lite 4종(패턴·PE·정책·이미지, 시드 고정), soak 테스트(`--ignored`, map+scan 60회 RSS <32MiB), `image diff`(`diff_images` 바이트 수준), GUI 로그 레벨 필터·파일 저장(`LogBuffer::set_filter/iter_visible/to_text/save`), GUI 맵 주소 점프(`parse_jump_address`/`find_region_index`), `packaging/install.ps1`·`uninstall.ps1`(사용자 단위 포터블)) | Done |
 
 **v0.2.4 신규 공개 API**: `xmem-memory::ScanProgress`(원자 카운터: `regions_done`/`regions_total`/`bytes_scanned`/`fraction`)를 `scan_with_progress(..., Option<&ScanProgress>)`에 넘기면 스캔 중 진행도를 폴링할 수 있다(기존 `scan()`은 no-op 위임, GUI는 `Arc` 공유). `xmem-windows::DumpProgress`는 MiniDumpWriteDump의 `IoStart/IoWriteAll/IoFinish` 콜백으로 기록 바이트를 누적한다(콜백 I/O 모드: 콜백이 직접 seek+write하며, 콜백은 절대 패닉하지 않고 항상 TRUE를 반환하고 쓰기 실패는 `write_error`로 반환 후 오류 변환). `xmem-detection::risk_score(&[Finding]) -> RiskScore`는 심각도 가중 × 신뢰도 계수 + 포화 곡선(`round(100*raw/(raw+40))`)으로 결정적 점수를 낸다. `LiveProcess::unloaded_module_candidates()`는 private executable + `PrivateExecutablePeLike` 휴리스틱 영역 중 모듈 범위 밖에서 4 KiB PE 파싱에 성공한 것만 보고한다. `xmem-experiments::history`는 `%APPDATA%\XMem\experiments.jsonl`에 실행 이력을 append/load하고 `expected_observed` true→false 회귀를 감지한다(파일 없음·손상 줄에서도 실패하지 않음).
 
 **v0.2.5 신규 공개 API**: `xmem-detection::{DetectionPolicy, UserRule, RegionMatch, Suppression, PolicyOutcome, parse_policy, load_policy, apply_policy}` — 정책 JSON 로드/적용(사용자 규칙 추가 + 억제, 사유 기록). `xmem-forensics::image`의 `ImageOptions`(max_bytes/max_region_size/chunk_size)·`ImageMeta`/`StoredRegion`/`MemoryImage`·`collect_image`·`encode_image`/`decode_image`·`write_image`/`read_image`·`MemoryImageSource`. core `ThreadInfo.start_address_source: Option<String>`(`#[serde(default)]`, `"minidump-context-rip"` 출처). CLI `dump analyze` JSON payload에 `threads` 배열 추가(`start_address_source` 포함, v0.2.5).
+
+**v0.2.6 신규 공개 API**: `xmem-forensics::image::{ImageDiff, ImageDiffRef, RegionByteDiff, ByteChange, diff_images}`(두 이미지의 바이트 수준 변경 — base 매칭, 4 KiB 청크, 인접 병합, `truncated`). GUI: `LogBuffer::{set_filter, filter, iter_visible, visible_len, to_text, save}`(레벨 필터·파일 저장), `views::log::ui(..., default_dir)`(레벨 ComboBox + rfd 저장). GUI 맵: `views::map::{parse_jump_address, find_region_index}` + 툴바 주소 입력(map_jump_error 표시). CLI `bench`(숨김)는 `commands::bench::{SCENARIOS, summarize, measure, render_bench}`로 map/scan/detect/modules/threads/snapshot 경로를 반복 측정한다(JSON envelope 동일 규약). `packaging/install.ps1`/`uninstall.ps1`는 관리자 불필요 사용자 단위 설치(시작 메뉴 바로가기, 사용자 데이터 보존).
 
 ## 15. Non-Goals
 
