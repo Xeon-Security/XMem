@@ -5,6 +5,7 @@
 > 해소된 항목은 취소선 대신 "(vX.Y.Z 해소)"로 표시한다.
 > v0.2.0 Batch A에서 ⑩⑧⑪⑰⑬⑳㉑㉒⑦을 해소했다(2026-09-25).
 > v0.2.4 Batch B에서 ⑥⑯⑭④⑫⑱을 해소했다(2026-09-26).
+> v0.2.5 Batch C에서 D1/D2/D4/S3과 XMEM-001/003 할당 단위 정밀화를 해소했다(2026-09-29).
 > v0.2.2에서 맵/프로세스/모듈/스레드/탐지 필터를 확장하고 GUI/CLI가 공유 core 필터(`xmem-core::filter`)를 쓰도록 통일했다(2026-09-26).
 > 관련 문서: `docs/architecture.md`, `docs/plans/`, `docs/gui-design.md`
 
@@ -24,6 +25,7 @@
 
 - **증상**: .NET JIT 힙 같은 정상 private RWX가 Medium으로 보고된다(실측 1건).
 - **수정 방향**: JIT 힌트(영역 내 실행 코드 밀도, 동일 할당 내 다수 소형 RWX 등) 또는 억제 목록(1.4)으로 관리. 최소한 confidence 하향 근거를 evidence에 남긴다.
+- **진행(v0.2.5)**: 같은 `allocation_base` 안에 committed executable 영역이 2개 이상이면 XMEM-001 confidence를 **Low**로 낮추고 evidence에 `allocation_region_count`/`allocation_base`를 남긴다(할당 단위 휴리스틱). 억제는 정책 파일(D2, v0.2.5)로 가능. 실행 코드 밀도 기반 JIT 힌트는 후속.
 
 ### 1.3 mapped_file 드라이브 경로 변환 — 해소 (v0.2.0)
 
@@ -39,10 +41,10 @@
 
 | # | 항목 | 현재 동작 | 기대 |
 |---|---|---|---|
-| D1 | 사용자 규칙 | 규칙 5개 고정(XMEM-001~005) | 규칙 파일(예: TOML)로 추가/수정 |
-| D2 | 억제(allowlist) | 없음 | 경로/모듈/휴리스틱 단위 억제 + 사유 기록 |
+| D1 | 사용자 규칙 | 규칙 5개 고정(XMEM-001~005) | 규칙 파일(예: TOML)로 추가/수정 **(v0.2.5 해소)** — JSON 정책 파일(`detect`/`report --rules`)의 `user_rules`(RegionMatch 조건)로 XMEM-U… finding 추가 |
+| D2 | 억제(allowlist) | 없음 | 경로/모듈/휴리스틱 단위 억제 + 사유 기록 **(v0.2.5 해소)** — `suppress`(rule_id + observed 글롭 + 사유)로 억제하고 `suppressed`로 보고(경로 단위 지정은 후속) |
 | D3 | 위험도 스코어 | severity/confidence만 | finding 우선순위 점수, 정렬 옵션 **(v0.2.4 해소)** — `risk_score()`(심각도 가중 × 신뢰도 계수, 포화 곡선)로 `detect`/리포트/GUI에 `risk N/100` 표시(정렬 옵션은 후속) |
-| D4 | XMEM-004 in minidump | start address를 못 얻으면 침묵 | 덤프에서도 시작 주소 추정 또는 "평가 불가" 명시 |
+| D4 | XMEM-004 in minidump | start address를 못 얻으면 침묵 | 덤프에서도 시작 주소 추정 또는 "평가 불가" 명시 **(v0.2.5 해소)** — 스레드 컨텍스트 instruction pointer(근사)로 시작 주소 + `start_address_source=minidump-context-rip` 출처 표시, 컨텍스트 없으면 skip |
 
 ### 2.2 메모리 분석
 
@@ -64,7 +66,7 @@
 |---|---|---|---|
 | S1 | content diff 범위 | 해시 예산(64 MiB) 안 영역만 | 예산 상향 옵션, 영역 지정 해싱 **(v0.2.4 부분 해소)** — `snapshot create --hash-budget <SIZE>`/`--hash-all` 추가(영역 지정 해싱은 후속) |
 | S2 | 바이트 수준 diff | 해시 변화만 표시 | 변경 바이트 범위/패치 뷰 |
-| S3 | 오프라인 재분석 | 스냅샷에 메모리 내용 미저장(해시만) | MemoryImage 소스(후속 계획) |
+| S3 | 오프라인 재분석 | 스냅샷에 메모리 내용 미저장(해시만) | MemoryImage 소스(후속 계획) **(v0.2.5 해소)** — `.xmemimg`(`image create`) + `MemoryImageSource`로 `image analyze`/`image scan` 오프라인 분석(저장된 영역 한정) |
 | S4 | `--full` 덤프 | 취소 불가, 진행률 없음 | 진행률 표시(취소는 MiniDumpWriteDump 한계로 불가 시 명시) **(v0.2.4 진행률 해소)** — `dump create --progress`(콜백, CLI stderr/GUI 진행바), 취소 불가는 유지 |
 
 ### 2.4 GUI
@@ -86,7 +88,7 @@
 | E2 | 대상 | XMem이 spawn한 xmem-target 한정(설계) | (유지) — 문서로 명확히 |
 | E3 | 결과 비교 | baseline/post findings 비교 | 반복 실행 추세, 회귀 감지 **(v0.2.4 해소)** — `%APPDATA%\XMem\experiments.jsonl` 이력 + `experiment history` + expected 회귀 표시 |
 
-### 2.6 GUI 개선 이력 (v0.1.3~v0.2.4, 해소)
+### 2.6 GUI 개선 이력 (v0.1.3~v0.2.5, 해소)
 
 | 버전 | 항목 | 내용 |
 |------|------|------|
@@ -100,6 +102,7 @@
 | v0.2.0 | Batch A 기능 갭 10건 | ⑩ mapped_file 드라이브 경로 변환, ⑧ 스캔 읽기 실패 사유별 집계, ⑪ 모듈별 PE machine arch, ⑰ 덤프 모듈 목록 없음 안내, ⑬ 모듈 상세 디스크 파싱 실패 사유 표시, ⑳ 좁은 창 표 세로 스크롤바 확보, ㉑ 표 방향키 이동, ㉒ 맵·모듈·스레드 취소, ⑦ 맵/스캔/탐지 JSON·CSV 내보내기(CLI `--output` + GUI 저장 대화상자), ⑲ PPL 비목표 문서화 |
 | v0.2.2 | 필터 확장 + GUI/CLI 동등성 | 맵/프로세스/모듈/스레드/탐지 필터를 `xmem-core::filter` 공유 구현으로 통일(CLI 플래그 ↔ GUI 컨트롤 1:1), 모든 탭의 **"필터" 팝업**(좁은 창 대응), 검색 탭에 주소 범위·최대 영역 크기·오프셋·청크 크기·대형 프로세스 정책 해제 추가, detect 정렬(심각도/주소/규칙), CLI 한글 열 정렬(전각 폭) 수정 |
 | v0.2.4 | Batch B 기능 갭 6건 | ⑥ 스캔 진행률(`ScanProgress` + `--progress` + GUI 진행바), ⑯ 덤프 진행률(콜백 + `--progress` + GUI 진행바), ⑭ 해시 예산(`snapshot create --hash-budget`/`--hash-all`), ④ 위험도 스코어(`risk_score`, CLI/JSON/리포트/GUI), ⑫ 언로드 모듈 후보(`modules --unloaded` + GUI), ⑱ 실험 3종·이력/회귀(`experiment history`) |
+| v0.2.5 | Batch C(정책·이미지·minidump·정밀화) | ③ 정책 파일(`--rules`: JSON 사용자 규칙·억제 + `suppressed`, GUI 탐지 탭 파일 불러오기), ⑮ MemoryImage(`.xmemimg`, `image create/info/analyze/scan`), ⑤ minidump XMEM-004(컨텍스트 RIP + 출처, `dump analyze` JSON `threads`), ①② XMEM-001/003 할당 단위 정밀화 |
 
 ---
 
@@ -123,13 +126,13 @@
 | 순위 | 항목 | 예상 비용 | 이유 |
 |---|---|---|---|
 | P0 | 1.3 mapped_file 경로 변환(`\Device\...` → `C:\...`) | 0.5일 | 해소(v0.2.0) — 표시 가독성 + 모듈 경로 매칭 정확도 |
-| P0 | 1.2 XMEM-001 노이즈 완화 | 0.5일 | 정상 프로세스 기본 노이즈 제거 |
+| P0 | 1.2 XMEM-001 노이즈 완화 | 0.5일 | 정상 프로세스 기본 노이즈 제거 (v0.2.5에서 할당 단위 confidence 하향 적용; JIT 밀도 힌트는 후속) |
 | P1 | Q2 벤치마크 + 수치 공개 | 0.5일 | 성능 주장의 근거 확보 |
 | P1 | Q4 soak/누수 테스트 | 1일 | 장시간 사용 신뢰 |
-| P1 | 잔여 GUI·CLI 사용성 갭 | 0.5~1일 | 파일 저장 로그(G4), 임의 주소 점프(G2), 사용자 규칙(D1/D2) (M6 진행률·M7/G3 내보내기·S4 덤프 진행률은 v0.2.4에서 해소) |
+| P1 | 잔여 GUI·CLI 사용성 갭 | 0.5~1일 | 파일 저장 로그(G4), 임의 주소 점프(G2), 검색 옵션(M8) (M6 진행률·S4 덤프 진행률은 v0.2.4, D1/D2 규칙·억제는 v0.2.5에서 해소) |
 | P2 | Q3 fuzz(pattern/PE) | 0.5~1일 | 파서 견고성 |
 | P2 | S1/S2 스냅샷 diff 심화 | 1~2일 | 포렌식 가치 |
-| P2 | D1/D2 규칙 파일·억제 목록 | 1~2일 | 운영 시 노이즈 관리 |
+| P2 | D1/D2 규칙 파일·억제 목록 | — | 해소(v0.2.5) — JSON 정책 파일 `--rules` + `suppressed` 보고 |
 | P3 | Q7 설치본 | 0.5~1일 | 배포 편의 |
 | P3 | Q6 코드 서명 | 인증서 구매 선행 | SmartScreen 경고 제거 |
 

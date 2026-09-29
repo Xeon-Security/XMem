@@ -52,7 +52,7 @@ XMem은 Windows 프로세스의 메모리 구조와 메모리 기반 행위를 �
 | `xmem-cli` | clap 트리, human/JSON 출력, exit code | M1 |
 | `xmem-memory` | region 분류, MemorySource 구현(LiveProcess), chunked 병렬 scanner, 모듈/스레드 상관관계 | M3 (생성됨; scan 엔진 M4, 모듈/스레드 M5) |
 | `xmem-pe` | PE 파싱(bounds-checked 헤더 파서 + 전체 파일 goblin 보강), 메모리 PE artifact 분류 | M6 (생성됨) |
-| `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Minidump 분석(MinidumpSource), Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Minidump M9, Report M12, MemoryImage는 후속) |
+| `xmem-forensics` | Snapshot 포맷/직렬화, SnapshotSource, collect(해싱), Diff, Minidump 분석(MinidumpSource), Report(JSON/Markdown), MemoryImage 소스 | M7 (생성됨; Minidump M9, Report M12, MemoryImage v0.2.5) |
 | `xmem-detection` | Rule trait + 초기 Rule(XMEM-001~005) | M8 (생성됨) |
 | `xmem-experiments` | Experiment Framework(TargetGuard + 4개 실험 + 파이프라인). 변경 Win32 API 호출은 여기서만, lab target 한정 | M11 (생성됨) |
 | `lab/targets/xmem-target` | 결정적 Test Target (bin crate, workspace member): 자기 프로세스 한정 메모리 아티팩트, Ground Truth JSON report. `xmem-windows`만 의존 | M10 (생성됨) |
@@ -162,9 +162,11 @@ pub trait MemorySource {
 pub struct ReadOutcome { pub bytes_read: usize, pub partial: bool }  // Partial Read를 정상 반환
 ```
 
-구현: `LiveProcess`(xmem-memory, M3), `Snapshot`(xmem-forensics, M7), `Minidump`(xmem-forensics, M9), `MemoryImage`(후속).
+구현: `LiveProcess`(xmem-memory, M3), `Snapshot`(xmem-forensics, M7), `Minidump`(xmem-forensics, M9), `MemoryImage`(xmem-forensics, v0.2.5).
 
-Minidump 소스(M9 구현됨): `MinidumpSource`가 `MemorySource`를 구현하므로 `detect_source` 등 상위 계층이 라이브 프로세스와 동일하게 동작한다(Offline Forensics). `MinidumpSource::open`이 minidump 스트림(SystemInfo/ModuleList/ThreadList/MemoryInfoList/MiscInfo)과 메모리 범위를 1회 파싱해 보관하고, `read`는 메모리 범위를 선형 탐색한다(범위 밖 → `InvalidAddress`, 메모리 스트림 없음 → `DumpError`). minidump에는 thread start address가 없어 `ThreadInfo.start_address`는 `None`이다(XMEM-004는 침묵). `mapped_file`은 모듈 목록 기반 근사다. 파일 생성(`xmem-windows::write_minidump_file`)은 temp → `MDMP` 시그니처 검증 → atomic rename이며 실패 시 temp를 제거한다.
+Minidump 소스(M9 구현됨; thread 시작 주소는 v0.2.5): `MinidumpSource`가 `MemorySource`를 구현하므로 `detect_source` 등 상위 계층이 라이브 프로세스와 동일하게 동작한다(Offline Forensics). `MinidumpSource::open`이 minidump 스트림(SystemInfo/ModuleList/ThreadList/MemoryInfoList/MiscInfo)과 메모리 범위를 1회 파싱해 보관하고, `read`는 메모리 범위를 선형 탐색한다(범위 밖 → `InvalidAddress`, 메모리 스트림 없음 → `DumpError`). v0.2.5부터 스레드 컨텍스트의 instruction pointer(`MinidumpThread::context(...).get_instruction_pointer()`)를 `ThreadInfo.start_address`의 근사값으로 채우고 `start_address_source = Some("minidump-context-rip")`로 출처를 남긴다(컨텍스트가 없으면 `None` → XMEM-004 skip). RIP는 대개 로드된 모듈 내부라 XMEM-004가 발화하지 않을 수 있다. `mapped_file`은 모듈 목록 기반 근사다. 파일 생성(`xmem-windows::write_minidump_file`)은 temp → `MDMP` 시그니처 검증 → atomic rename이며 실패 시 temp를 제거한다.
+
+MemoryImage 소스(v0.2.5 구현됨): `.xmemimg` 포맷(v1, magic `XMEMIMG`, 헤더 = magic7 + u16 format_version + u16 flags + u32 meta_len + u32 content_len)은 프로세스 메모리와 메타데이터(process/regions/modules/threads/findings/acquisition)를 함께 저장한다. `collect_image`는 committed + readable 영역만 executable → private 우선으로 정렬해 예산(`ImageOptions::max_bytes`, 기본 256 MiB)·영역 상한 안에서 수집하고, `MemoryImageSource`가 `MemorySource`를 구현해 `image analyze`/`image scan`이 대상 프로세스 없이 동작한다(저장되지 않은 영역 read는 `InvalidAddress`). `write_image`는 temp → 재파싱 검증 → atomic rename, `decode_image`는 magic/version/flags/길이/오프셋을 엄격 검증한다.
 
 ## 8. Snapshot 포맷 v1 (M7 구현됨)
 
@@ -218,6 +220,8 @@ Rule은 `xmem-detection`에만 존재하며 CLI에 하드코딩하지 않는다.
 
 구현 노트(M8): `xmem-detection`은 `xmem-core`에만 의존하고(외부 dependency 추가 없음), `DetectionContext`로 수집된 관찰 데이터만 받아 평가한다. XMEM-001/002/005는 heuristic/보호 속성만으로 동작하고, XMEM-003/004는 모듈 목록이 비어 있으면 침묵한다(불완전 데이터로 오판하지 않음). XMEM-003은 v0.1.1부터 백킹 판정(`mapped_file` basename ↔ 모듈명, `MEM_IMAGE`, private 제외)을 적용하고 남은 `MEM_MAPPED` 무파일 영역만 Low confidence로 보고한다. findings는 (rule_id, region_base, address)로 정렬해 결정적으로 출력한다. Snapshot `collect`는 findings를 저장하고, `xmem-forensics`가 `xmem-detection`에 의존한다.
 
+정책 엔진(v0.2.5): `xmem-detection::policy`가 `--rules <FILE>` JSON을 로드해 적용한다. `user_rules`(id/name/severity/confidence + `RegionMatch`: classification/state/region_type/executable/writable/readable/heuristics/min_size/max_size/outside_modules)는 영역 관찰값이 매칭되는 finding(XMEM-U…)을 추가하고, `suppress`(rule_id + `observed` 맵 글롭(`*` 와일드카드, 대소문자 무시) + 선택 region_base/address)는 finding을 억제하되 사유와 함께 `suppressed`로 보고한다(`PolicyOutcome{findings, suppressed}`). 빈 id·중복 id·내장 rule_id 재정의·빈 사유는 로드 시 거부한다. 할당 단위 정밀화(v0.2.5): 같은 `allocation_base`의 committed executable 영역이 2개 이상이면 XMEM-001을 Low confidence로 낮추고(`allocation_region_count`), XMEM-003 `mapped-no-file`은 같은 할당에 백킹 형제가 있으면 Low로 낮춘다(`allocation_backed`).
+
 ## 10. Experiment Framework (M11 구현됨)
 
 - `xmem experiment run <NAME>`은 **XMem이 직접 spawn한 `xmem-target`에만** 실험한다. 임의 PID 실험은 v1에서 지원하지 않는다.
@@ -259,7 +263,8 @@ xmem memory scan --pid <PID> [--output <FILE> --format json|csv]
 xmem modules --pid <PID> | threads --pid <PID>
 xmem snapshot create --pid <PID> --output <FILE> | snapshot diff <A> <B>
 xmem dump create --pid <PID> --output <FILE> [--full] | dump analyze <FILE>
-xmem detect --pid <PID> [--output <FILE> --format json|csv] | report --pid <PID> --output <FILE>
+xmem image create --pid <PID> --output <FILE> [--max-bytes <SIZE>] | image info|analyze|scan <FILE>
+xmem detect --pid <PID> [--rules <FILE>] [--output <FILE> --format json|csv] | report --pid <PID> --output <FILE> [--rules <FILE>]
 xmem experiment list | run <NAME>
 ```
 
@@ -310,8 +315,11 @@ xmem experiment list | run <NAME>
 | v0.2.0 Batch A(드라이브 경로 변환, 스캔 실패 사유별 집계, 모듈별 PE machine arch, 내보내기 `--output`/GUI, 좁은 창 세로 스크롤바, 표 방향키, 맵·모듈·스레드 취소, 한계 안내 문구, PPL 비목표) | Done |
 | v0.2.2 필터 확장(공유 core 필터 타입 + `matches()`, CLI 6개 명령 필터 플래그, 한글 열 정렬 전각 폭, GUI 전 탭 필터 컨트롤·"필터" 팝업, CLI/GUI 동등성 테스트, forensics 자기 덤프 테스트 분리) | Done |
 | v0.2.4 Batch B(`ScanProgress`/`scan_with_progress`, `DumpProgress`/`write_minidump_file_with_progress`(MiniDumpWriteDump 콜백), `snapshot create --hash-budget`/`--hash-all`, `RiskScore`/`risk_score`, `UnloadedModule`/`unloaded_module_candidates`, 실험 3종 + `xmem-experiments::history`) | Done |
+| v0.2.5 Batch C(`xmem-detection::policy`(JSON 사용자 규칙·억제), `detect`/`report --rules` + `suppressed`, `xmem-forensics::image`(`.xmemimg` v1, MemoryImageSource) + `image create/info/analyze/scan`, minidump 컨텍스트 RIP → XMEM-004 + `start_address_source`, XMEM-001/003 할당 단위 정밀화) | Done |
 
 **v0.2.4 신규 공개 API**: `xmem-memory::ScanProgress`(원자 카운터: `regions_done`/`regions_total`/`bytes_scanned`/`fraction`)를 `scan_with_progress(..., Option<&ScanProgress>)`에 넘기면 스캔 중 진행도를 폴링할 수 있다(기존 `scan()`은 no-op 위임, GUI는 `Arc` 공유). `xmem-windows::DumpProgress`는 MiniDumpWriteDump의 `IoStart/IoWriteAll/IoFinish` 콜백으로 기록 바이트를 누적한다(콜백 I/O 모드: 콜백이 직접 seek+write하며, 콜백은 절대 패닉하지 않고 항상 TRUE를 반환하고 쓰기 실패는 `write_error`로 반환 후 오류 변환). `xmem-detection::risk_score(&[Finding]) -> RiskScore`는 심각도 가중 × 신뢰도 계수 + 포화 곡선(`round(100*raw/(raw+40))`)으로 결정적 점수를 낸다. `LiveProcess::unloaded_module_candidates()`는 private executable + `PrivateExecutablePeLike` 휴리스틱 영역 중 모듈 범위 밖에서 4 KiB PE 파싱에 성공한 것만 보고한다. `xmem-experiments::history`는 `%APPDATA%\XMem\experiments.jsonl`에 실행 이력을 append/load하고 `expected_observed` true→false 회귀를 감지한다(파일 없음·손상 줄에서도 실패하지 않음).
+
+**v0.2.5 신규 공개 API**: `xmem-detection::{DetectionPolicy, UserRule, RegionMatch, Suppression, PolicyOutcome, parse_policy, load_policy, apply_policy}` — 정책 JSON 로드/적용(사용자 규칙 추가 + 억제, 사유 기록). `xmem-forensics::image`의 `ImageOptions`(max_bytes/max_region_size/chunk_size)·`ImageMeta`/`StoredRegion`/`MemoryImage`·`collect_image`·`encode_image`/`decode_image`·`write_image`/`read_image`·`MemoryImageSource`. core `ThreadInfo.start_address_source: Option<String>`(`#[serde(default)]`, `"minidump-context-rip"` 출처). CLI `dump analyze` JSON payload에 `threads` 배열 추가(`start_address_source` 포함, v0.2.5).
 
 ## 15. Non-Goals
 
