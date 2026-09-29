@@ -324,6 +324,77 @@ pub struct DetectArgs {
     pub sort: DetectSortArg,
 }
 
+#[derive(Debug, Subcommand)]
+pub enum ImageCmd {
+    /// 프로세스 메모리 이미지 생성(.xmemimg)
+    Create(ImageCreateArgs),
+    /// 이미지 메타데이터 요약
+    Info { file: String },
+    /// 이미지 오프라인 분석(findings·위험도, 선택적 리포트)
+    Analyze(ImageAnalyzeArgs),
+    /// 이미지 오프라인 패턴/문자열 검색
+    Scan(ImageScanArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct ImageCreateArgs {
+    #[command(flatten)]
+    pub pid: PidArg,
+    /// 출력 파일 경로(.xmemimg)
+    #[arg(long)]
+    pub output: String,
+    /// 내용 저장 총량 상한(접미사 허용, 기본 256Mi)
+    #[arg(long = "max-bytes")]
+    pub max_bytes: Option<String>,
+    /// 영역당 저장 상한(접미사 허용, 기본 16Mi)
+    #[arg(long = "max-region-size")]
+    pub max_region_size: Option<String>,
+    /// 실행 가능 영역만 저장
+    #[arg(long = "executable-only")]
+    pub executable_only: bool,
+    /// private 영역만 저장
+    #[arg(long = "private-only")]
+    pub private_only: bool,
+}
+
+#[derive(Debug, Args)]
+pub struct ImageAnalyzeArgs {
+    /// 이미지 파일 경로
+    pub file: String,
+    /// 리포트 파일(.md/.json) — 지정 시에만 기록
+    #[arg(long)]
+    pub output: Option<String>,
+}
+
+#[derive(Debug, Args)]
+#[command(group = clap::ArgGroup::new("needle").required(true).multiple(false)
+    .args(["pattern", "needle_string", "wide_string"]))]
+pub struct ImageScanArgs {
+    /// 이미지 파일 경로
+    pub file: String,
+    /// 16진 패턴 (`48 8B ?? ??`)
+    #[arg(long)]
+    pub pattern: Option<String>,
+    /// ASCII 문자열
+    #[arg(long = "string")]
+    pub needle_string: Option<String>,
+    /// UTF-16LE 문자열
+    #[arg(long = "wide-string")]
+    pub wide_string: Option<String>,
+    #[arg(long = "executable-only")]
+    pub executable_only: bool,
+    #[arg(long = "private-only")]
+    pub private_only: bool,
+    #[arg(long = "writable-only")]
+    pub writable_only: bool,
+    /// 매치 시작 오프셋 필터
+    #[arg(long)]
+    pub offset: Option<u64>,
+    /// 최대 결과 수(0=무제한, 기본 1024)
+    #[arg(long = "max-results")]
+    pub max_results: Option<usize>,
+}
+
 #[derive(Debug, Args)]
 pub struct ModulesArgs {
     #[command(flatten)]
@@ -383,6 +454,11 @@ pub enum Command {
         /// 정책 파일(사용자 규칙·억제, JSON)
         #[arg(long = "rules")]
         rules: Option<String>,
+    },
+    /// 메모리 이미지 생성/분석(.xmemimg)
+    Image {
+        #[command(subcommand)]
+        cmd: ImageCmd,
     },
     /// 연구 실험
     Experiment {
@@ -1008,6 +1084,69 @@ mod tests {
             panic!("report가 아님");
         };
         assert_eq!(rules.as_deref(), Some("policy.json"));
+    }
+
+    #[test]
+    fn image_create_parses_pid_output_and_limits() {
+        let cli = parse(&[
+            "xmem",
+            "image",
+            "create",
+            "--pid",
+            "1",
+            "--output",
+            "a.xmemimg",
+            "--max-bytes",
+            "32Mi",
+            "--max-region-size",
+            "8Mi",
+            "--executable-only",
+        ])
+        .unwrap();
+        let Command::Image {
+            cmd: ImageCmd::Create(args),
+        } = cli.command
+        else {
+            panic!("image create가 아님");
+        };
+        assert_eq!(args.pid.pid, 1);
+        assert_eq!(args.output, "a.xmemimg");
+        assert_eq!(args.max_bytes.as_deref(), Some("32Mi"));
+        assert!(args.executable_only);
+    }
+
+    #[test]
+    fn image_analyze_and_info_parse_file() {
+        let cli = parse(&["xmem", "image", "info", "a.xmemimg"]).unwrap();
+        let Command::Image {
+            cmd: ImageCmd::Info { file },
+        } = cli.command
+        else {
+            panic!("info가 아님");
+        };
+        assert_eq!(file, "a.xmemimg");
+        let cli = parse(&["xmem", "image", "analyze", "a.xmemimg", "--output", "r.md"]).unwrap();
+        let Command::Image {
+            cmd: ImageCmd::Analyze(args),
+        } = cli.command
+        else {
+            panic!("analyze가 아님");
+        };
+        assert_eq!(args.file, "a.xmemimg");
+        assert_eq!(args.output.as_deref(), Some("r.md"));
+    }
+
+    #[test]
+    fn image_scan_requires_exactly_one_needle() {
+        let cli = parse(&["xmem", "image", "scan", "a.xmemimg", "--string", "abc"]).unwrap();
+        let Command::Image {
+            cmd: ImageCmd::Scan(args),
+        } = cli.command
+        else {
+            panic!("scan이 아님");
+        };
+        assert_eq!(args.needle_string.as_deref(), Some("abc"));
+        assert!(Cli::try_parse_from(["xmem", "image", "scan", "a.xmemimg"]).is_err());
     }
 
     #[test]

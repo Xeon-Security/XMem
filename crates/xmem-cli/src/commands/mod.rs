@@ -2,6 +2,7 @@ pub mod detect;
 pub mod dump;
 pub mod experiment;
 pub mod export;
+pub mod image;
 pub mod memory;
 pub mod modules;
 pub mod process;
@@ -26,6 +27,7 @@ pub fn dispatch(cli: &Cli) -> Result<()> {
         Command::Report { pid, output, rules } => {
             report::run(pid, output, rules.as_deref(), &cli.global)
         }
+        Command::Image { cmd } => image::run(cmd, &cli.global),
         Command::Experiment { cmd } => experiment::run(cmd, &cli.global),
     }
 }

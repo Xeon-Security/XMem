@@ -450,7 +450,7 @@ fn build_options(args: &ScanArgs) -> Result<ScanOptions> {
     })
 }
 
-fn render_scan(
+pub(crate) fn render_scan(
     info: &ProcessInfo,
     pattern: &ScanPattern,
     options: &ScanOptions,
