@@ -465,6 +465,21 @@ pub enum Command {
         #[command(subcommand)]
         cmd: ExperimentCmd,
     },
+    /// (개발용) 분석 경로 반복 벤치마크
+    #[command(hide = true)]
+    Bench(BenchArgs),
+}
+
+#[derive(Debug, Args)]
+pub struct BenchArgs {
+    #[command(flatten)]
+    pub pid: PidArg,
+    /// 시나리오: map, scan, detect, modules, threads, snapshot, all
+    #[arg(long, default_value = "all")]
+    pub scenario: String,
+    /// 시나리오별 반복 횟수
+    #[arg(long, default_value_t = 3)]
+    pub iterations: u32,
 }
 
 #[derive(Debug, Args)]
@@ -1330,5 +1345,33 @@ mod tests {
             panic!("history가 아님");
         };
         assert!(json);
+    }
+
+    #[test]
+    fn bench_defaults_and_flags_parse() {
+        let cli = parse(&["xmem", "bench", "--pid", "42"]).unwrap();
+        let Command::Bench(args) = cli.command else {
+            panic!("bench 서브커맨드여야 한다");
+        };
+        assert_eq!(args.pid.pid, 42);
+        assert_eq!(args.scenario, "all");
+        assert_eq!(args.iterations, 3);
+
+        let cli = parse(&[
+            "xmem",
+            "bench",
+            "--pid",
+            "42",
+            "--scenario",
+            "map",
+            "--iterations",
+            "5",
+        ])
+        .unwrap();
+        let Command::Bench(args) = cli.command else {
+            panic!("bench 서브커맨드여야 한다");
+        };
+        assert_eq!(args.scenario, "map");
+        assert_eq!(args.iterations, 5);
     }
 }

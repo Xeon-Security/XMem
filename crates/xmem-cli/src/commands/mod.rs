@@ -1,3 +1,4 @@
+pub mod bench;
 pub mod detect;
 pub mod dump;
 pub mod experiment;
@@ -29,6 +30,7 @@ pub fn dispatch(cli: &Cli) -> Result<()> {
         }
         Command::Image { cmd } => image::run(cmd, &cli.global),
         Command::Experiment { cmd } => experiment::run(cmd, &cli.global),
+        Command::Bench(args) => bench::run(args, &cli.global),
     }
 }
 
