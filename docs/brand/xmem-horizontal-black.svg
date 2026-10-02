@@ -1,0 +1,13 @@
+<svg fill="#000000" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 680 256"><title>XMem</title>
+  <!-- XMem horizontal lockup. Wordmark is typeset in Segoe UI Semibold for review;
+       production outlines must be made from an OFL font (see guidelines). -->
+  <g transform="translate(40,39.6) scale(0.85)">
+    <path fill="#000000" fill-rule="evenodd" d="
+      M68,24 h120 a44,44 0 0 1 44,44 v120 a44,44 0 0 1 -44,44 h-120 a44,44 0 0 1 -44,-44 v-120 a44,44 0 0 1 44,-44 Z
+      M65,69 h133 a6,6 0 0 1 6,6 v10 a6,6 0 0 1 -6,6 h-133 a6,6 0 0 1 -6,-6 v-10 a6,6 0 0 1 6,-6 Z
+      M89,101 h85 a6,6 0 0 1 6,6 v10 a6,6 0 0 1 -6,6 h-85 a6,6 0 0 1 -6,-6 v-10 a6,6 0 0 1 6,-6 Z
+      M65,133 h57 a6,6 0 0 1 6,6 v10 a6,6 0 0 1 -6,6 h-57 a6,6 0 0 1 -6,-6 v-10 a6,6 0 0 1 6,-6 Z
+      M109,165 h89 a6,6 0 0 1 6,6 v10 a6,6 0 0 1 -6,6 h-89 a6,6 0 0 1 -6,-6 v-10 a6,6 0 0 1 6,-6 Z"/>
+  </g>
+  <text x="266" y="172" font-family="'Segoe UI Semibold','Segoe UI',Arial,sans-serif" font-size="128" font-weight="600" letter-spacing="-3" fill="#000000">XMem</text>
+</svg>

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>XMem</title>
+  <!-- XMem symbol, small-size cut: three slots so the map still reads at 16 px -->
+  <path fill="#1B1D20" fill-rule="evenodd" d="
+    M68,24 h120 a44,44 0 0 1 44,44 v120 a44,44 0 0 1 -44,44 h-120 a44,44 0 0 1 -44,-44 v-120 a44,44 0 0 1 44,-44 Z
+    M65,69 h133 a8,8 0 0 1 8,8 v14 a8,8 0 0 1 -8,8 h-133 a8,8 0 0 1 -8,-8 v-14 a8,8 0 0 1 8,-8 Z
+    M65,113 h102 a8,8 0 0 1 8,8 v14 a8,8 0 0 1 -8,8 h-102 a8,8 0 0 1 -8,-8 v-14 a8,8 0 0 1 8,-8 Z
+    M65,157 h60 a8,8 0 0 1 8,8 v14 a8,8 0 0 1 -8,8 h-60 a8,8 0 0 1 -8,-8 v-14 a8,8 0 0 1 8,-8 Z"/>
+</svg>

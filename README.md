@@ -1,5 +1,10 @@
 # XMem
 
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/brand/xmem-horizontal-white-1024.png">
+  <img src="docs/brand/xmem-horizontal-black-1024.png" alt="XMem — Windows Memory Attack & Forensics Research Platform" width="440">
+</picture>
+
 > **Windows Memory Attack & Forensics Research Platform**
 
 XMem은 Windows 프로세스의 메모리 구조, PE 이미지, 모듈, 스레드, 메모리 보호 속성, 메모리 영역 변화, Snapshot, Minidump 및 메모리 기반 행위를 종합적으로 분석하는 **User-mode 연구 플랫폼**이다.
@@ -264,6 +269,7 @@ cargo test -q -p xmem-memory --test soak -- --ignored --nocapture  # soak: map+s
 - [`docs/experiments.md`](docs/experiments.md) — 실험 방법론과 안전 원칙
 - [`docs/format.md`](docs/format.md) — Snapshot v1 / Minidump / Report / JSON envelope 포맷
 - [`docs/gui-design.md`](docs/gui-design.md) — GUI 설계 스펙 (화면 구조, 디자인 시스템, 권한/취소 규칙)
+- [`docs/brand/brand-guidelines.md`](docs/brand/brand-guidelines.md) — 로고(Map Tile) 사용 가이드 (색·최소 크기·Do/Don't)
 - [`docs/future-work.md`](docs/future-work.md) — v0.2.6 기준 기능 문제·부족 목록과 우선순위
 - [`docs/plans/`](docs/plans/) — 마일스톤 실행 계획
 

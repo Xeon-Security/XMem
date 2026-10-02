@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <title>XMem</title>
+  <!-- XMem favicon source: three chunky slots for 16-48 px legibility -->
+  <path fill="#1B1D20" d="M64,16 h128 a48,48 0 0 1 48,48 v128 a48,48 0 0 1 -48,48 h-128 a48,48 0 0 1 -48,-48 v-128 a48,48 0 0 1 48,-48 Z"/>
+  <g fill="#FFFFFF">
+    <rect x="54" y="66" width="156" height="32" rx="9"/>
+    <rect x="79" y="112" width="105" height="32" rx="9"/>
+    <rect x="54" y="158" width="74" height="32" rx="9"/>
+  </g>
+</svg>
