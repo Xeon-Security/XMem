@@ -1,11 +1,8 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <title>XMem</title>
-  <!-- XMem app icon, brand accent on the selected region (GUI accent) -->
+  <title>XMem app icon (accent)</title>
   <path fill="#1B1D20" d="M64,16 h128 a48,48 0 0 1 48,48 v128 a48,48 0 0 1 -48,48 h-128 a48,48 0 0 1 -48,-48 v-128 a48,48 0 0 1 48,-48 Z"/>
-  <g fill="#FFFFFF">
-    <rect x="54" y="64" width="156" height="24" rx="7"/>
-    <rect x="54" y="134" width="74" height="24" rx="7"/>
-    <rect x="101" y="169" width="109" height="24" rx="7"/>
-  </g>
-  <rect x="79" y="99" width="105" height="24" rx="7" fill="#4C8DFF"/>
+  <path fill="#FFFFFF" fill-rule="evenodd" d="M50,46 a6,6 0 0 1 6,-6 h0 a6,6 0 0 1 6,6 v164 a6,6 0 0 1 -6,6 h0 a6,6 0 0 1 -6,-6 Z
+    M90,40 h104 a12,12 0 0 1 12,12 v24 a12,12 0 0 1 -12,12 h-104 a12,12 0 0 1 -12,-12 v-24 a12,12 0 0 1 12,-12 Z
+    M90,104 h72 a12,12 0 0 1 12,12 v24 a12,12 0 0 1 -12,12 h-72 a12,12 0 0 1 -12,-12 v-24 a12,12 0 0 1 12,-12 Z"/>
+  <path fill="#4C8DFF" fill-rule="evenodd" d="M90,168 h40 a12,12 0 0 1 12,12 v24 a12,12 0 0 1 -12,12 h-40 a12,12 0 0 1 -12,-12 v-24 a12,12 0 0 1 12,-12 Z"/>
 </svg>
